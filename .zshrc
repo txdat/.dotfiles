@@ -130,10 +130,13 @@ export CLAUDE_CODE_SUBAGENT_MODEL="sonnet"
 # aliases
 alias ls="ls --color"
 alias lz="lazygit"
+alias g=git
 alias k=kubectl
-alias _2x="xclip -sel c" # copy stdout to clipboard
-alias f2x="xclip -sel c < " # copy data from file to clipboard
-alias x2f="xclip -sel c -o > " # copy data from clipboard to file
+alias h=helm
+alias tf=terraform
+alias x2c="xclip -sel c" # copy stdout to clipboard
+alias f2c="xclip -sel c < " # copy data from file to clipboard
+alias c2f="xclip -sel c -o > " # copy data from clipboard to file
 alias tlmgr="/usr/share/texmf-dist/scripts/texlive/tlmgr.pl --usermode"
 
 alias npm="TZ=UTC npm"
@@ -141,7 +144,7 @@ alias node="TZ=UTC node"
 alias jest="TZ=UTC NODE_ENV=test ./node_modules/.bin/jest"
 
 # cat file in range
-_catr () {
+catr () {
     # Check if we have exactly 2 arguments and the 2nd argument contains a colon
     if [[ $# -eq 2 && "$2" == *:* ]]; then
         local file="$1"
@@ -157,10 +160,10 @@ _catr () {
         command cat "$@"
     fi
 }
-compdef _cat _catr
+compdef _cat catr
 
 # update zsh's plugins
-_update_zsh () {
+update_zsh () {
     dir=$(pwd)
 
     ZSH_PLUGINS=(
@@ -177,7 +180,7 @@ _update_zsh () {
 }
 
 # update system's packages
-_update_system () {
+update_system () {
   packages=(
     'linux'
     'systemd'

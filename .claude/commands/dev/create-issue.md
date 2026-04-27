@@ -4,7 +4,7 @@ model: haiku
 
 # /create-issue — Standalone GitHub Issue
 
-For plan-linked issues, use `/dev:make-plan` instead.
+For plan-linked issues, use `/dev:design-feature` instead.
 
 Collect from $ARGUMENTS or ask: title (required), description, labels, milestone.
 

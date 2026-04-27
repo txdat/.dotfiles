@@ -1,32 +1,55 @@
 # Claude Code Commands
 
-**Orchestrated**: `/dev:orchestrate <requirement>` — explore → plan → execute → review → recap → pr (pauses each phase)
+## Hierarchy
 
-Resume: `/dev:orchestrate add-jwt from execute`
+```
+/design-system    → architecture, cross-cutting patterns
+    ↓ decomposes to
+/design-feature      → feature/fix/refactor implementation
+    ↓ may require
+/design-infra     → infrastructure config (terraform, k8s)
+```
 
-No confirmations: `/dev:orchestrate add-jwt skip approval`
+## Full Feature Cycle
 
----
+`/dev:ship-feature <requirement>` — explore → design → execute → review → recap → pr
 
-## Step-by-step
+Resume: `/dev:ship-feature add-jwt from execute`
 
-| Step | Command | Purpose |
-|------|---------|---------|
-| 0 | `/dev:create-issue <title>` | Standalone issue (not plan-linked) |
-| 1 | `/dev:explore <target>` | Map entry points, flow, patterns |
-| 2 | `/dev:make-plan <requirement>` | Draft + approve plan |
-| 3 | `/dev:execute-plan [from N]` | TDD RED→GREEN→BLUE |
-| 4 | `/dev:fix-bug <symptom>` | Diagnose + minimal fix (optional) |
-| 5 | `/dev:review-code` | Review against plan |
-| 6 | `/dev:recap` | Extract patterns → CLAUDE.md |
-| 7 | `/dev:create-pr [ready]` | Draft PR (or ready) |
+No confirmations: `/dev:ship-feature add-jwt skip approval`
 
 ---
 
-## Other
+## Design Commands
+
+| Command | Scope | Output |
+|---------|-------|--------|
+| `/dev:design-system` | Architecture, system patterns | `docs/architecture/<date>_<slug>.md` |
+| `/dev:design-feature` | Feature/fix/refactor | `docs/plans/<basename>_<date>_<type>_<slug>.md` |
+| `/dev:design-infra` | Infrastructure config | `docs/plans/<basename>_<date>_infra_<slug>.md` |
+
+## Review Commands
+
+| Command | Reviews |
+|---------|---------|
+| `/dev:review-system` | Architecture design |
+| `/dev:review-feature` | Feature plan |
+| `/dev:review-code` | Code changes |
+
+## Execution Commands
 
 | Command | Purpose |
 |---------|---------|
-| `/dev:review-plan` | Review existing/interrupted plan |
+| `/dev:execute-feature` | TDD RED→GREEN→BLUE |
+| `/dev:execute-infra` | Write config + runbook (no apply) |
+| `/dev:fix-bug <symptom>` | Diagnose + minimal fix |
+
+## Utility Commands
+
+| Command | Purpose |
+|---------|---------|
+| `/dev:explore <target>` | Map entry points, flow, patterns |
 | `/dev:simplify-code <target>` | Simplify without behavior change |
-| `/dev:make-infra-plan` | Infrastructure plan + approval |
+| `/dev:recap` | Extract patterns → CLAUDE.md |
+| `/dev:create-issue <title>` | Standalone GitHub issue |
+| `/dev:create-pr [ready]` | Draft PR (or ready) |

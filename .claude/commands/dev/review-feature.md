@@ -1,8 +1,9 @@
 ---
+model: sonnet
 effort: high
 ---
 
-# /review-plan — Review Existing Plan
+# /review-feature — Review Feature Plan
 
 If `skip approval` context — auto-apply changes, auto-create sub-issues.
 
@@ -35,4 +36,4 @@ Flag: undefined terms, missing constraints, edge cases, assumptions. One follow-
 - ⚠️ Suggestions: N
 - `<path>`
 
-Ask: "Apply?" If `planning` + resolved → `approved`. Print: "Plan approved. Run /dev:execute-plan."
+Ask: "Apply?" If `planning` + resolved → `approved`. Print: "Plan approved. Run /dev:execute-feature."
