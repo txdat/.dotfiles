@@ -4,7 +4,7 @@ description: "Code review: logic → security → architecture → quality. Use 
 model: sonnet
 color: green
 memory: user
-effort: high
+effort: medium
 ---
 
 ## Role

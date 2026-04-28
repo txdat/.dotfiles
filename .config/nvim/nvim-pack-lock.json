@@ -13,7 +13,7 @@
       "src": "https://github.com/hrsh7th/cmp-path"
     },
     "fzf-lua": {
-      "rev": "ffa44ee9470743a7697d28df3a1a216fdfe2b09d",
+      "rev": "b437bafc981a180d609bb4092c56ce8999f7a2c4",
       "src": "https://github.com/ibhagwan/fzf-lua"
     },
     "nvim-autopairs": {

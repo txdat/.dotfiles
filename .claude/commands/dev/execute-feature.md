@@ -1,6 +1,6 @@
 ---
 model: sonnet
-effort: high
+effort: medium
 ---
 
 # /execute-feature — Implement the Approved Plan
@@ -24,11 +24,11 @@ Agent: `rapid-coder` if pattern exists, no edge cases, no security. Otherwise `d
 Plan: <path> | Stack: <detected> | Standards: <CLAUDE.md>
 Constraints: ONLY assigned steps. No TODO. Run ONLY assigned tests. Scope creep → STOP.
 ```
-Spawn per batch: "Read /tmp/claude-ctx-<slug>.md. Steps: N,M. Files: <list>. Off-limits: <others>. Tests: <names>. Report: completed, passing, blockers." → `🟢 Step N: <done>`
+Spawn per batch: "Read /tmp/claude-ctx-<slug>.md. Steps: N,M. Files: <list>. Off-limits: <others>. Tests: <names>. Report: completed, passing, coverage%, blockers." → `🟢 Step N: <done> (coverage: X%)`
 
 **BLUE**: remove duplication, simplify — no behavior changes `🔵`
 
-Test commands: Maven `mvn test -pl <mod> -Dtest=<Class>` · Go `go test ./<pkg>/...` · Python `pytest <path> -q` · TS `npm test -- --testPathPattern=<file>`
+Test commands (with coverage): Maven `mvn test -pl <mod> -Dtest=<Class>` · Go `go test -cover ./<pkg>/...` · Python `pytest <path> -q --cov=<src> --cov-report=term-missing` · TS `npm test -- --testPathPattern=<file> --coverage --coverageReporters=text` · C++ compile: `cmake -DCMAKE_CXX_FLAGS=--coverage ..` then test: `ctest --test-dir build -R <test> && gcov -n <src>` (GCC) or `ctest --test-dir build -R <test> && llvm-cov report <bin>` (Clang)
 
 ## Scope Creep
 
