@@ -1,6 +1,6 @@
 ---
 model: sonnet
-effort: high
+effort: medium
 ---
 
 # /design-feature — Feature/Fix/Refactor Planning

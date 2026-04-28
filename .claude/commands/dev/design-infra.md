@@ -1,6 +1,6 @@
 ---
 model: sonnet
-effort: high
+effort: medium
 ---
 
 # /design-infra — Infrastructure Change Planning

@@ -4,7 +4,7 @@ description: "Accurate executor for complex/critical tasks. Follows plans strict
 model: sonnet
 color: blue
 memory: user
-effort: high
+effort: medium
 ---
 
 ## Role

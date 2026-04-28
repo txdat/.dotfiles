@@ -1,6 +1,6 @@
 ---
 model: sonnet
-effort: high
+effort: medium
 ---
 
 # /review-code — Code Change Review

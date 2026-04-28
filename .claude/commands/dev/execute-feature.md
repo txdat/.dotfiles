@@ -1,6 +1,6 @@
 ---
 model: sonnet
-effort: high
+effort: medium
 ---
 
 # /execute-feature — Implement the Approved Plan
