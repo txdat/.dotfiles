@@ -11,24 +11,15 @@ Find active plan in `docs/plans/`. Read plan + `CLAUDE.md`. If none, ask for sco
 
 Run: `git diff main --stat`, `git diff main`, `git log main..HEAD --oneline`.
 
-<50 lines → review directly. Otherwise write to `/tmp/claude-ctx-<slug>.md`:
-```
-Plan: <path>
-Standards: <from CLAUDE.md>
-Diff: <output>
-Log: <output>
-Constraints: Read-only. Report only.
-```
+Review sequentially in three phases:
 
-Spawn `code-quality-auditor` subagents:
+**Phase A — Correctness + TDD**: matches plan, edge cases, no silent exceptions; tests before impl, failure paths covered
 
-**A — Correctness + TDD**: matches plan, edge cases, no silent exceptions; tests before impl, failure paths covered
+**Phase B — Architecture + Data**: CLAUDE.md layering, no framework leaks; parameterized queries, transactions, concurrency
 
-**B — Architecture + Data**: CLAUDE.md layering, no framework leaks; parameterized queries, transactions, concurrency
+**Phase C — Scope + Hygiene**: out-of-plan changes; debug logs, TODOs, secrets
 
-**C — Scope + Hygiene**: out-of-plan changes; debug logs, TODOs, secrets
-
-Prompt: "Read /tmp/claude-ctx-<slug>.md. Review: <dimensions>. Report: blocking (File:Line — issue — why — fix), non-blocking, positives."
+For each phase report: blocking (File:Line — issue — why — fix), non-blocking, positives.
 
 ## Output
 
