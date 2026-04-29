@@ -53,7 +53,7 @@ Rules: commands explicit/complete (no aliases, no flag shortcuts), expect = spec
 
 ## Scope Creep
 
-Discovered work → STOP. Log in `## Discovered Scope`. Ask: include / separate / skip?
+Discovered work → STOP. Log in `## Discovered Scope` with estimated effort. Ask: include / separate / skip?
 
 ## Completion
 

@@ -5,34 +5,45 @@ effort: medium
 
 # /execute-feature — Implement the Approved Plan
 
-Find plan from $ARGUMENTS or by status `approved`/`in-progress`. Set `in-progress`. Read `CLAUDE.md`.
-
-Partial: `<name> from <N>` starts at N; `<name> <N>` runs only N. No `// TODO` — if blocked, say so.
+Find plan from $ARGUMENTS or status `approved`/`in-progress`. Set `in-progress`. Read `CLAUDE.md`.
+Partial: `<name> from <N>` → start at N; `<name> <N>` → run only N. No `// TODO` — if blocked, say so.
 
 ## Dependency Analysis
 
-Independent (different files, no shared state) → parallel batch. Sequential (shared files/deps) → ordered.
-
-Agent: `rapid-coder` if pattern exists, no edge cases, no security. Otherwise `dedicated-coder`.
+Independent (different files, no shared state) → parallel. Sequential (shared files/deps) → ordered.
+Agent: `rapid-coder` if pattern exists, no edge cases, no security; else `dedicated-coder`.
 
 ## TDD Execution
 
-**RED** (sequential): feature/fix → write test, confirm FAILS `🔴`; refactor → confirm existing PASS `🔴`
+Phases in order: RED → GREEN → BLUE.
 
-**GREEN**: ≤3 steps or all sequential → main agent. Otherwise write `/tmp/claude-ctx-<slug>.md`:
+**RED** (sequential, selected agent): feature/fix → write test, confirm FAILS `🔴`; refactor → confirm existing tests PASS first.
+
+**GREEN** (selected agent): ≤3 steps or all sequential → run inline. Otherwise write `/tmp/claude-ctx-<slug>.md`:
 ```
 Plan: <path> | Stack: <detected> | Standards: <CLAUDE.md>
 Constraints: ONLY assigned steps. No TODO. Run ONLY assigned tests. Scope creep → STOP.
 ```
 Spawn per batch: "Read /tmp/claude-ctx-<slug>.md. Steps: N,M. Files: <list>. Off-limits: <others>. Tests: <names>. Report: completed, passing, coverage%, blockers." → `🟢 Step N: <done> (coverage: X%)`
 
-**BLUE**: remove duplication, simplify — no behavior changes `🔵`
+**BLUE** (after all GREEN steps, inline): selected agent refactors → `code-quality-auditor` verifies no behavior changes `🔵`
 
-Test commands (with coverage): Maven `mvn test -pl <mod> -Dtest=<Class>` · Go `go test -cover ./<pkg>/...` · Python `pytest <path> -q --cov=<src> --cov-report=term-missing` · TS `npm test -- --testPathPattern=<file> --coverage --coverageReporters=text` · C++ compile: `cmake -DCMAKE_CXX_FLAGS=--coverage ..` then test: `ctest --test-dir build -R <test> && gcov -n <src>` (GCC) or `ctest --test-dir build -R <test> && llvm-cov report <bin>` (Clang)
+### Per-step Test Scope (GREEN + BLUE)
+
+Scope tests and coverage to changed files only — never the full suite.
+For each file in the current step, derive `<stem>` (filename without extension): `fd -t f '<stem>' | rg 'test|spec'` to find by name; fallback: `rg -l '(import|require|#include).*<stem>'` in test dirs. If none found, skip coverage for that file.
+
+| Stack | Command |
+|---|---|
+| Maven | `mvn test -pl <mod> -Dtest=<Class>` |
+| Go | `go test -run <TestName> -coverprofile=c.out ./<pkg>/... && go tool cover -func=c.out \| grep <changed_file>` |
+| Python | `pytest <test_files> -q --cov=<changed_module> --cov-report=term-missing` |
+| TS/Jest | `npm test -- --testPathPattern=<test_file> --coverage --coverageReporters=text --collectCoverageFrom='["<changed_file>"]'` |
+| C++ | `cmake -DCMAKE_CXX_FLAGS=--coverage .. && ctest --test-dir build -R <test>` then `gcov -n <changed_src>` (GCC) or `llvm-cov report <bin> --sources <changed_src>` (Clang) |
 
 ## Scope Creep
 
-Discovered work → STOP. Log in `## Discovered Scope` with size. Ask: include / separate / skip?
+Discovered work → STOP. Log in `## Discovered Scope` with estimated effort. Ask: include / separate / skip?
 
 ## Completion
 

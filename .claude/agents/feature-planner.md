@@ -1,6 +1,7 @@
 ---
 name: feature-planner
 description: "Business features and regular development: breakdown, API design, implementation strategies, refactoring. NOT for architecture changes (use architecture-strategist)."
+model: sonnet
 color: pink
 memory: user
 effort: high

@@ -8,7 +8,7 @@ Target from $ARGUMENTS or ask. Read `CLAUDE.md`. Do NOT modify files.
 
 ## Area Decomposition
 
-Identify distinct areas (e.g. auth, API, DB). Single area → explore directly.
+Identify distinct areas (e.g. auth, API, DB). Single area → explore inline.
 
 Otherwise, write to `/tmp/claude-ctx-<slug>.md`:
 ```

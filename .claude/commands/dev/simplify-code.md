@@ -1,6 +1,6 @@
 ---
 model: sonnet
-effort: medium
+effort: high
 ---
 
 # /simplify-code — Simplify Existing Code
@@ -11,7 +11,7 @@ Scope: simplification only. No features, bug fixes, or behavior changes.
 
 ## Analysis
 
-Single file → analyze directly. Otherwise, write to `/tmp/claude-ctx-<slug>.md`:
+Single file → analyze inline. Otherwise, write to `/tmp/claude-ctx-<slug>.md`:
 ```
 Standards: <from CLAUDE.md>
 Scope: simplification only
@@ -23,6 +23,6 @@ Spawn `code-explorer` per file: "Read /tmp/claude-ctx-<slug>.md. Analyze <file>.
 
 Present findings. Ask: "Apply all / pick / skip?"
 
-Apply approved. Run targeted tests — if fail, revert and report.
+Apply approved inline. Run targeted tests — if fail, revert and report.
 
 Print: simplified, lines removed, test status.

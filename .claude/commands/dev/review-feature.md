@@ -1,6 +1,6 @@
 ---
 model: sonnet
-effort: medium
+effort: high
 ---
 
 # /review-feature — Review Feature Plan
