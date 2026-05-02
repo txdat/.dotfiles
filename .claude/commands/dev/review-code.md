@@ -7,31 +7,46 @@ effort: medium
 
 If `skip approval` context — auto-fix blocking issues without asking.
 
-Find active plan in `docs/plans/`. Read plan + `CLAUDE.md`. If none, ask for scope.
+Find active plan in `docs/plans/`. Read plan + `CLAUDE.md`. If no plan found, ask for scope before proceeding.
 
-Run: `git diff main --stat`, `git diff main`, `git log main..HEAD --oneline`.
+Detect base branch: `git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's|.*/||'`, fallback to `main`.
+Run: `git diff <base> --stat`, `git diff <base>`, `git log <base>..HEAD --oneline`.
 
-Review sequentially in three phases:
+Review in three sequential phases. For each phase: note positives, flag blocking issues, classify non-blocking items.
 
-**Phase A — Correctness + TDD**: matches plan, edge cases, no silent exceptions; tests before impl, failure paths covered
+**Phase A — Correctness + TDD**: matches plan; edge cases handled; no silent exceptions; failure paths covered; tests exist for new logic
 
-**Phase B — Architecture + Data**: CLAUDE.md layering, no framework leaks; parameterized queries, transactions, concurrency
+**Phase B — Architecture + Data**: CLAUDE.md layering respected; no framework leaks; parameterized queries; transactions and concurrency correct
 
-**Phase C — Scope + Hygiene**: out-of-plan changes; debug logs, TODOs, secrets
+**Phase C — Scope + Hygiene**: no out-of-plan changes; no debug logs, stray TODOs, or secrets
 
-For each phase report: blocking (File:Line — issue — why — fix), non-blocking, positives.
+Blocking item format: `File:Line — issue — why it matters — required fix`
+
+Non-blocking item format — classify each:
+- **Should fix**: style drift, minor correctness risk, maintainability debt — include suggested fix
+- **Skip**: negligible impact, intentional trade-off, or out of scope — include reason
+
+Verdict rules:
+- **REWORK REQUIRED**: any blocking items exist
+- **PASS WITH NOTES**: no blocking items, but has one or more "Should Fix" items
+- **PASS**: no blocking items, no "Should Fix" items
 
 ## Output
 
 ```
 ## Code Review Report
 ### Summary
+(2–3 sentences: what changed, overall quality signal, verdict rationale)
 ### ✅ What's Good
 ### ❌ Blocking (fix before PR)
 ### ⚠️ Non-blocking
-### 🧪 TDD Check
-### 🔍 Scope Check
+#### Should Fix
+#### Skip
 ### Verdict: PASS | PASS WITH NOTES | REWORK REQUIRED
 ```
 
-REWORK → offer inline fixes. PASS → update plan to `reviewed`.
+## Post-report actions
+
+- **REWORK**: offer inline fixes for blocking items; wait for approval before applying.
+- **PASS WITH NOTES**: present each "Should Fix" item; ask which to fix and which to skip; wait for approval before touching any.
+- **PASS**: update plan status to `reviewed`.
