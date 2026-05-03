@@ -12,4 +12,15 @@ function M.system_cmd(cmd)
     return vim.fn.system(cmd):gsub("\n[^\n]*$", "")
 end
 
+function M.merge_tables(target, source)
+    for k, v in pairs(source) do
+        if type(v) == "table" and type(target[k]) == "table" then
+            M.merge_tables(target[k], v)
+        else
+            target[k] = v
+        end
+    end
+    return target
+end
+
 return M

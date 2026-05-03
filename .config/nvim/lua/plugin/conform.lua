@@ -3,6 +3,12 @@ local conform = require("conform")
 conform.setup({
     default_format_opts = { lsp_format = "fallback" },
     formatters_by_ft = {
+        c = { "clang-format" },
+        cpp = { "clang-format" },
+        cuda = { "clang-format" },
+        proto = { "clang-format" },
+        rust = { "rustfmt" },
+        go = { "gofmt" },
         python = { "black" },
         javascript = { "prettierd" },
         javascriptreact = { "prettierd" },

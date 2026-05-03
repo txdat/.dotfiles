@@ -145,25 +145,6 @@ alias npm="TZ=UTC npm"
 alias node="TZ=UTC node"
 alias jest="TZ=UTC NODE_ENV=test ./node_modules/.bin/jest"
 
-# cat file in range
-catr () {
-    # Check if we have exactly 2 arguments and the 2nd argument contains a colon
-    if [[ $# -eq 2 && "$2" == *:* ]]; then
-        local file="$1"
-        local range="$2"
-        # Split the range (e.g., 10:20) into start and end variables
-        local start="${range%:*}"
-        local end="${range#*:}"
-        # Use sed for a concise way to print the range
-        # -n suppresses output, 'p' prints the specific lines
-        sed -n "${start},${end}p" "$file"
-    else
-        # Fall back to the original system cat command
-        command cat "$@"
-    fi
-}
-compdef _cat catr
-
 # update zsh's plugins
 update_zsh () {
     dir=$(pwd)

@@ -32,6 +32,7 @@ vim.diagnostic.config({
 
 -- lsp servers config
 local keymap = require("util").keymap
+local merge_tables = require("util").merge_tables
 
 vim.api.nvim_create_autocmd("LspAttach", {
     callback = function(args)
@@ -126,36 +127,63 @@ vim.lsp.config("clangd", {
     "--fallback-style=llvm"
   },
   filetypes = { 'c', 'cpp', 'cuda', 'proto' },
-  capabilities = capabilities,
+  single_file_support = true,
+  capabilities = merge_tables(
+    {
+      textDocument = {
+        completion = {
+          editsNearCursor = true,
+        },
+      },
+      offsetEncoding = { 'utf-8', 'utf-16' },
+    },
+    capabilities
+  ),
 })
 
--- vim.lsp.config("rust_analyzer", {
---   cmd = { 'rust-analyzer' },
---   filetypes = { 'rust' },
---   settings = {
---     ['rust-analyzer'] = {
---       imports = {
---           granularity = {
---               group = "module",
---           },
---           prefix = "self",
---       },
---       cargo = {
---           buildScripts = {
---               enable = true,
---           },
---       },
---       procMacro = {
---           enable = true
---       },
---     },
---   },
---   capabilities = capabilities,
--- })
+vim.lsp.config("rust_analyzer", {
+  cmd = { 'rust-analyzer' },
+  filetypes = { 'rust' },
+  single_file_support = true,
+  settings = {
+    ['rust-analyzer'] = {
+      imports = {
+          granularity = {
+              group = "module",
+          },
+          prefix = "self",
+      },
+      cargo = {
+          buildScripts = {
+              enable = true,
+          },
+      },
+      procMacro = {
+          enable = true
+      },
+    },
+  },
+  capabilities = merge_tables(
+    {
+      experimental = {
+        serverStatusNotification = true,
+      },
+    },
+    capabilities
+  ),
+})
+
+vim.lsp.config("gopls", {
+  cmd = { 'gopls' },
+  filetypes = { 'go', 'gomod', 'gowork', 'gotmpl' },
+  single_file_support = true,
+  capabilities = capabilities,
+})
 
 vim.lsp.config("pyright", {
   cmd = { 'pyright-langserver', '--stdio' },
   filetypes = { 'python' },
+  single_file_support = true,
   settings = {
     python = {
       analysis = {
@@ -174,6 +202,7 @@ vim.lsp.config("vtsls", {
     'javascript',
     'typescript',
   },
+  single_file_support = true,
   capabilities = capabilities,
 })
 
@@ -220,7 +249,8 @@ vim.lsp.config("eslint", {
 
 vim.lsp.enable({
   "clangd",
-  -- "rust_analyzer",
+  "rust_analyzer",
+  "gopls",
   "pyright",
   "vtsls",
   "eslint",
