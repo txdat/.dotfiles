@@ -196,8 +196,20 @@ vim.lsp.config("pyright", {
   capabilities = capabilities,
 })
 
-vim.lsp.config("vtsls", {
-  cmd = { 'vtsls', '--stdio' },
+-- vim.lsp.config("vtsls", {
+--   cmd = { 'vtsls', '--stdio' },
+--   filetypes = {
+--     'javascript',
+--     'javascriptreact',
+--     'typescript',
+--     'typescriptreact',
+--   },
+--   root_markers = { 'tsconfig.json', 'jsconfig.json', 'package.json', '.git' },
+--   capabilities = capabilities,
+-- })
+
+vim.lsp.config("tsgo", {
+  cmd = { 'tsgo', '--lsp', '--stdio' },
   filetypes = {
     'javascript',
     'javascriptreact',
@@ -257,6 +269,7 @@ vim.lsp.enable({
   "rust_analyzer",
   "gopls",
   "pyright",
-  "vtsls",
+  -- "vtsls",
+  "tsgo",
   "eslint",
 })

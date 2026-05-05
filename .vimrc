@@ -418,12 +418,12 @@ let g:ale_fixers = {
       \   'rust': ['rustfmt'],
       \   'go': ['gofmt'],
       \   'python': ['ruff_format'],
-      \   'javascript': ['biome'],
-      \   'javascriptreact': ['biome'],
-      \   'typescript': ['biome'],
-      \   'typescriptreact': ['biome'],
-      \   'json': ['biome'],
-      \   'markdown': ['biome'],
+      \   'javascript': ['prettier'],
+      \   'javascriptreact': ['prettier'],
+      \   'typescript': ['prettier'],
+      \   'typescriptreact': ['prettier'],
+      \   'json': ['prettier'],
+      \   'markdown': ['prettier'],
       \}
 
 let g:ale_set_highlights = 0

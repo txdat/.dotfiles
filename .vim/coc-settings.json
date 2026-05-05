@@ -29,12 +29,7 @@
         "--function-arg-placeholders",
         "--fallback-style=llvm"
       ],
-      "filetypes": [
-        "c",
-        "cpp",
-        "cuda",
-        "proto"
-      ],
+      "filetypes": ["c", "cpp", "cuda", "proto"],
       "rootPatterns": [
         "compile_commands.json",
         "compile_flags.txt",
@@ -45,13 +40,8 @@
     },
     "rust-analyzer": {
       "command": "rust-analyzer",
-      "filetypes": [
-        "rust"
-      ],
-      "rootPatterns": [
-        "Cargo.toml",
-        ".git"
-      ],
+      "filetypes": ["rust"],
+      "rootPatterns": ["Cargo.toml", ".git"],
       "settings": {
         "rust-analyzer": {
           "imports": {
@@ -73,25 +63,13 @@
     },
     "gopls": {
       "command": "gopls",
-      "filetypes": [
-        "go",
-        "gomod",
-        "gowork"
-      ],
-      "rootPatterns": [
-        "go.mod",
-        "go.work",
-        ".git"
-      ]
+      "filetypes": ["go", "gomod", "gowork"],
+      "rootPatterns": ["go.mod", "go.work", ".git"]
     },
     "pyright": {
       "command": "pyright-langserver",
-      "args": [
-        "--stdio"
-      ],
-      "filetypes": [
-        "python"
-      ],
+      "args": ["--stdio"],
+      "filetypes": ["python"],
       "rootPatterns": [
         "pyproject.toml",
         "setup.py",
@@ -109,29 +87,20 @@
         }
       }
     },
-    "vtsls": {
-      "command": "vtsls",
-      "args": [
-        "--stdio"
-      ],
+    "tsgo": {
+      "command": "tsgo",
+      "args": ["--lsp", "--stdio"],
       "filetypes": [
         "javascript",
         "javascriptreact",
         "typescript",
         "typescriptreact"
       ],
-      "rootPatterns": [
-        "tsconfig.json",
-        "jsconfig.json",
-        "package.json",
-        ".git"
-      ]
+      "rootPatterns": ["tsconfig.json", "jsconfig.json", "package.json", ".git"]
     },
     "eslint": {
       "command": "vscode-eslint-language-server",
-      "args": [
-        "--stdio"
-      ],
+      "args": ["--stdio"],
       "filetypes": [
         "javascript",
         "javascriptreact",
