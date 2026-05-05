@@ -392,23 +392,45 @@ nmap <silent> gr <Plug>(coc-references)
 nmap <silent> gn <Plug>(coc-rename)
 xmap <silent> ga <Plug>(coc-codeaction-selected)
 nmap <silent> ga <Plug>(coc-codeaction-selected)
-nmap <silent> <C-i> <Plug>(coc-format)
+" nmap <silent> <C-i> <Plug>(coc-format)
 
 let g:coc_global_extensions = [
   \ 'coc-pairs',
   \ 'coc-json',
   \ 'coc-yaml',
-  \ 'coc-clangd',
-  \ 'coc-pyright',
-  \ 'coc-tsserver',
-  \ 'coc-eslint',
-  \ 'coc-prettier',
   \ ]
 
 hi! CocErrorSign guifg=#d75f5f
 hi! CocErrorHighlight guifg=#d75f5f
 hi! CocWarningSign guifg=#ffaf5f
 hi! CocWarningHighlight guifg=#ffaf5f
+"}}}
+
+" ale{{{
+Plug 'dense-analysis/ale'
+
+let g:ale_linters_explicit = 1
+let g:ale_fixers = {
+      \   'c': ['clang-format'],
+      \   'cpp': ['clang-format'],
+      \   'cuda': ['clang-format'],
+      \   'proto': ['clang-format'],
+      \   'rust': ['rustfmt'],
+      \   'go': ['gofmt'],
+      \   'python': ['ruff_format'],
+      \   'javascript': ['biome'],
+      \   'javascriptreact': ['biome'],
+      \   'typescript': ['biome'],
+      \   'typescriptreact': ['biome'],
+      \   'json': ['biome'],
+      \   'markdown': ['biome'],
+      \}
+
+let g:ale_set_highlights = 0
+let g:ale_floating_window_border = repeat([''], 8)
+let g:ale_disable_lsp = 1
+
+nmap <silent> <C-i> :ALEFix<CR>
 "}}}
 
 call plug#end()

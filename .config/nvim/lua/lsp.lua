@@ -127,7 +127,7 @@ vim.lsp.config("clangd", {
     "--fallback-style=llvm"
   },
   filetypes = { 'c', 'cpp', 'cuda', 'proto' },
-  single_file_support = true,
+  root_markers = { 'compile_commands.json', 'compile_flags.txt', '.clangd', 'CMakeLists.txt', '.git' },
   capabilities = merge_tables(
     {
       textDocument = {
@@ -144,7 +144,7 @@ vim.lsp.config("clangd", {
 vim.lsp.config("rust_analyzer", {
   cmd = { 'rust-analyzer' },
   filetypes = { 'rust' },
-  single_file_support = true,
+  root_markers = { 'Cargo.toml', '.git' },
   settings = {
     ['rust-analyzer'] = {
       imports = {
@@ -175,15 +175,15 @@ vim.lsp.config("rust_analyzer", {
 
 vim.lsp.config("gopls", {
   cmd = { 'gopls' },
-  filetypes = { 'go', 'gomod', 'gowork', 'gotmpl' },
-  single_file_support = true,
+  filetypes = { 'go', 'gomod', 'gowork' },
+  root_markers = { 'go.mod', 'go.work', '.git' },
   capabilities = capabilities,
 })
 
 vim.lsp.config("pyright", {
   cmd = { 'pyright-langserver', '--stdio' },
   filetypes = { 'python' },
-  single_file_support = true,
+  root_markers = { 'pyproject.toml', 'setup.py', 'setup.cfg', 'requirements.txt', '.git' },
   settings = {
     python = {
       analysis = {
@@ -200,9 +200,11 @@ vim.lsp.config("vtsls", {
   cmd = { 'vtsls', '--stdio' },
   filetypes = {
     'javascript',
+    'javascriptreact',
     'typescript',
+    'typescriptreact',
   },
-  single_file_support = true,
+  root_markers = { 'tsconfig.json', 'jsconfig.json', 'package.json', '.git' },
   capabilities = capabilities,
 })
 
@@ -210,8 +212,11 @@ vim.lsp.config("eslint", {
   cmd = { 'vscode-eslint-language-server', '--stdio' },
   filetypes = {
     'javascript',
+    'javascriptreact',
     'typescript',
+    'typescriptreact',
   },
+  root_markers = { 'package.json', '.eslintrc', '.eslintrc.js', '.eslintrc.cjs', '.eslintrc.json', 'eslint.config.js', 'eslint.config.mjs', '.git' },
   workspace_required = true,
   settings = {
     validate = 'on',
