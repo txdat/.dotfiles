@@ -301,17 +301,17 @@ nnoremap <silent> <C-c> ciw
 "}}}
 
 " plugins{{{
-
 packadd! editorconfig
 packadd! comment
 
 call plug#begin()
-
-" Plug 'tpope/vim-surround'
+Plug 'junegunn/fzf.vim'
+Plug 'neoclide/coc.nvim', {'branch': 'master', 'do': 'npm ci'}
+Plug 'dense-analysis/ale'
+call plug#end()
+"}}}
 
 " fzf{{{
-Plug 'junegunn/fzf.vim'
-
 let g:fzf_vim = {}
 "let g:fzf_vim.command_prefix = 'Fzf'
 "let g:fzf_layout = { 'window': { 'width': 1.0, 'height': 1.0, 'relative': v:true } }
@@ -364,8 +364,6 @@ nnoremap <silent> <leader>fb :Buffers<CR>
 "}}}
 
 " coc{{{
-Plug 'neoclide/coc.nvim', {'branch': 'master', 'do': 'npm ci'}
-
 function! CheckBackspace() abort
   let col = col('.') - 1
   return !col || getline('.')[col - 1]  =~# '\s'
@@ -407,7 +405,14 @@ hi! CocWarningHighlight guifg=#ffaf5f
 "}}}
 
 " ale{{{
-Plug 'dense-analysis/ale'
+function! PrettierFmt(buffer) abort
+  return {
+    \ 'command': 'prettierd %s',
+    \ 'read_buffer': 1,
+    \ }
+endfunction
+
+execute ale#fix#registry#Add('prettierfmt', 'PrettierFmt', ['javascript', 'javascriptreact', 'typescript', 'typescriptreact', 'json', 'markdown'], 'format with prettierd')
 
 let g:ale_linters_explicit = 1
 let g:ale_fixers = {
@@ -418,12 +423,12 @@ let g:ale_fixers = {
       \   'rust': ['rustfmt'],
       \   'go': ['gofmt'],
       \   'python': ['ruff_format'],
-      \   'javascript': ['prettier'],
-      \   'javascriptreact': ['prettier'],
-      \   'typescript': ['prettier'],
-      \   'typescriptreact': ['prettier'],
-      \   'json': ['prettier'],
-      \   'markdown': ['prettier'],
+      \   'javascript': ['prettierfmt'],
+      \   'javascriptreact': ['prettierfmt'],
+      \   'typescript': ['prettierfmt'],
+      \   'typescriptreact': ['prettierfmt'],
+      \   'json': ['prettierfmt'],
+      \   'markdown': ['prettierfmt'],
       \}
 
 let g:ale_set_highlights = 0
@@ -431,7 +436,4 @@ let g:ale_floating_window_border = repeat([''], 8)
 let g:ale_disable_lsp = 1
 
 nmap <silent> <C-i> :ALEFix<CR>
-"}}}
-
-call plug#end()
 "}}}
