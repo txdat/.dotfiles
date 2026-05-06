@@ -46,8 +46,11 @@ Gap: <why missed>
 
 1. **Minimal** — root cause only
 2. **Debug** — `// DEBUG` for temp logs; remove before commit
-3. **Verify** — repro + module tests
-4. **Regression** — `should_not_<bug>_when_<trigger>`; fails unfixed, passes fixed
+3. **Verify** — repro + module tests pass
+4. **Regression** — write `should_not_<bug>_when_<trigger>`; confirm fails unfixed, passes fixed; measure coverage on changed files (stack commands: see `/dev:execute-feature`):
+   - `≥ 95%` → `✅ pass`
+   - `90%–94%` → `⚠️` — log uncovered lines in fix log, continue
+   - `< 90%` → `❌` — log in fix log with reason (untestable/generated code, unreachable branches, external deps), continue
 
 Append to plan if exists:
 ```
