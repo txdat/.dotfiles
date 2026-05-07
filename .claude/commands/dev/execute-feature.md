@@ -8,7 +8,7 @@ effort: medium
 Find plan from $ARGUMENTS or status `approved`/`in-progress`. Set `in-progress`. Read `CLAUDE.md`.
 Partial: `<name> from <N>` → start at N; `<name> <N>` → run only N. No `// TODO` — if blocked, say so.
 
-## Dependency Analysis
+## Execution Strategy
 
 Independent (different files, no shared state) → parallel. Sequential (shared files/deps) → ordered.
 Agent: `rapid-coder` if pattern exists, no edge cases, no security; else `dedicated-coder`.
@@ -49,6 +49,18 @@ Per changed file, derive `<stem>` (no extension): `fd -t f '<stem>' | rg 'test|s
 ## Scope Creep
 
 Discovered work → STOP. Log in `## Discovered Scope` with estimated effort. Ask: include / separate / skip?
+
+## Dependents Check
+
+After all GREEN + BLUE steps: for each modified symbol callable outside its own file (exported, public, non-private):
+`rg -n '<symbol>' --type <lang> . | rg -v 'test|spec|_test'`
+For each caller: signature-compatible? contract unchanged? Output:
+```
+Dependents: <symbol>
+  ✅ <file:line> — compatible
+  ❌ <file:line> — <what broke>
+```
+Any `❌` → STOP. Log in `## Discovered Scope`. Ask: fix inline / separate task / skip?
 
 ## Completion
 
