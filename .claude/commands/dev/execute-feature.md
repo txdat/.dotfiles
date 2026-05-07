@@ -17,9 +17,11 @@ Agent: `rapid-coder` if pattern exists, no edge cases, no security; else `dedica
 
 Phases in order: RED → GREEN → BLUE.
 
-**RED** (sequential, selected agent): feature/fix → write test, confirm FAILS `🔴`; refactor → confirm existing tests PASS first.
+**RED** (sequential, selected agent): feature/fix → write test, confirm FAILS `🔴`; refactor → confirm existing tests PASS first. Failure must come from absent or wrong implementation — not a malformed assertion. If a companion stub is needed, it must not return the expected value; panic, throw, or raise a not-implemented error for the language — or leave the body empty.
 
-**GREEN** (selected agent): ≤3 steps or all sequential → run inline. Otherwise write `/tmp/claude-ctx-<slug>.md`:
+**GREEN** (selected agent): Implementation must be correct for all valid inputs. Never special-case test inputs (`if input == test_value: return expected`, hardcoded lookup tables). Violation → STOP immediately, report the fake impl to the user, wait for explicit guidance.
+
+≤3 steps or all sequential → run inline. Otherwise write `/tmp/claude-ctx-<slug>.md`:
 ```
 Plan: <path> | Stack: <detected> | Standards: <CLAUDE.md>
 Constraints: ONLY assigned steps. No TODO. Run ONLY assigned tests. Scope creep → STOP.

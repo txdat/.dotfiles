@@ -48,7 +48,7 @@ Gap: <why missed>
 2. **Debug** — `// DEBUG` for temp logs; remove before commit
 3. **Verify** — repro + module tests pass
 4. **Dependents** — for each changed symbol: `rg -n '<symbol>' --type <lang> . | rg -v 'test|spec|_test'`; confirm no caller depends on old signature or behavior; output `✅ <file:line>` or `❌ <file:line> — <what broke>`; any `❌` → fix inline before proceeding; append affected callers to fix log entry
-5. **Regression** — write `should_not_<bug>_when_<trigger>`; confirm fails unfixed, passes fixed; measure coverage on changed files (stack commands: see `/dev:execute-feature`):
+5. **Regression** — write `should_not_<bug>_when_<trigger>`. Confirm `🔴` unfixed: failure must be caused by the missing fix, not a bad assertion. Confirm `🟢` fixed: implementation must be correct for all valid inputs — no hardcoded returns or special-casing of test input; violation → STOP, report fake impl, wait for explicit guidance. Measure coverage on changed files (stack commands: see `/dev:execute-feature`):
    - `≥ 95%` → `✅ pass`
    - `90%–94%` → `⚠️` — log uncovered lines in fix log, continue
    - `< 90%` → `❌` — log in fix log with reason (untestable/generated code, unreachable branches, external deps), continue
