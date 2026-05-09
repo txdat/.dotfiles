@@ -1,15 +1,7 @@
----
-name: dev-execute-plan
-description: "Execute an approved plan with strict TDD sequencing and scope control."
-model: gpt-5.3-codex
-effort: high
----
+# /execute-feature — Implement the Approved Plan
 
-
-# /dev:execute-plan — Implement the Approved Plan
-
-Find plan from $ARGUMENTS or status `approved`/`in-progress`. Set `in-progress`. Read `CODEX.md`.
-Partial: `<name> from <N>` → start at N; `<name> <N>` → run only N. No `// TODO`. If blocked, STOP and report blocker with evidence.
+Find plan from $ARGUMENTS or status `approved`/`in-progress`. Set `in-progress`. Read project config file (CLAUDE.md/CODEX.md/GEMINI.md/AGENTS.md).
+Partial: `<name> from <N>` → start at N; `<name> <N>` → run only N. No `// TODO` — if blocked, say so.
 
 ## Execution Strategy
 
@@ -24,24 +16,24 @@ Phases in order: RED → GREEN → BLUE.
 
 **GREEN** (selected agent): Implementation must be correct for all valid inputs. Never special-case test inputs (`if input == test_value: return expected`, hardcoded lookup tables). Violation → STOP immediately, report the fake impl to the user, wait for explicit guidance.
 
-≤3 steps or all sequential → run inline. Otherwise write `/tmp/codex-ctx-<slug>.md`:
+≤3 steps or all sequential → run inline. Otherwise write `/tmp/ai-ctx-<slug>.md`:
 ```
-Plan: <path> | Stack: <detected> | Standards: <CODEX.md>
+Plan: <path> | Stack: <detected>
 Constraints: ONLY assigned steps. No TODO. Run ONLY assigned tests. Scope creep → STOP.
 ```
-Spawn per batch: "Read /tmp/codex-ctx-<slug>.md. Steps: N,M. Files: <list>. Off-limits: <others>. Tests: <names>. Report: completed, passing, coverage%, blockers." → `🟢 Step N: <done> (coverage: X%)`
+Spawn per batch: "Read /tmp/ai-ctx-<slug>.md. Steps: N,M. Files: <list>. Off-limits: <others>. Tests: <names>. Report: completed, passing, coverage%, blockers." → `🟢 Step N: <done> (coverage: X%)`
 
 **Coverage** (per GREEN/BLUE step):
 - `≥ 95%` → `✅ pass`
 - `90%–94%` → `⚠️` — log uncovered lines in `## Coverage Gaps`, continue
-- `< 90%` → `❌` — log in `## Coverage Gaps` with reason (untestable/generated code, unreachable branches, external deps), continue
+- `< 90%` → `❌` — log in `## Coverage Gaps` with reason (untestable/generated code, unreachable branches, external deps), then STOP — ask: fix now / accept gap / split
 
 **BLUE** (after all GREEN steps, inline): selected agent refactors → `code-quality-auditor` verifies no behavior changes `🔵` → re-run coverage on BLUE-touched files; same targets apply
 
 ### Per-step Test Scope (GREEN + BLUE)
 
-Scope to changed files only — never the full suite.
-Per changed file, derive `<stem>` (no extension): `fd -t f '<stem>' | rg 'test|spec'`; fallback: `rg -l '(import|require|#include).*<stem>'` in test dirs. If none found: log `❌ no test file — <file>` in `## Coverage Gaps`, continue.
+Scope GREEN/BLUE verification to changed files only — never the full suite during individual steps.
+Per changed file, derive `<stem>` (no extension): `fd -t f '<stem>' | rg 'test|spec'`; fallback: `rg -l '(import|require|#include).*<stem>'` in test dirs. If none found: log `❌ no test file — <file>` in `## Coverage Gaps`, then STOP — ask: add test now / accept gap / split.
 
 | Stack | Command |
 |---|---|
@@ -69,4 +61,4 @@ Any `❌` → STOP. Log in `## Discovered Scope`. Ask: fix inline / separate tas
 
 ## Completion
 
-All `[x]` → lint + build + tests → status `implemented` → suggest `/dev:review-code`. Surface `## Coverage Gaps` in the summary if non-empty.
+All `[x]` → lint + build + targeted tests (full suite only if convention or blast radius warrants) → status `implemented` → suggest the review-code skill. Surface `## Coverage Gaps` if non-empty.

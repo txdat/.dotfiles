@@ -1,16 +1,8 @@
----
-name: dev-make-infra-plan
-description: "Create and approve an infrastructure change plan with preflight, verification, and rollback."
-model: gpt-5.3-codex
-effort: medium
----
-
-
-# /dev:make-infra-plan — Infrastructure Plan Creation & Approval
+# /design-infra — Infrastructure Change Planning
 
 Warn if active infra plan exists. Filename: `docs/plans/<basename>_<date>_infra_<slug>.md`.
 
-Read `CODEX.md`. Do NOT apply infrastructure changes. Read-only OK (`terraform show`, `kubectl get`).
+Read project config file (CLAUDE.md/CODEX.md/GEMINI.md/AGENTS.md). No apply. Read-only OK (`terraform show`, `kubectl get`).
 
 **Drift detection**: compare live vs config. If drift → add sync step first.
 

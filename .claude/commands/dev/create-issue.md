@@ -2,14 +2,4 @@
 model: haiku
 ---
 
-# /create-issue — Standalone GitHub Issue
-
-For plan-linked issues, use `/dev:design-feature` instead.
-
-Collect from $ARGUMENTS or ask: title (required), description, labels, milestone.
-
-```bash
-gh issue create --title "..." --body "..." [--label "..."] [--milestone "..."]
-```
-
-Print issue URL.
+Read `~/.ai-shared/dev/create-issue.md` and follow all instructions exactly.

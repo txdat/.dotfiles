@@ -1,20 +1,12 @@
----
-name: dev-review-plan
-description: "Review and tighten an existing plan before execution."
-model: gpt-5.3-codex
-effort: high
----
-
-
-# /dev:review-plan — Review Existing Plan
+# /review-feature — Review Feature Plan
 
 If `skip approval` context — auto-apply changes, auto-create sub-issues.
 
 Do NOT write code.
 
-Find plan from $ARGUMENTS or by status `planning`/`approved`. If unfamiliar areas, suggest `/dev:explore`.
+Find plan from $ARGUMENTS or by status `planning`/`approved`/`blocked-by-architecture`. If unfamiliar areas, suggest the explore skill.
 
-Read plan + `CODEX.md`. Apply edits only after explicit approval unless `skip approval` mode is active.
+Read plan + project config file (CLAUDE.md/CODEX.md/GEMINI.md/AGENTS.md).
 
 ## Review
 
@@ -39,4 +31,4 @@ Flag: undefined terms, missing constraints, edge cases, assumptions. One follow-
 - ⚠️ Suggestions: N
 - `<path>`
 
-Ask: "Apply?" If `planning` + resolved → `approved`. Print: "Plan approved. Run /dev:execute-plan."
+Ask: "Apply?" If `planning` or `blocked-by-architecture` + resolved → `approved`. Print: "Plan approved. Run the execute-feature skill."

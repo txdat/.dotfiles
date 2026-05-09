@@ -1,19 +1,9 @@
 ---
 name: dev-create-issue
-description: "Create a standalone GitHub issue. Use make-plan for plan-linked issues."
+description: "Create a standalone GitHub issue. Use design-feature for plan-linked issues."
 model: gpt-5.4-mini
 effort: medium
 ---
 
-
-# /dev:create-issue — Standalone GitHub Issue
-
-For plan-linked issues, use `/dev:make-plan` instead.
-
-Collect from $ARGUMENTS or ask: title (required), description, labels, milestone.
-
-```bash
-gh issue create --title "..." --body "..." [--label "..."] [--milestone "..."]
-```
-
-Print issue URL.
+Read `~/.ai-shared/dev/create-issue.md` and follow all instructions exactly.
+Your project config file is `CODEX.md`.
