@@ -1,35 +1,31 @@
 ---
+name: dev-explore
+description: "Explore a codebase area and report entry points, flow, patterns, and gotchas."
 model: gpt-5.4-mini
-description: Explore a codebase area and summarize findings for planning.
+effort: medium
 ---
 
-# /explore — Codebase Exploration
 
-Target from $ARGUMENTS (feature, module, file, or question) or ask. Read `CODEX.md`; if present, also read `~/.codex/CODEX.md`.
+# /dev:explore — Codebase Exploration
 
-Goal: structured findings summary to inform planning or debugging. Do NOT modify any files.
+Target from $ARGUMENTS or ask. Read `CODEX.md`. Do NOT modify files.
 
 ## Area Decomposition
 
-Identify distinct codebase areas the target spans (e.g. auth layer, API handlers, DB models).
+Identify distinct areas (e.g. auth, API, DB). Single area → explore inline.
 
-If single area → explore directly without spawning.
-
-Otherwise, write shared context to `/tmp/codex-ctx-<slug>.md`:
+Otherwise, write to `/tmp/codex-ctx-<slug>.md`:
 ```
 Target: <feature/module/question>
-Stack: <detected stack>
-Standards: <key points from CODEX.md>
-Constraints: Read-only — do NOT modify any files. Report findings only.
+Stack: <detected>
+Standards: <from CODEX.md>
+Constraints: Read-only. Report findings only.
 ```
 
-Spawn parallel `code-explorer` subagents — one per area. Prompt template:
+Spawn parallel `code-explorer` per area:
 ```
-Read `/tmp/codex-ctx-<slug>.md` first — follow Constraints exactly.
-
-Explore area: <name>.
-Use `rg`/`fd` to locate entry points, then read key files to map definitions, usage, and flow.
-Report: entry points (file:line), key files, data flow, patterns, gotchas, open questions.
+Read `/tmp/codex-ctx-<slug>.md` first.
+Explore: <area>. Report: entry points, key files, data flow, patterns, gotchas.
 ```
 
 ## Output
@@ -46,14 +42,14 @@ Report: entry points (file:line), key files, data flow, patterns, gotchas, open 
 ### Data Flow
 <input → transform → output>
 
-### Patterns in This Area
-- <pattern>: <where it's used>
+### Patterns
+- <pattern>: <where>
 
 ### Gotchas
-- <non-obvious constraint or known issue>
+- <constraint or issue>
 
 ### Open Questions
-- <anything unclear before planning>
+- <unclear before planning>
 ```
 
 Print: "Exploration complete."

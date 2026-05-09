@@ -1,72 +1,43 @@
 ---
+name: dev-orchestrate
+description: "Run the end-to-end dev cycle: explore, plan, execute, review, recap, and PR."
 model: gpt-5.3-codex
-description: Run the full development cycle from exploration to PR.
 effort: high
 ---
 
+
 # /dev:orchestrate — Full Development Cycle
 
-Flow: **explore → plan → execute → review → recap → pr**
+**explore → plan → execute → review → recap → pr**
 
-`$ARGUMENTS`: `<requirement or issue #>` — append `from <step>` to resume, `skip approval` for unattended run.
-Steps: `explore` · `plan` · `execute` · `review` · `recap` · `pr`
+`$ARGUMENTS`: `<requirement>` — append `from <step>` to resume, `skip approval` for unattended run.
 
-Read `CODEX.md`; if present, also read `~/.codex/CODEX.md`.
+Read `CODEX.md` before starting. Do not run phases out of order unless resuming with `from <step>`.
 
 ## Entry Point
 
-If `from <step>` not provided, auto-detect resume point from plan status in `docs/plans/`:
+Determine starting phase from `from <step>` or auto-detect from existing plan file (`.plan.md`, `PLAN.md`, etc.):
 
-| Plan status | Resume from |
-|-------------|-------------|
-| none / not found | `explore` |
-| `planning` | `plan` |
-| `approved` / `in-progress` | `execute` |
-| `implemented` | `review` |
-| `reviewed` | `recap` |
-| `pr-created` | **STOP** — cycle complete unless user specifies a step |
+| Plan status | Start from |
+|-------------|------------|
+| none / not found | explore |
+| planning | plan |
+| approved / in-progress | execute |
+| implemented | review |
+| reviewed | recap |
+| pr-created | **STOP** — PR already exists |
 
 ## Flow Control
 
-**Normal mode**: PAUSE after each phase — print summary, ask user to confirm before proceeding. Stop if no.
+**Normal mode**: PAUSE after each phase — ask user to confirm before proceeding.
 
-**`skip approval` mode**: No pauses. Auto-approve internal prompts (issue creation, plan changes, fixes). Proceed to next phase immediately after completion.
+**`skip approval` mode**: No pauses. Auto-approve internal prompts (issue creation, plan changes, fixes). Proceed to next phase immediately.
 
-## Phase: explore
+## Phases
 
-Follow `/dev:explore` logic on `<requirement or issue #>`. Output structured findings.
-
-**→ PAUSE** — print findings summary. Ask: "Proceed to planning?"
-
-## Phase: plan
-
-If a plan at `Status: planning` exists → follow `/dev:review-plan` logic to approve it.
-Otherwise → follow `/dev:make-plan` logic to create and approve a new plan.
-
-Outputs plan at `Status: approved`.
-
-**→ PAUSE** — print plan summary. Ask: "Proceed to execution?"
-
-## Phase: execute
-
-Follow `/dev:execute-plan` logic — TDD RED→GREEN→BLUE, all steps `[x]`.
-
-**→ PAUSE** — print completion summary. Ask: "Proceed to code review?"
-
-## Phase: review
-
-Follow `/dev:review-code` logic. If REWORK REQUIRED: fix blocking issues inline, re-review before proceeding.
-
-**→ PAUSE** — print review report. Ask: "Proceed to recap?"
-
-## Phase: recap
-
-Follow `/dev:recap` logic.
-
-**→ PAUSE** — Ask: "Create PR?"
-
-## Phase: pr
-
-Follow `/dev:create-pr` logic. Default `--draft`; pass `ready` in arguments to open directly.
-
-Print PR URL and finish.
+1. **explore** → `/dev:explore`
+2. **plan** → existing plan? `/dev:review-plan` : `/dev:make-plan`
+3. **execute** → `/dev:execute-plan` (RED→GREEN→BLUE)
+4. **review** → `/dev:review-code` — if rework needed, fix inline and re-review
+5. **recap** → `/dev:recap`
+6. **pr** → `/dev:create-pr` — print PR URL and finish

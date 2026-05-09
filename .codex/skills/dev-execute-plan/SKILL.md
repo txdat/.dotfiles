@@ -1,81 +1,72 @@
 ---
+name: dev-execute-plan
+description: "Execute an approved plan with strict TDD sequencing and scope control."
 model: gpt-5.3-codex
-description: Implement an approved plan with TDD and verification.
 effort: high
 ---
 
-# /execute-plan — Implement the Approved Plan
 
-Plans directory: `docs/plans/`. Find plan from $ARGUMENTS (full/partial name) or auto-discover by status `approved`/`in-progress`. If multiple, ask. If none, stop.
+# /dev:execute-plan — Implement the Approved Plan
 
-Gate: status must be `approved` or `in-progress`. Set status to `in-progress`. Read `CODEX.md`; if present, also read `~/.codex/CODEX.md` for coding standards.
+Find plan from $ARGUMENTS or status `approved`/`in-progress`. Set `in-progress`. Read `CODEX.md`.
+Partial: `<name> from <N>` → start at N; `<name> <N>` → run only N. No `// TODO`. If blocked, STOP and report blocker with evidence.
 
-Partial runs: `/dev:execute-plan <name> from <N>` starts at step N; `/dev:execute-plan <name> <N>` runs only step N.
+## Execution Strategy
 
-No placeholders — if something can't be done, say so; never write `// TODO`.
+Independent (different files, no shared state) → parallel. Sequential (shared files/deps) → ordered.
+Agent: `rapid-coder` if pattern exists, no edge cases, no security; else `dedicated-coder`.
 
-## Dependency Analysis
+## TDD Execution
 
-Classify each Implementation Step:
-- **Independent**: touches different files, no shared state → parallel batch
-- **Sequential**: shares files or depends on prior output → ordered between batches
+Phases in order: RED → GREEN → BLUE.
 
-Per batch, select agent:
-- **`rapid-coder`**: existing pattern confirmed via `rg`/`fd`, no edge cases, no security sensitivity
-- **`dedicated-coder`**: no existing pattern, edge cases present, security/external integrations
-- Mixed or uncertain → `dedicated-coder`
+**RED** (sequential, selected agent): feature/fix → write test, confirm FAILS `🔴`; refactor → confirm existing tests PASS first. Failure must come from absent or wrong implementation — not a malformed assertion. If a companion stub is needed, it must not return the expected value; panic, throw, or raise a not-implemented error for the language — or leave the body empty.
 
-## TDD Three-Phase Execution
+**GREEN** (selected agent): Implementation must be correct for all valid inputs. Never special-case test inputs (`if input == test_value: return expected`, hardcoded lookup tables). Violation → STOP immediately, report the fake impl to the user, wait for explicit guidance.
 
-**Phase 1 — RED** (main agent, sequential):
-- *Feature/fix*: write each test, run it, confirm FAILS. Passing test = implementation exists — fix or remove it. Mark `[x]`. Print `🔴 Test N: <what it verifies>`.
-- *Refactor*: run existing tests, confirm ALL PASS before touching code. Add characterization tests if coverage insufficient. Mark `[x]`. Print `🔴 Coverage confirmed: <area>`.
-
-**Phase 2 — GREEN**:
-
-If ≤3 steps total or all steps sequential → implement on main agent, skip spawning.
-
-Otherwise, write shared context to `/tmp/codex-ctx-<slug>.md`:
+≤3 steps or all sequential → run inline. Otherwise write `/tmp/codex-ctx-<slug>.md`:
 ```
-Plan: <path>
-Stack: <detected stack>
-Standards: <key points from CODEX.md>
-
-Constraints:
-- Implement ONLY your assigned steps. Touch NO other files.
-- No placeholders. Never write `// TODO`. If blocked, stop and report.
-- Run ONLY tests for your assigned steps. Never the full suite.
-- Scope creep: STOP and report; do not implement.
-- TDD: assigned tests must be RED before you write code; verify GREEN after.
+Plan: <path> | Stack: <detected> | Standards: <CODEX.md>
+Constraints: ONLY assigned steps. No TODO. Run ONLY assigned tests. Scope creep → STOP.
 ```
+Spawn per batch: "Read /tmp/codex-ctx-<slug>.md. Steps: N,M. Files: <list>. Off-limits: <others>. Tests: <names>. Report: completed, passing, coverage%, blockers." → `🟢 Step N: <done> (coverage: X%)`
 
-For each independent batch, spawn the selected subagent with this prompt:
-```
-Read `/tmp/codex-ctx-<slug>.md` first — follow Constraints exactly.
+**Coverage** (per GREEN/BLUE step):
+- `≥ 95%` → `✅ pass`
+- `90%–94%` → `⚠️` — log uncovered lines in `## Coverage Gaps`, continue
+- `< 90%` → `❌` — log in `## Coverage Gaps` with reason (untestable/generated code, unreachable branches, external deps), continue
 
-Assigned steps: N, M, ...
-Files in scope: <list>
-Off-limits (do NOT touch): <files owned by other batches>
-Tests to pass: <test names for assigned steps>
+**BLUE** (after all GREEN steps, inline): selected agent refactors → `code-quality-auditor` verifies no behavior changes `🔵` → re-run coverage on BLUE-touched files; same targets apply
 
-Report: steps completed, tests passing, blockers.
-```
+### Per-step Test Scope (GREEN + BLUE)
 
-Sequential steps run on the main agent between batches.
+Scope to changed files only — never the full suite.
+Per changed file, derive `<stem>` (no extension): `fd -t f '<stem>' | rg 'test|spec'`; fallback: `rg -l '(import|require|#include).*<stem>'` in test dirs. If none found: log `❌ no test file — <file>` in `## Coverage Gaps`, continue.
 
-Print `🟢 Step N: <what was implemented>` as each completes.
-
-**Phase 3 — BLUE** (main agent, after all batches complete):
-Scope strictly to code written in Phase 2 — do NOT touch pre-existing code. Remove duplication, improve naming, simplify — no behavior changes. Re-run targeted tests. Print `🔵 Refactor: <what was cleaned up>`.
-
-## Test Commands
-
-Maven `mvn test -pl <module> -Dtest=<Class>` · Go `go test ./<pkg>/...` · Python `pytest <path> -q` · TypeScript `npm test -- --testPathPattern=<file>`
+| Stack | Command |
+|---|---|
+| Maven | `mvn test -pl <mod> -Dtest=<Class>` |
+| Go | `go test -run <TestName> -coverprofile=c.out ./<pkg>/... && go tool cover -func=c.out \| grep <changed_file>` |
+| Python | `pytest <test_files> -q --cov=<changed_module> --cov-report=term-missing` |
+| TS/Jest | `npm test -- --testPathPattern=<test_file> --coverage --coverageReporters=text --collectCoverageFrom='["<changed_file>"]'` |
+| C++ | `cmake -DCMAKE_CXX_FLAGS=--coverage .. && ctest --test-dir build -R <test>` then `gcov -n <changed_src>` (GCC) or `llvm-cov report <bin> --sources <changed_src>` (Clang) |
 
 ## Scope Creep
 
-Discovered work not in the plan: STOP. Log under `## Discovered Scope` with size (small/medium/large). Ask: include, separate task, or skip?
+Discovered work → STOP. Log in `## Discovered Scope` with estimated effort. Ask: include / separate / skip?
+
+## Dependents Check
+
+After all GREEN + BLUE steps: for each modified symbol callable outside its own file (exported, public, non-private):
+`rg -n '<symbol>' --type <lang> . | rg -v 'test|spec|_test'`
+For each caller: signature-compatible? contract unchanged? Output:
+```
+Dependents: <symbol>
+  ✅ <file:line> — compatible
+  ❌ <file:line> — <what broke>
+```
+Any `❌` → STOP. Log in `## Discovered Scope`. Ask: fix inline / separate task / skip?
 
 ## Completion
 
-All steps `[x]`: run lint + build + targeted tests per `CODEX.md` — never the full suite. Update status to `implemented`. Suggest: `/dev:review-code`.
+All `[x]` → lint + build + tests → status `implemented` → suggest `/dev:review-code`. Surface `## Coverage Gaps` in the summary if non-empty.

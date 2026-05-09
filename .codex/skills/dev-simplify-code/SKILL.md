@@ -1,31 +1,31 @@
 ---
+name: dev-simplify-code
+description: "Simplify code without changing behavior."
 model: gpt-5.3-codex
-description: Simplify existing code without changing behavior.
 effort: high
 ---
 
-# /simplify-code — Simplify Existing Code
 
-Target from $ARGUMENTS (file, function, or module) or ask. Read target code plus `CODEX.md`; if present, also read `~/.codex/CODEX.md`.
+# /dev:simplify-code — Simplify Existing Code
 
-Do NOT add features, fix bugs, or change behavior. Scope: simplification only.
+Target from $ARGUMENTS or ask. Read target + `CODEX.md`.
 
-## Parallel Analysis
+Scope: simplification only. No features, bug fixes, or behavior changes.
 
-If single file → analyze directly without spawning.
+## Analysis
 
-Otherwise, write shared context to `/tmp/codex-ctx-<slug>.md`:
+Single file → analyze inline. Otherwise, write to `/tmp/codex-ctx-<slug>.md`:
 ```
-Standards: <key points from CODEX.md>
-Scope: simplification only — no features, no bug fixes, no behavior changes
+Standards: <from CODEX.md>
+Scope: simplification only
 ```
 
-Spawn parallel `code-explorer` subagents — one per file. Each prompt: "Read /tmp/codex-ctx-<slug>.md first. Analyze <file>. Find: dead code (unused vars, unreachable branches, commented-out blocks) · redundant logic (duplicate conditions, re-computed values, unnecessary wrappers) · premature abstractions (one-impl interfaces, single-use helpers) · over-engineering (patterns that don't earn their complexity). Per finding: file:line, why it simplifies, simpler form."
+Spawn `code-explorer` per file: "Read /tmp/codex-ctx-<slug>.md. Analyze <file>. Find: dead code · redundant logic · premature abstractions · over-engineering. Per finding: file:line, why, simpler form."
 
 ## Apply
 
-Aggregate findings. Present before editing. Ask: "Apply all / pick / skip?"
+Present findings. Ask: "Apply all / pick / skip?"
 
-Apply approved changes. Run targeted tests — if any fail, revert that change and report.
+Apply approved inline. Run targeted tests — if fail, revert and report.
 
-Print: what was simplified, lines removed, test status.
+Print: simplified, lines removed, test status.

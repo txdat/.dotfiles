@@ -1,18 +1,19 @@
 ---
+name: dev-create-issue
+description: "Create a standalone GitHub issue. Use make-plan for plan-linked issues."
 model: gpt-5.4-mini
-description: Create a standalone GitHub issue from a short prompt.
+effort: medium
 ---
 
-# /create-issue — Create Standalone GitHub Issue
 
-For plan-linked issues, use `/dev:make-plan` — it creates and links an issue automatically.
+# /dev:create-issue — Standalone GitHub Issue
 
-For issues not tied to a plan: bugs, spikes, discussions, quick tasks.
+For plan-linked issues, use `/dev:make-plan` instead.
 
-Collect from $ARGUMENTS or ask: title, description, labels, milestone (all optional except title).
+Collect from $ARGUMENTS or ask: title (required), description, labels, milestone.
 
 ```bash
 gh issue create --title "..." --body "..." [--label "..."] [--milestone "..."]
 ```
 
-Print: issue URL.
+Print issue URL.

@@ -1,98 +1,64 @@
 ---
+name: dev-make-plan
+description: "Create and approve a feature/fix/refactor plan before implementation."
 model: gpt-5.3-codex
-description: Create and approve a development plan with TDD structure.
 effort: high
 ---
 
-# /make-plan — Plan Creation & Approval
 
-Plans directory: `docs/plans/`. Warn and ask if an `approved` or `in-progress` plan already exists. If the codebase area is unfamiliar, suggest running `/dev:explore` first.
+# /dev:make-plan — Plan Creation & Approval
 
-Filename: `docs/plans/<basename $PWD>_<yyyy-mm-dd>_<type>_<slug>.md` — slug from $ARGUMENTS, max 5 words, hyphenated. Determine `<type>`: `feature` (new capability), `fix` (bug), `refactor` (structural change, no behavior change).
+`skip approval` → auto-approve. Warn if active plan exists. Unfamiliar area → suggest `/dev:explore`.
 
-Read project `CODEX.md`; if present, also read `~/.codex/CODEX.md` before proceeding. Do NOT write any code.
+Filename: `docs/plans/<basename>_<date>_<type>_<slug>.md`. Type: feature/fix/refactor.
 
-## Phase 1 — Draft
+Read `CODEX.md`. Do NOT write code. Ask for explicit approval before plan status transitions when not in `skip approval` mode.
 
-Ask clarifying questions grouped by concern (scope, boundaries, constraints, edge cases, definition of done). Up to 3 rounds maximum.
+## Draft
 
-Write the plan in this exact structure:
+Clarify: scope, constraints, edge cases, done. Up to 3 rounds.
 
 ```
 # Task: <name>
-Status: planning
-Type: <type>
-Issue:
+Status: planning | Type: <type> | Issue:
 
 ## Requirement
-<one paragraph — what problem is being solved and why>
+<problem and why>
 
 ## Scope
-### In scope
-### Out of scope
+In: <items>
+Out: <items>
 
 ## Design Decisions
-| Decision | Options Considered | Chosen | Reason |
+| Decision | Options | Chosen | Reason |
 
 ## Risk Flags
 - [ ] <risk>: <mitigation>
 
-## Implementation Checklist
+## Test Steps
+- [ ] Test 1: <what> — verifies <invariant>
 
-### Test Steps (written before any implementation)
-For feature/fix: failing tests that verify new behavior.
-For refactor: coverage/characterization tests that pass before AND after.
-- [ ] Test 1: <what is tested> — verifies <invariant>
+## Implementation Steps
+- [ ] Step 1: <what> — makes Test 1 pass
 
-### Implementation Steps (implement to make tests pass)
-- [ ] Step 1: Implement <what> — makes Test 1 pass
-
-## Out of Scope (explicit)
-Items considered during planning but deliberately excluded — future sessions must not re-litigate these.
-- <item>: <why excluded>
+## Out of Scope
+- <item>: <why>
 ```
 
-Checklist rules: each step = one verifiable unit of work; dependency-ordered (step N never requires step N+1); target 5–10 total steps; Test Steps before Implementation Steps. If steps exceed 10, stop — propose a split before continuing.
+Rules: 5–10 steps, dependency-ordered, Tests before Impl, every Impl refs a Test. >10 → propose split.
 
-Merge redundant steps; every Implementation Step must reference a Test Step.
+**TDD gate**: Test Steps non-empty, all Impl refs Test.
 
-**TDD gate**: validate `### Test Steps` non-empty and every Implementation Step references a Test Step before saving. Add missing test steps if needed, re-confirm before saving.
+Save. Show: name, type, requirement, counts, path.
 
-Save draft. Show brief:
-- Task name, Type
-- Requirement: <1-line summary>
-- Test Steps: N | Implementation Steps: N
-- Risk Flags: N
-- `<path>`
+Ask: "Changes?" then "Create issue?" → `gh issue create`, update `Issue:` field.
 
-Ask: "Any changes before review?" Apply approved edits in place.
+## Review
 
-Ask: "Create a GitHub issue for this plan?" If yes:
-```bash
-gh issue create --title "<Task name>" --body "<Requirement paragraph>"
-```
-Update `Issue:` field with created issue number.
+Checks: requirement measurable, scope explicit, design has alternatives, risks actionable, steps ordered.
 
-## Phase 2 — Review & Approve
+**TDD (blocking)**: feature/fix → failing tests; refactor → coverage tests.
 
-Review the saved plan:
-- **Requirement**: clear problem statement, measurable definition of done
-- **Scope**: in/out explicit, no hidden assumptions
-- **Design decisions**: alternatives considered, reasoning stated
-- **Risks**: each has actionable mitigation
-- **Steps**: dependency-ordered; each verifiable
+Flag ambiguities. One round max. Show: Verdict, Blocking N, Suggestions N.
 
-Flag ambiguities: undefined terms, missing constraints, unaddressed edge cases. If unresolvable, ask — one round maximum.
-
-**TDD compliance (blocking)** — validate content by type:
-- *Feature/fix*: each Test Step describes a new failing test
-- *Refactor*: each Test Step describes coverage/characterization tests that pass before and after
-
-Show:
-- Verdict: READY | NEEDS CHANGES
-- ❌ Blocking: N (titles only)
-- ⚠️ Suggestions: N (titles only)
-
-Ask: "Apply these changes?" Apply approved fixes. Set `Status: approved`.
-
-Print: "Plan approved at `<path>`."
+Ask: "Apply?" → set `approved`, print path.
