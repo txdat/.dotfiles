@@ -434,6 +434,13 @@ let g:ale_fixers = {
 let g:ale_set_highlights = 0
 let g:ale_floating_window_border = repeat([''], 8)
 let g:ale_disable_lsp = 1
+let g:ale_sign_error = ''
+let g:ale_sign_warning = ''
+let g:ale_sign_info = ''
+
+hi ALEErrorSign guibg=NONE guifg=red
+hi ALEWarningSign guibg=NONE guifg=orange
+hi ALEInfoSign guibg=NONE guifg=cyan
 
 nmap <silent> <C-i> :ALEFix<CR>
 "}}}
