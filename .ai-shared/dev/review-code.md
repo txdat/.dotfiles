@@ -10,7 +10,7 @@ Review in three sequential phases. For each phase: note positives, flag blocking
 
 **Phase A — Correctness + TDD**: matches plan; edge cases handled; no silent exceptions; failure paths covered; tests exist for new logic
 
-**Phase B — Architecture + Data**: project config layering respected; no framework leaks; parameterized queries; transactions and concurrency correct
+**Phase B — Architecture + Data**: project config layering respected; no framework leaks; context boundaries respected (no domain concepts leaking across); parameterized queries; transactions and concurrency correct
 
 **Phase C — Scope + Hygiene**: no out-of-plan changes; no debug logs, stray TODOs, or secrets
 

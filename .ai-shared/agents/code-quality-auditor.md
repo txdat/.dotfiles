@@ -25,7 +25,7 @@ Find real problems in priority order: logic → security → architecture → qu
 
 **Security:** inputs validated · no secrets in logs · injection prevented · auth enforced · errors don't leak
 
-**Architecture:** follows project config · no framework leaks · separation maintained
+**Architecture:** follows project config · no framework leaks · separation maintained · context boundaries respected (no domain concepts leaking across)
 
 **Quality:** naming conventions · no duplication · no over-engineering · async/null handled
 

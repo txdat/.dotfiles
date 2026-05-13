@@ -16,6 +16,7 @@ Status: draft | Date: <date>
 Current: <how it works>
 Pain: <issue> → <impact>
 Constraints: <what> — <why non-negotiable>
+Contexts: <bounded contexts affected> — <current integration style between them>
 Success: <metric> <target> (baseline: <current>)
 ```
 
@@ -27,13 +28,14 @@ Generate 2-4 options:
 ## Option <N>: <name>
 <description>
 
-| Dimension  | L/M/H | Notes |
-|------------|-------|-------|
-| Complexity |       |       |
-| Migration  |       |       |
-| Ops cost   |       |       |
-| Team fit   |       |       |
-| Rollback   |       |       |
+| Dimension        | L/M/H | Notes |
+|------------------|-------|-------|
+| Complexity       |       |       |
+| Migration        |       |       |
+| Ops cost         |       |       |
+| Team fit         |       |       |
+| Rollback         |       |       |
+| Context coupling |       |       |
 
 Failure modes: <failure> → <detection> → <recovery>
 Dependencies: <system>: <change>
@@ -47,6 +49,9 @@ Ask: "Agree with recommendation?"
 Chosen: Option <N> — <1-2 sentence rationale>
 Trade-offs accepted: <trade-off> — <why>
 Rejected: <Option X> — <reason>
+Contracts:
+  <context-a> → <context-b>: <event or call> — invariant: <what must hold across the boundary>
+  no boundary changes
 ```
 
 ## Phase 4 — Migration Strategy

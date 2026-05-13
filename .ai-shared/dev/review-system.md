@@ -4,11 +4,11 @@ Find doc from $ARGUMENTS or latest `docs/architecture/`. Read doc + project conf
 
 ## Review Checklist
 
-**Problem**: pain quantified, constraints justified, success measurable
+**Problem**: pain quantified, constraints justified, success measurable, `Contexts` field filled (affected bounded contexts + integration style)
 
-**Options**: ≥2 viable, trade-offs honest, failure modes specific, dependencies identified
+**Options**: ≥2 viable, trade-offs honest, failure modes specific, dependencies identified, context coupling rated
 
-**Decision**: rationale traces to trade-offs, rejected options have reasons
+**Decision**: rationale traces to trade-offs, rejected options have reasons, `Contracts` block specifies invariants per affected boundary (or "no boundary changes")
 
 **Migration**: phases deployable independently, each has rollback, dual-run realistic, cutover trigger objective
 
@@ -16,7 +16,7 @@ Find doc from $ARGUMENTS or latest `docs/architecture/`. Read doc + project conf
 
 ## Flags
 
-**Blocking:** missing failure mode for critical path, no rollback for destructive phase, circular dependency, unmeasurable success
+**Blocking:** missing failure mode for critical path, no rollback for destructive phase, circular dependency, unmeasurable success, undefined contracts on a changed boundary
 
 **Warning:** single option, phase >2 weeks without checkpoint, team unfamiliar with key components
 
