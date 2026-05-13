@@ -10,7 +10,7 @@ Agent: `rapid-coder` if pattern exists, no edge cases, no security; else `dedica
 
 ## TDD Execution
 
-Phases in order: RED → GREEN → BLUE.
+Phases in order: RED 🔴 → GREEN 🟢 → BLUE 🔵.
 
 **RED** (sequential, selected agent): feature/fix → write test, confirm FAILS `🔴`; refactor → confirm existing tests PASS first. Failure must come from absent or wrong implementation — not a malformed assertion. If a companion stub is needed, it must not return the expected value; panic, throw, or raise a not-implemented error for the language — or leave the body empty.
 
