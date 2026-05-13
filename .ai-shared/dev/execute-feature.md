@@ -6,7 +6,7 @@ Partial: `<name> from <N>` → start at N; `<name> <N>` → run only N. No `// T
 ## Execution Strategy
 
 Independent (different files, no shared state) → parallel. Sequential (shared files/deps) → ordered.
-Agent: `rapid-coder` if pattern exists, no edge cases, no security; else `dedicated-coder`.
+Agent: `rapid-engineer` if pattern exists, no edge cases, no security; else `dedicated-engineer`.
 
 ## TDD Execution
 

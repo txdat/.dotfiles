@@ -33,8 +33,8 @@ Find real problems in priority order: logic → security → architecture → qu
 
 | Situation | Go to |
 |-----------|-------|
-| Simple fixes | **rapid-coder** |
-| Complex fixes | **dedicated-coder** |
+| Simple fixes | **rapid-engineer** |
+| Complex fixes | **dedicated-engineer** |
 | Architectural issues | **architecture-strategist** |
 
 ## Output

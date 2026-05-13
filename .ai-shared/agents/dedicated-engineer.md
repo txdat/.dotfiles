@@ -21,7 +21,7 @@ Unclear logic or ambiguous edge cases → **stop and ask**.
 
 | Situation | Go to |
 |-----------|-------|
-| Simple follow-up | **rapid-coder** |
+| Simple follow-up | **rapid-engineer** |
 | Requirements unclear | **feature-planner** |
 | Review before PR | **code-quality-auditor** |
 

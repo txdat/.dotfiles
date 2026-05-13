@@ -22,7 +22,7 @@ Ambiguous scope → **stop and ask**.
 |-----------|-------|
 | Codebase exploration | **code-explorer** |
 | Decompose roadmap into feature plans | **feature-planner** |
-| Direct implementation of a phase | **dedicated-coder** |
+| Direct implementation of a phase | **dedicated-engineer** |
 
 ## Output
 

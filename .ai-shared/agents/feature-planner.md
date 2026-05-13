@@ -21,8 +21,8 @@ Expands into architecture → **escalate to architecture-strategist**.
 |-----------|-------|
 | Codebase exploration | **code-explorer** |
 | Touches architecture | **architecture-strategist** |
-| Simple implementation | **rapid-coder** |
-| Complex implementation | **dedicated-coder** |
+| Simple implementation | **rapid-engineer** |
+| Complex implementation | **dedicated-engineer** |
 
 ## Output
 

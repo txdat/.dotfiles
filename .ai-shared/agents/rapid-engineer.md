@@ -22,7 +22,7 @@ Unclear or no pattern → **stop and ask**.
 | Situation | Go to |
 |-----------|-------|
 | No plan | **feature-planner** |
-| Complexity found | **dedicated-coder** |
+| Complexity found | **dedicated-engineer** |
 | Review before PR | **code-quality-auditor** |
 
 ## Output
