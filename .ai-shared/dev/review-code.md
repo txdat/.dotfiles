@@ -8,7 +8,7 @@ Resolve `<base>` per GUIDELINES. Run: `git diff <base> --stat`, `git diff <base>
 
 Review in three sequential phases. For each phase: note positives, flag blocking issues, classify non-blocking items.
 
-**Phase A — Correctness + TDD**: matches plan; edge cases handled; no silent exceptions; failure paths covered; tests exist for new logic
+**Phase A — Correctness + TDD**: matches plan; edge cases handled; no silent exceptions; failure paths covered. If plan has `## Test Cases`: every TC has a corresponding test (matched by `<test_fn_name>`); each test's setup/call/assertion aligns with the TC's Given/When/Then; no additional behavioral test cases beyond plan TCs unless logged in `## Discovered Scope`.
 
 **Phase B — Architecture + Data**: project config layering respected; no framework leaks; context boundaries respected (no domain concepts leaking across); parameterized queries; transactions and concurrency correct
 

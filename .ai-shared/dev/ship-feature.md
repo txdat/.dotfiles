@@ -1,6 +1,6 @@
 # /ship-feature — Full Feature Cycle
 
-**explore → plan → execute → review → recap → pr**
+**explore → plan → execute → review-code → recap → pr**
 
 `$ARGUMENTS`: `<requirement>` — append `from <step>` to resume, `skip approval` for unattended run.
 
@@ -15,7 +15,7 @@ Determine starting phase from `from <step>` or auto-detect from existing plan fi
 | none / not found | explore |
 | planning / blocked-by-architecture | plan |
 | approved / in-progress | execute |
-| implemented | review |
+| implemented | review-code |
 | reviewed | recap |
 | pr-created | **STOP** — PR already exists |
 
@@ -28,8 +28,8 @@ Determine starting phase from `from <step>` or auto-detect from existing plan fi
 ## Phases
 
 1. **explore** → explore skill
-2. **plan** → existing plan? review-feature skill : design-feature skill
+2. **plan** → no plan file → design-feature skill (draft); plan exists with status `planning`/`blocked-by-architecture` → review-feature skill
 3. **execute** → execute-feature skill (RED→GREEN→BLUE)
-4. **review** → review-code skill — if rework needed, fix inline and re-review
+4. **review-code** → review-code skill — if rework needed, fix inline and re-review
 5. **recap** → recap skill
 6. **pr** → create-pr skill — print PR URL and finish

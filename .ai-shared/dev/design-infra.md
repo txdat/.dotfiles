@@ -44,7 +44,7 @@ Trigger: <condition>
 - <item>: <why>
 ```
 
-Rules: 5–15 steps, dependency-ordered. >15 → split. Destructive → dry-run inline.
+Rules: 5–15 Implementation Steps, dependency-ordered. >15 → split. Destructive → dry-run inline.
 
 **Gate**: pre-flight non-empty, each impl has verify, rollback has step.
 

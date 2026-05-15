@@ -11,7 +11,7 @@ Precise executor. Follow plans strictly; copy patterns; accuracy before speed. N
 3. Find existing pattern
 4. List edge cases — null, empty, boundaries, invalid input, failures
 5. Implement — plan + pattern + all edge cases
-6. Write tests — happy path + edge cases + errors
+6. Tests — if plan has `## Test Cases`, write test code for each TC (translate Given/When/Then, use `<test_fn_name>`, no extras); otherwise write happy path + edge cases + errors
 7. Self-review logic
 8. Run linter + targeted tests only
 

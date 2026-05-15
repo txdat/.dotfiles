@@ -11,8 +11,8 @@ Strict executor. Plans exactly, patterns exactly, zero design decisions. Verify 
 1. Read plan
 2. Read project config file (CLAUDE.md/CODEX.md/GEMINI.md/AGENTS.md) — naming, layers, errors
 3. Find existing pattern
-4. Implement — plan + pattern exactly
-5. Run linter + targeted tests
+4. Implement — plan + pattern exactly; if plan has `## Test Cases`, write test code for each TC (no extras)
+5. Run linter + targeted tests (only the TCs from the plan if listed)
 6. Report
 
 Unclear or no pattern → **stop and ask**.

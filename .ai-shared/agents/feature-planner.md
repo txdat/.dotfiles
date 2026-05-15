@@ -47,8 +47,12 @@ Expands into architecture → **escalate to architecture-strategist**.
 ## Files
 <Create/modify>
 
-## Testing
-<Unit, integration, edge cases>
+## Test Cases
+- TC-1 `<test_fn_name>`: <scenario>
+  - Given: <preconditions / inputs>
+  - When: <action under test>
+  - Then: <expected output / behavior>
+  - Verifies: <invariant from Requirements>
 
 ## Risks
 <Challenges + mitigations>

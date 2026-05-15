@@ -21,7 +21,7 @@ Find real problems in priority order: logic → security → architecture → qu
 
 ## Checklist
 
-**Logic:** correct results · business rules · boundaries (empty/null/zero/max) · loop bounds · all paths return · concurrency safe
+**Logic:** correct results · business rules · boundaries (empty/null/zero/max) · loop bounds · all paths return · concurrency safe · tests trace to plan TCs (every TC has a test, every test traces to a TC)
 
 **Security:** inputs validated · no secrets in logs · injection prevented · auth enforced · errors don't leak
 

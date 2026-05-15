@@ -12,7 +12,10 @@ Agent: `rapid-engineer` if pattern exists, no edge cases, no security; else `ded
 
 Phases in order: RED 🔴 → GREEN 🟢 → BLUE 🔵.
 
-**RED** (sequential, selected agent): feature/fix → write test, confirm FAILS `🔴`; refactor → confirm existing tests PASS first. Failure must come from absent or wrong implementation — not a malformed assertion. If a companion stub is needed, it must not return the expected value; panic, throw, or raise a not-implemented error for the language — or leave the body empty.
+**RED** (sequential, selected agent):
+- Feature/fix: translate each `## Test Cases` entry from the plan into test code — Given→setup, When→call, Then→assertion, function name from TC's `<test_fn_name>`. Do NOT redesign, merge, split, or invent cases. Ambiguous or missing field → STOP and ask. Then confirm each FAILS `🔴`.
+- Refactor: translate each TC into test code the same way, then confirm all PASS first (baseline).
+- Failure must come from absent or wrong implementation — not a malformed assertion. If a companion stub is needed, it must not return the expected value; panic, throw, or raise a not-implemented error for the language — or leave the body empty.
 
 **GREEN** (selected agent): Implementation must be correct for all valid inputs. Never special-case test inputs (`if input == test_value: return expected`, hardcoded lookup tables). Violation → STOP immediately, report the fake impl to the user, wait for explicit guidance.
 
@@ -21,7 +24,7 @@ Phases in order: RED 🔴 → GREEN 🟢 → BLUE 🔵.
 Plan: <path> | Stack: <detected>
 Constraints: ONLY assigned steps. No TODO. Run ONLY assigned tests. Scope creep → STOP.
 ```
-Spawn per batch: "Read /tmp/ai-ctx-<slug>.md. Steps: N,M. Files: <list>. Off-limits: <others>. Tests: <names>. Report: completed, passing, coverage%, blockers." → `🟢 Step N: <done> (coverage: X%)`
+Spawn per batch: "Read /tmp/ai-ctx-<slug>.md. Steps: N,M. Files: <list>. Off-limits: <others>. TCs: TC-N,TC-M. Report: completed, TCs passing, coverage%, blockers." → `🟢 Step N: <done> (TC-N,TC-M ✅, coverage: X%)`
 
 **Coverage** (per GREEN/BLUE step):
 - `≥ 95%` → `✅ pass`

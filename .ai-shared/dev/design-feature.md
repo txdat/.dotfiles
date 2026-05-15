@@ -27,19 +27,26 @@ Out: <items>
 ## Risk Flags
 - [ ] <risk>: <mitigation>
 
-## Test Steps
-- [ ] Test 1: <what> — verifies <invariant>
+## Test Cases
+- [ ] TC-1 `<test_fn_name>`: <scenario>
+  - Given: <preconditions / inputs>
+  - When: <action under test>
+  - Then: <expected output / behavior>
+  - Verifies: <invariant from Requirement>
 
 ## Implementation Steps
-- [ ] Step 1: <what> — makes Test 1 pass
+- [ ] Step 1: <what> — satisfies TC-1[, TC-2]
 
 ## Out of Scope
 - <item>: <why>
 ```
 
-Rules: 5–10 steps, dependency-ordered, Tests before Impl, every Impl refs a Test. >10 → propose split.
+Rules: 5–10 Implementation Steps, dependency-ordered. Every Impl refs ≥1 TC-N; every TC referenced by ≥1 Impl. >10 → propose split.
 
-**TDD gate** (blocking): Test Steps non-empty, all Impl refs Test. Feature/fix → failing tests; refactor → coverage tests.
+**TDD gate** (blocking):
+- Feature/fix: ≥1 TC; every TC has all four fields (Given/When/Then/Verifies); TCs describe new behavior that will initially fail.
+- Refactor: TCs pin existing behavior to preserve (must pass before and after); Given/When/Then describe current behavior, Verifies cites the invariant kept intact.
+- Bidirectional refs: every Impl → ≥1 TC-N; every TC → ≥1 Impl.
 
 Save. Show: name, type, requirement, counts, path.
 

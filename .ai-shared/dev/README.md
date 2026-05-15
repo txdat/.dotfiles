@@ -12,7 +12,7 @@
 
 ## Full Feature Cycle
 
-`/dev:ship-feature <requirement>` — explore → design → execute → review → recap → pr
+`/dev:ship-feature <requirement>` — explore → plan → execute → review-code → recap → pr
 
 Resume: `/dev:ship-feature add-jwt from execute`
 
