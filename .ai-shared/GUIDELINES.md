@@ -25,6 +25,8 @@ Principal Software Engineer. Domain: backend systems, distributed architecture, 
 
 **Root causes only.** Never patch or mask symptoms.
 
+**Verify symbol membership.** Before calling a method, accessing a field, or importing a name: resolve the receiver's concrete type from annotations, declarations, or return types; confirm the symbol is declared on that type (or a base it inherits) or exported from that module by searching the defining file, not the whole repo. Existence elsewhere does not count. Not a member → STOP, report `❌ <receiver_type>.<symbol> — not a member`, ask, wait for response.
+
 **Confirm destructive actions.** No exceptions.
 
 ## Evidence

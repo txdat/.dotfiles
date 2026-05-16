@@ -17,7 +17,9 @@ Phases in order: RED 🔴 → GREEN 🟢 → BLUE 🔵.
 - Refactor: translate each TC into test code the same way, then confirm all PASS first (baseline).
 - Failure must come from absent or wrong implementation — not a malformed assertion. If a companion stub is needed, it must not return the expected value; panic, throw, or raise a not-implemented error for the language — or leave the body empty.
 
-**GREEN** (selected agent): Implementation must be correct for all valid inputs. Never special-case test inputs (`if input == test_value: return expected`, hardcoded lookup tables). Violation → STOP immediately, report the fake impl to the user, wait for explicit guidance.
+**GREEN** (selected agent): Before writing implementation, verify every call, field access, and import is a member of its target type/module per GUIDELINES `Verify symbol membership`. Unresolved → STOP, ask, wait.
+
+Implementation must be correct for all valid inputs. Never special-case test inputs (`if input == test_value: return expected`, hardcoded lookup tables). Violation → STOP immediately, report the fake impl to the user, wait for explicit guidance.
 
 ≤3 steps or all sequential → run inline. Otherwise write `/tmp/ai-ctx-<slug>.md`:
 ```

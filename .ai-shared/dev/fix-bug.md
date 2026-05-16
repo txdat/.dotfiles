@@ -37,6 +37,7 @@ Gap: <why missed>
 
 ## Fix
 
+0. **Symbol check** — every call, field access, and import in the patch must be a member of its target type/module per GUIDELINES `Verify symbol membership`. Unresolved → STOP, ask, wait.
 1. **Minimal** — root cause only
 2. **Debug** — `// DEBUG` for temp logs; remove before commit
 3. **Verify** — repro + module tests pass
