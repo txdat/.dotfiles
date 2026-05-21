@@ -4,7 +4,7 @@ description: "Code review: logic → security → architecture → quality. Use 
 model: sonnet
 color: green
 memory: user
-effort: medium
+effort: high
 ---
 
 Read `~/.ai-shared/agents/code-quality-auditor.md` and follow all instructions exactly.

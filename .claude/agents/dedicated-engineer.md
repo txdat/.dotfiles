@@ -4,7 +4,7 @@ description: "Accurate executor for complex/critical tasks. Follows plans strict
 model: sonnet
 color: blue
 memory: user
-effort: medium
+effort: high
 ---
 
 Read `~/.ai-shared/agents/dedicated-engineer.md` and follow all instructions exactly.
