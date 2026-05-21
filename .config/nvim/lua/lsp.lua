@@ -196,20 +196,8 @@ vim.lsp.config("pyright", {
   capabilities = capabilities,
 })
 
--- vim.lsp.config("vtsls", {
---   cmd = { 'vtsls', '--stdio' },
---   filetypes = {
---     'javascript',
---     'javascriptreact',
---     'typescript',
---     'typescriptreact',
---   },
---   root_markers = { 'tsconfig.json', 'jsconfig.json', 'package.json', '.git' },
---   capabilities = capabilities,
--- })
-
-vim.lsp.config("tsgo", {
-  cmd = { 'tsgo', '--lsp', '--stdio' },
+vim.lsp.config("vtsls", {
+  cmd = { 'vtsls', '--stdio' },
   filetypes = {
     'javascript',
     'javascriptreact',
@@ -219,6 +207,18 @@ vim.lsp.config("tsgo", {
   root_markers = { 'tsconfig.json', 'jsconfig.json', 'package.json', '.git' },
   capabilities = capabilities,
 })
+
+-- vim.lsp.config("tsgo", {
+--   cmd = { 'tsgo', '--lsp', '--stdio' },
+--   filetypes = {
+--     'javascript',
+--     'javascriptreact',
+--     'typescript',
+--     'typescriptreact',
+--   },
+--   root_markers = { 'tsconfig.json', 'jsconfig.json', 'package.json', '.git' },
+--   capabilities = capabilities,
+-- })
 
 vim.lsp.config("eslint", {
   cmd = { 'vscode-eslint-language-server', '--stdio' },
