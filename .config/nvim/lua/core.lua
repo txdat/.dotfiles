@@ -174,26 +174,26 @@ vim.g.python3_host_prog = require("util").system_cmd("which python3")
 -----------------------------------------
 
 ---@diagnostic disable-next-line: deprecated
-vim.api.nvim_exec([[
-augroup Monokai
-    autocmd!
-    autocmd Colorscheme unokai call s:SetHighlights()
-augroup END
+-- vim.api.nvim_exec([[
+-- augroup Monokai
+--     autocmd!
+--     autocmd Colorscheme unokai call s:SetHighlights()
+-- augroup END
 
-function! s:SetHighlights()
-    highlight Normal guifg=#eee8d5 guibg=#000000
-    highlight NormalFloat guifg=#eee8d5 guibg=#111111
-    highlight VertSplit guibg=NONE
-    highlight StatusLine guifg=#eee8d5 guibg=#111111
-    highlight StatusLineNC guifg=#eee8d5 guibg=#000000
-endfunction
-]], false)
+-- function! s:SetHighlights()
+--     highlight Normal guifg=#eee8d5 guibg=#000000
+--     highlight NormalFloat guifg=#eee8d5 guibg=#111111
+--     highlight VertSplit guibg=NONE
+--     highlight StatusLine guifg=#eee8d5 guibg=#111111
+--     highlight StatusLineNC guifg=#eee8d5 guibg=#000000
+-- endfunction
+-- ]], false)
 
 vim.api.nvim_command([[
 set termguicolors
 filetype plugin indent on
 syntax on
-colorscheme unokai
+colorscheme 2026-dark
 ]])
 
 -----------------------------------------

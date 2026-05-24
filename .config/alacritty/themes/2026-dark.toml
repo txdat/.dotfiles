@@ -1,0 +1,107 @@
+# 2026-dark-alacritty.toml — Alacritty colorscheme
+# Converted from VSCode 2026 Dark theme
+# Source: microsoft/vscode extensions/theme-defaults/themes/2026-dark.json
+# License: MIT
+#
+# Usage: paste into your alacritty.toml, or save separately and import:
+#   [general]
+#   import = ["~/.config/alacritty/themes/2026-dark.toml"]
+
+[colors.primary]
+background    = "#121314"   # editor.background
+foreground    = "#BBBEBF"   # editor.foreground
+dim_foreground = "#8C8C8C"  # descriptionForeground
+
+[colors.cursor]
+text   = "#121314"   # editor.background
+cursor = "#BBBEBF"   # editorCursor.foreground
+
+[colors.vi_mode_cursor]
+text   = "#121314"
+cursor = "#3994BC"   # focusBorder / accent blue
+
+[colors.selection]
+text       = "CellForeground"
+background = "#276782"   # editor.selectionBackground (stripped alpha)
+
+[colors.search.matches]
+foreground = "#BBBEBF"
+background = "#276782"   # editor.findMatchHighlightBackground
+
+[colors.search.focused_match]
+foreground = "#121314"
+background = "#3994BC"   # accent blue
+
+[colors.hints.start]
+foreground = "#121314"
+background = "#ffa657"   # variable / entity.name orange
+
+[colors.hints.end]
+foreground = "#121314"
+background = "#8C8C8C"   # descriptionForeground
+
+[colors.line_indicator]
+foreground = "None"
+background = "None"
+
+[colors.footer_bar]
+foreground = "#bfbfbf"   # foreground
+background = "#2A2B2C"   # border
+
+# ──────────────────────────────────────────────
+# Normal (standard) terminal colors
+#
+# Mapping rationale:
+#   black   -> sidebar/panel bg  (visible dark)
+#   red     -> keyword red       #ff7b72
+#   green   -> tag / git added   #7ee787
+#   yellow  -> variable orange   #ffa657
+#   blue    -> constant blue     #79c0ff
+#   magenta -> function purple   #d2a8ff
+#   cyan    -> string light-blue #a5d6ff
+#   white   -> foreground-dim    #c9d1d9
+# ──────────────────────────────────────────────
+[colors.normal]
+black   = "#191A1B"   # sidebar background
+red     = "#ff7b72"   # keyword
+green   = "#7ee787"   # entity.name.tag / git added
+yellow  = "#ffa657"   # variable / entity.name
+blue    = "#79c0ff"   # constant / support
+magenta = "#d2a8ff"   # entity.name.function
+cyan    = "#a5d6ff"   # string
+white   = "#c9d1d9"   # foreground-dim / variable.other
+
+# ──────────────────────────────────────────────
+# Bright terminal colors
+#
+#   bright black   -> active border/widget bg
+#   bright red     -> invalid / error          #ffa198
+#   bright green   -> git added gutter         #73c991
+#   bright yellow  -> warning                  #e5ba7d
+#   bright blue    -> accent / link            #48A0C7
+#   bright magenta -> diff range               #d2a8ff (bold)
+#   bright cyan    -> string interp / support  #79c0ff
+#   bright white   -> full foreground          #BBBEBF
+# ──────────────────────────────────────────────
+[colors.bright]
+black   = "#2A2B2C"   # border / widget bg
+red     = "#ffa198"   # invalid / error
+green   = "#73c991"   # git added gutter
+yellow  = "#e5ba7d"   # warning / git modified
+blue    = "#48A0C7"   # textLink / list.highlight
+magenta = "#d2a8ff"   # function purple (bright)
+cyan    = "#3994BC"   # accent blue
+white   = "#BBBEBF"   # editor.foreground
+
+# ──────────────────────────────────────────────
+# Dim colors (unfocused terminal)
+# ──────────────────────────────────────────────
+[colors.dim]
+black   = "#121314"   # editor background
+red     = "#c75f5a"   # keyword dimmed
+green   = "#5faa6a"   # tag dimmed
+yellow  = "#c48040"   # variable dimmed
+blue    = "#5a90c0"   # constant dimmed
+magenta = "#a07acc"   # function dimmed
+cyan    = "#7eaaca"   # string dimmed
+white   = "#8C8C8C"   # descriptionForeground

@@ -1,9 +1,5 @@
-[colors]
-draw_bold_text_with_bright_colors = false
-
-[colors.primary]
-background = "#000000"
-foreground = "#eee8d5"
+[general]
+import = ["~/.config/alacritty/themes/2026-dark.toml"]
 
 [cursor]
 unfocused_hollow = true
