@@ -21,6 +21,18 @@ Status: planning | Type: <type> | Issue:
 In: <items>
 Out: <items>
 
+## Impact Analysis
+### Affected Components
+- `<file/module/service>`: <what changes>
+
+### API / Contract Changes
+- Breaking: <yes/no — details>
+- Additive: <yes/no — details>
+
+### Data / Schema
+- Migration needed: <yes/no — details>
+- Rollback plan: <yes/no — details>
+
 ## Design Decisions
 | Decision | Options | Chosen | Reason |
 
@@ -42,6 +54,8 @@ Out: <items>
 ```
 
 Rules: 5–10 Implementation Steps, dependency-ordered. Every Impl refs ≥1 TC-N; every TC referenced by ≥1 Impl. >10 → propose split. Symbols cited in Impl steps must be verified members of their target type/module before the step is written — see GUIDELINES `Verify symbol membership`.
+
+**Impact Analysis:** populate Affected Components from explore Key Files/Entry Points/Data Flow if available; scan only if no explore output exists. Affected Components ≥1 entry; API/Contract Changes and Data/Schema must each be answered.
 
 **TDD gate** (blocking):
 - Feature/fix: ≥1 TC; every TC has all four fields (Given/When/Then/Verifies); TCs describe new behavior that will initially fail.
