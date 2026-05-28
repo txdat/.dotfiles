@@ -27,7 +27,12 @@ setopt share_history
 source ~/.zsh/zsh-autosuggestions/zsh-autosuggestions.zsh
 # fpath=(~/.zsh/zsh-completions/src $fpath)
 
-autoload -Uz compinit && compinit
+autoload -Uz compinit
+if [[ -n "${ZDOTDIR:-$HOME}/.zcompdump"(#qN.mh+24) ]]; then
+    compinit
+else
+    compinit -C
+fi
 # autoload -Uz bashcompinit && bashcompinit
 
 zstyle ':completion:*' matcher-list "m:{a-z}={A-Z}"
@@ -70,19 +75,19 @@ export FZF_DEFAULT_OPTS="
 CONDA_HOME="$HOME/.miniconda"
 
 if [[ -n "$CONDA_HOME" ]]; then
-    __conda_setup="$('$CONDA_HOME/bin/conda' 'shell.zsh' 'hook' 2> /dev/null)"
-    if [ $? -eq 0 ]; then
-        eval "$__conda_setup"
-    else
-        if [ -f "$CONDA_HOME/etc/profile.d/conda.sh" ]; then
-            . "$CONDA_HOME/etc/profile.d/conda.sh"
-        else
-            export PATH="$CONDA_HOME/bin:$PATH"
-        fi
-    fi
-    unset __conda_setup
-
     export PATH="$CONDA_HOME/bin:$PATH"
+
+    conda() {
+        unfunction conda
+        __conda_setup="$("$CONDA_HOME/bin/conda" 'shell.zsh' 'hook' 2>/dev/null)"
+        if [ $? -eq 0 ]; then
+            eval "$__conda_setup"
+        elif [ -f "$CONDA_HOME/etc/profile.d/conda.sh" ]; then
+            . "$CONDA_HOME/etc/profile.d/conda.sh"
+        fi
+        unset __conda_setup
+        conda "$@"
+    }
 fi
 
 export QT_QPA_PLATFORM=xcb
@@ -163,20 +168,19 @@ update_zsh () {
 }
 
 # update system's packages
-update_system () {
-  packages=(
-    'linux'
-    'systemd'
-    'nvidia'
-    'cuda'
-    'cudnn'
-  )
-  ignore_packages=""
-  for pkg in "${packages[@]}"
-  do
-    ignore_packages+="$(pacman -Qq | grep $pkg | tr '\n' ',' | sed 's/,$//'),"
-  done
-  sudo pacman -Syyu --ignore $ignore_packages && paru -Syyu --ignore $ignore_packages
+update_system() {
+  local ignore_packages=""
+
+  if [[ "$1" != "--no-skip" ]]; then
+    local pattern="^(linux|systemd|nvidia|cuda|cudnn)($|-)"
+    ignore_packages=$(pacman -Qq | grep -E "$pattern" | paste -sd, -)
+  fi
+
+  if [[ -n "$ignore_packages" ]]; then
+    sudo pacman -Syyu --ignore "$ignore_packages" && paru -Syyu --ignore "$ignore_packages"
+  else
+    sudo pacman -Syyu && paru -Syyu
+  fi
   flatpak update
 }
 
@@ -184,9 +188,9 @@ update_system () {
 export PATH="$HOME/.google-cloud-sdk/bin:$PATH"
 export USE_GKE_GCLOUD_AUTH_PLUGIN=True
 # The next line updates PATH for the Google Cloud SDK.
-if [ -f '$HOME/.google-cloud-sdk/path.zsh.inc' ]; then . '$HOME/.google-cloud-sdk/path.zsh.inc'; fi
+if [ -f "$HOME/.google-cloud-sdk/path.zsh.inc" ]; then . "$HOME/.google-cloud-sdk/path.zsh.inc"; fi
 # The next line enables shell command completion for gcloud.
-if [ -f '$HOME/.google-cloud-sdk/completion.zsh.inc' ]; then . '$HOME/.google-cloud-sdk/completion.zsh.inc'; fi
+if [ -f "$HOME/.google-cloud-sdk/completion.zsh.inc" ]; then . "$HOME/.google-cloud-sdk/completion.zsh.inc"; fi
 
 # bun completions
 [ -s "/home/txdat/.bun/_bun" ] && source "/home/txdat/.bun/_bun"
@@ -196,5 +200,3 @@ export BUN_INSTALL="$HOME/.bun"
 export PATH="$BUN_INSTALL/bin:$PATH"
 
 
-# Added by Antigravity CLI installer
-export PATH="/home/txdat/.local/bin:$PATH"
