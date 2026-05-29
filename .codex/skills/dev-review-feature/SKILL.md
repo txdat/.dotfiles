@@ -1,7 +1,7 @@
 ---
 name: dev-review-feature
 description: "Review and tighten an existing plan before execution."
-model: gpt-5.3-codex
+model: gpt-5.4
 effort: high
 ---
 

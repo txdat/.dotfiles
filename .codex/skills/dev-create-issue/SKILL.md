@@ -2,7 +2,7 @@
 name: dev-create-issue
 description: "Create a standalone GitHub issue. Use design-feature for plan-linked issues."
 model: gpt-5.4-mini
-effort: medium
+effort: low
 ---
 
 Read `~/.ai-shared/dev/create-issue.md` and follow all instructions exactly.

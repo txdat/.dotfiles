@@ -1,6 +1,5 @@
 ---
 model: haiku
-effort: low
 ---
 
 Delegate this entire task to Codex using the `codex:rescue` skill.

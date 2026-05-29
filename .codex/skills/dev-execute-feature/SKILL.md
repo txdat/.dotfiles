@@ -1,7 +1,7 @@
 ---
 name: dev-execute-feature
 description: "Execute an approved plan with strict TDD sequencing and scope control."
-model: gpt-5.3-codex
+model: gpt-5.4
 effort: high
 ---
 

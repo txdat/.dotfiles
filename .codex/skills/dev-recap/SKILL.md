@@ -1,7 +1,7 @@
 ---
 name: dev-recap
 description: "Capture reusable insights and archive session outcomes after implementation."
-model: gpt-5.3-codex
+model: gpt-5.4
 effort: medium
 ---
 

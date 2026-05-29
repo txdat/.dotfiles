@@ -1,7 +1,7 @@
 ---
 name: dev-ship-feature
 description: "Run the end-to-end dev cycle: explore, plan, execute, review, recap, and PR."
-model: gpt-5.3-codex
+model: gpt-5.4
 effort: high
 ---
 

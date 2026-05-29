@@ -1,7 +1,7 @@
 ---
 name: dev-fix-bug
 description: "Diagnose root cause and apply a minimal, verified bug fix."
-model: gpt-5.3-codex
+model: gpt-5.4
 effort: high
 ---
 
