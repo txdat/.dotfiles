@@ -5,5 +5,5 @@ model: gpt-5.4
 effort: medium
 ---
 
-Read `~/.ai-shared/dev/execute-infra.md` and follow all instructions exactly.
+Read `~/.ai-shared/skills/dev/execute-infra.md` and follow all instructions exactly.
 Your project config file is `CODEX.md`.

@@ -5,5 +5,5 @@ model: gpt-5.4
 effort: high
 ---
 
-Read `~/.ai-shared/dev/review-code.md` and follow all instructions exactly.
+Read `~/.ai-shared/skills/dev/review-code.md` and follow all instructions exactly.
 Your project config file is `CODEX.md`.

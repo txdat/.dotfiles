@@ -5,5 +5,5 @@ model: gpt-5.5
 effort: high
 ---
 
-Read `~/.ai-shared/dev/design-system.md` and follow all instructions exactly.
+Read `~/.ai-shared/skills/dev/design-system.md` and follow all instructions exactly.
 Your project config file is `CODEX.md`.

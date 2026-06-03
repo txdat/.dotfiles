@@ -1,1 +1,1 @@
-Read `~/.ai-shared/dev/README.md` for the full command reference.
+Read `~/.ai-shared/skills/dev/README.md` for the full command reference.

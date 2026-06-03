@@ -5,5 +5,5 @@ model: gpt-5.4
 effort: high
 ---
 
-Read `~/.ai-shared/dev/fix-bug.md` and follow all instructions exactly.
+Read `~/.ai-shared/skills/dev/fix-bug.md` and follow all instructions exactly.
 Your project config file is `CODEX.md`.
