@@ -1,6 +1,6 @@
 # /ship-feature — Full Feature Cycle
 
-**explore → plan → execute → review-code → recap → pr**
+**explore → plan → execute → review-code → pr → recap**
 
 `$ARGUMENTS`: `<requirement>` — append `from <step>` to resume, `skip approval` for unattended run.
 
@@ -8,7 +8,7 @@ Read project config file (CLAUDE.md/CODEX.md/GEMINI.md/AGENTS.md) before startin
 
 ## Entry Point
 
-Determine starting phase from `from <step>` or auto-detect from existing plan file (`.plan.md`, `PLAN.md`, etc.):
+Determine starting phase from `from <step>` or auto-detect from the active plan in `docs/plans/`:
 
 | Plan status | Start from |
 |-------------|------------|
@@ -16,8 +16,9 @@ Determine starting phase from `from <step>` or auto-detect from existing plan fi
 | planning / blocked-by-architecture | plan |
 | approved / in-progress | execute |
 | implemented | review-code |
-| reviewed | recap |
-| pr-created | **STOP** — PR already exists |
+| reviewed | pr |
+| pr-created | recap |
+| archived | **STOP** — already shipped |
 
 ## Flow Control
 
@@ -31,5 +32,5 @@ Determine starting phase from `from <step>` or auto-detect from existing plan fi
 2. **plan** → no plan file → design-feature skill (draft); plan exists with status `planning`/`blocked-by-architecture` → review-feature skill
 3. **execute** → execute-feature skill (RED→GREEN→BLUE)
 4. **review-code** → review-code skill — if rework needed, fix inline and re-review
-5. **recap** → recap skill
-6. **pr** → create-pr skill — print PR URL and finish
+5. **pr** → create-pr skill — print PR URL
+6. **recap** → recap skill — finish

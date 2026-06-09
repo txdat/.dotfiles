@@ -150,7 +150,7 @@ alias npm="TZ=UTC npm"
 alias node="TZ=UTC node"
 alias jest="TZ=UTC NODE_ENV=test ./node_modules/.bin/jest"
 
-alias start_redis="sudo systemctl start docker.service && docker container start valkey"
+alias redis="sudo systemctl start docker.service && docker container start valkey"
 
 # update zsh's plugins
 update_zsh () {

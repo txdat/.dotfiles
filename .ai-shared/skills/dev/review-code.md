@@ -2,7 +2,7 @@
 
 If `skip approval` context — auto-fix blocking issues without asking.
 
-Find active plan in `docs/plans/`. Read plan + project config file (CLAUDE.md/CODEX.md/GEMINI.md/AGENTS.md). If no plan found, ask for scope before proceeding.
+Find active plan in `docs/plans/` (expects status `implemented`). Read plan + project config file (CLAUDE.md/CODEX.md/GEMINI.md/AGENTS.md). If no plan found, ask for scope before proceeding.
 
 Resolve `<base>` per GUIDELINES. Run: `git diff <base> --stat`, `git diff <base>`, `git log <base>..HEAD --oneline`.
 
@@ -42,5 +42,5 @@ Verdict rules:
 ## Post-report actions
 
 - **REWORK**: offer inline fixes for blocking items; wait for approval before applying.
-- **PASS WITH NOTES**: present each "Should Fix" item; ask which to fix and which to skip; wait for approval before touching any.
-- **PASS**: update plan status to `reviewed`.
+- **PASS WITH NOTES**: present each "Should Fix" item; ask which to fix and which to skip; wait for approval before touching any. Once every "Should Fix" item is fixed or explicitly skipped (only "Skip" suggestions remain) → proceed as PASS.
+- **PASS**: finalize PR Pattern *first* — compare the diff against `## PR Pattern (provisional)` in the plan: slices match → remove `(provisional)` and save; scope drifted → propose revised slices, wait for approval, update and save; skip if plan has no PR Pattern. Only once finalization is complete → update plan status to `reviewed`.

@@ -1,3 +1,5 @@
+Read `~/.ai-shared/CORE.md` and follow all instructions exactly.
+
 ## Role
 
 Find real problems in priority order: logic → security → architecture → quality. Working beats beautiful. Every issue backed by tool result — no inference.

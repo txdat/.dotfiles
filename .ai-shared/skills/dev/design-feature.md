@@ -51,6 +51,12 @@ Out: <items>
 
 ## Out of Scope
 - <item>: <why>
+
+## PR Pattern (provisional)
+Type: single | chain
+| # | Branch | Summary |
+|---|--------|---------|
+| 1 | <type>/<slug> | <summary> |
 ```
 
 Rules: 5–10 Implementation Steps, dependency-ordered. Every Impl refs ≥1 TC-N; every TC referenced by ≥1 Impl. >10 → propose split. Symbols cited in Impl steps must be verified members of their target type/module before the step is written — see GUIDELINES `Verify symbol membership`.
@@ -65,5 +71,21 @@ Rules: 5–10 Implementation Steps, dependency-ordered. Every Impl refs ≥1 TC-
 Save. Show: name, type, requirement, counts, path.
 
 Ask: "Changes?" then "Create issue?" → `gh issue create`, update `Issue:` field.
+
+**PR Pattern (final step).** After issue creation, draft the provisional `## PR Pattern` — it records slicing intent and is finalized at review-code time (scope may shift during implementation).
+
+**Single vs. chain:** each slice must be independently mergeable without breaking the app. One deployable unit → `Type: single` (branch `<type>/<slug>`). Otherwise → `Type: chain` (branches `<type>/<slug>-k`, k = 1…N).
+
+**Service boundary:** N independent services → one slice per service, all its layers included. Shared infrastructure → extract as a leading `arch` slice.
+
+**Split axes** (natural boundaries):
+- **migration** — DB migration scripts; always isolated (deployment-order sensitive)
+- **arch** — structural code, no behaviour: DTOs, interfaces, base types, config
+- **feat** — behaviour on top of arch: repositories, services, controllers
+- **l10n** — string/translation-only changes
+- **test** — test-only additions or refactors
+- **chore** — config, deps, tooling
+
+Enumerate every slice upfront — branch + one-line summary each — so the full chain is known before any PR exists. Save.
 
 Output: "Plan drafted. Run the review-feature skill."

@@ -1,36 +1,23 @@
 # /create-pr — Create Pull Request
 
-Plans: `docs/plans/`. Find active plan (`implemented`/`reviewed`). If none, warn and ask for PR scope before proceeding. Read plan when present + project config file (CLAUDE.md/CODEX.md/GEMINI.md/AGENTS.md).
+Plans: `docs/plans/`. Find active plan. **Planned work requires status `reviewed`**: if a plan exists but isn't `reviewed` (e.g. `implemented`), STOP — run `/dev:review-code` first. No plan → warn, ask for PR scope, proceed ad-hoc. Read plan when present + project config file (CLAUDE.md/CODEX.md/GEMINI.md/AGENTS.md).
 
-Resolve `<base>` per GUIDELINES. Record current branch as `<target>`. Always checkout a new branch `<type>/<slug>` (feat/fix/refactor/chore/migration/hotfix) targeting `<target>`.
+Resolve `<base>` per GUIDELINES. Record current branch as `<target>`. Branch names and order come from `## PR Pattern` in the plan (ad-hoc: a single derived branch).
 
-## Scope assessment — single PR vs. chain
+## PR Pattern
 
-Before creating any branch, assess the total diff:
-```bash
-git diff <base>..<target>   # committed changes
-git diff                    # uncommitted changes
-```
-
-If focused → single PR. If it spans multiple concerns, **create a chain** — one focused PR per slice rather than one large PR.
-
-Split axes (pick natural boundaries):
-- **arch** — structural/schema/infra changes without new behaviour
-- **feat** — behaviour built on top of arch
-- **l10n** — string/translation-only changes
-- **test** — test-only additions or refactors
-- **migration** — data or DB migration scripts
-- **chore** — config, deps, tooling
+Read `## PR Pattern` from the active plan:
+- **Finalized** (no `(provisional)` marker) → use it: `single` or `chain`, with the listed branch names and summaries.
+- **Provisional** (unexpected once `reviewed` — review-code finalizes before flipping status) → STOP; run `/dev:review-code` to finalize against the actual diff.
+- **Absent** (no pattern, or no plan) → single ad-hoc PR: one slice, branch `<type>/<slug>` derived from the diff scope.
 
 ## Procedure
 
+`<branch-k>` = branch name in row k of the plan's PR Pattern table (single PR: the sole row, `<type>/<slug>`; chain: `<type>/<slug>-k`; ad-hoc absent pattern: the single derived `<type>/<slug>`, k = 1).
+
 Define `<parent>` per context:
 - Single PR: `<parent>` = `<target>`
-- Chain PR k: `<parent>` = `<type>/<slug>-(k-1)` for k > 1, else `<target>`
-
-### Chain pre-pass (chain only — do before creating any branch)
-
-Enumerate all N slices upfront: assign each a branch name `<type>/<slug>-k` and a one-line summary. This is fully known before PR-1 is created, so PR-1 lists all N rows from the start.
+- Chain PR k: `<parent>` = `<branch-(k-1)>` for k > 1, else `<target>`
 
 ---
 
@@ -38,7 +25,7 @@ For each PR (single = N of 1; chain = repeat for k = 1…N):
 
 **1. Branch** — create if new, switch if already exists:
 ```bash
-git checkout -b <type>/<slug>-k 2>/dev/null || git checkout <type>/<slug>-k
+git checkout -b <branch-k> 2>/dev/null || git checkout <branch-k>
 ```
 
 **2. Commit (if uncommitted changes exist for this slice):**
@@ -78,17 +65,17 @@ git diff <parent>..HEAD | rg -n "^[<>]{7}|^={7}"
 | 3 | feat/foo-3 | — | l10n strings |
 ```
 
-All N rows are present from PR-1 onward (branches known from pre-pass). Bold the current row. Use `—` for links not yet created.
+All N rows are present from PR-1 onward (branches known from the plan's PR Pattern). Bold the current row. Use `—` for links not yet created.
 
 **6. Create:**
 ```bash
 gh pr create --title "..." --body "..." --base <parent> --draft
 ```
 
-**7. Back-fill PR-1 (chain, k > 1 only):** after each PR-k is created, update PR-1's body — fetch its current body, replace the `—` in row k with `#<pr-k-number>`, and push back:
+**7. Back-fill PR-1 (chain, k > 1 only):** after each PR-k is created, update PR-1's body — replace the `—` in `<branch-k>`'s row with `#<pr-k-number>`. Anchor on the exact branch cell `| <branch-k> |` (with pipe boundaries) so prefix-sharing branches don't collide (e.g. `…-1` must not match `…-10`):
 ```bash
 body=$(gh pr view <pr-1-number> --json body -q .body)
-gh pr edit <pr-1-number> --body "${body//<row-k-dash>/#<pr-k-number>}"
+gh pr edit <pr-1-number> --body "$(printf '%s' "$body" | sed "\\#| <branch-k> |# s|—|#<pr-k-number>|")"
 ```
 
 Default `--draft`. Pass `ready` to open directly.
