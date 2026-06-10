@@ -29,7 +29,7 @@ Determine starting phase from `from <step>` or auto-detect from the active plan 
 ## Phases
 
 1. **explore** → explore skill
-2. **plan** → no plan file → design-feature skill (draft); plan exists with status `planning`/`blocked-by-architecture` → review-feature skill
+2. **plan** → no plan file → design-feature skill (draft), then review-feature skill; plan with status `planning`/`blocked-by-architecture` → review-feature skill. Must reach status `approved` before execute.
 3. **execute** → execute-feature skill (RED→GREEN→BLUE)
 4. **review-code** → review-code skill — if rework needed, fix inline and re-review
 5. **pr** → create-pr skill — print PR URL

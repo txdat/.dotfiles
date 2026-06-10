@@ -2,7 +2,7 @@
 
 If `skip approval` context — skip "Anything to capture?" and "Does this look right?", apply automatically.
 
-Find active plan in `docs/plans/` (ship cycle: status `pr-created`). Resolve `<base>` per GUIDELINES. Run `git diff <base> --stat` and `git log <base>..HEAD --oneline`. Capture the PR URL via `gh pr view --json url -q .url` (chain → one per branch; none → omit). Ask: "Anything to capture?"
+Find active plan in `docs/plans/` (ship cycle: status `pr-created`). Resolve `<base>` per CORE. Run `git diff <base> --stat` and `git log <base>..HEAD --oneline`. Capture the PR URL via `gh pr view --json url -q .url` (chain → one per branch; none → omit). Ask: "Anything to capture?"
 
 ## Categories
 

@@ -2,7 +2,7 @@
 
 Plans: `docs/plans/`. Find active plan. **Planned work requires status `reviewed`**: if a plan exists but isn't `reviewed` (e.g. `implemented`), STOP — run `/dev:review-code` first. No plan → warn, ask for PR scope, proceed ad-hoc. Read plan when present + project config file (CLAUDE.md/CODEX.md/GEMINI.md/AGENTS.md).
 
-Resolve `<base>` per GUIDELINES. Record current branch as `<target>`. Branch names and order come from `## PR Pattern` in the plan (ad-hoc: a single derived branch).
+Resolve `<base>` per CORE. PR bases come from `<base>` and the chain order — not the current branch: execute-feature/fix-bug create the slice branches and commit there before this skill runs. Branch names and order come from `## PR Pattern` in the plan (ad-hoc: a single derived branch).
 
 ## PR Pattern
 
@@ -16,16 +16,17 @@ Read `## PR Pattern` from the active plan:
 `<branch-k>` = branch name in row k of the plan's PR Pattern table (single PR: the sole row, `<type>/<slug>`; chain: `<type>/<slug>-k`; ad-hoc absent pattern: the single derived `<type>/<slug>`, k = 1).
 
 Define `<parent>` per context:
-- Single PR: `<parent>` = `<target>`
-- Chain PR k: `<parent>` = `<branch-(k-1)>` for k > 1, else `<target>`
+- Single PR: `<parent>` = `<base>`
+- Chain PR k: `<parent>` = `<branch-(k-1)>` for k > 1, else `<base>`
 
 ---
 
 For each PR (single = N of 1; chain = repeat for k = 1…N):
 
-**1. Branch** — create if new, switch if already exists:
+**1. Branch** — **planned work:** `<branch-k>` must already exist (execute-feature/fix-bug created it from the correct parent) — absent → STOP `❌ <branch-k> missing — run execute-feature/fix-bug first`. **Ad-hoc** (no plan): create from `<base>`. Then switch onto it:
 ```bash
-git checkout -b <branch-k> 2>/dev/null || git checkout <branch-k>
+git rev-parse --verify <branch-k> 2>/dev/null || git checkout -b <branch-k> <base>   # ad-hoc only; planned + missing → STOP above
+git checkout <branch-k>
 ```
 
 **2. Commit (if uncommitted changes exist for this slice):**

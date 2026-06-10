@@ -15,6 +15,7 @@ Read plan + project config file (CLAUDE.md/CODEX.md/GEMINI.md/AGENTS.md).
 - **Design**: alternatives + reasoning
 - **Risks**: actionable mitigations
 - **Steps**: 5–10 Implementation Steps, dependency-ordered. >10 → `❌` propose split
+- **PR Pattern**: present; `Steps` partitions all Implementation Steps (each step in exactly one slice) AND no TC spans slices (every step satisfying a TC is in the same slice → each slice independently green). Gap, overlap, or TC-spanning slice → `❌` (breaks chain execution)
 
 **Split accepted**: new files per sub-plan. If `Issue:` set, ask: "Create sub-issues?"
 

@@ -2,7 +2,7 @@
 
 Modes: `<symptom>` full fix; `diagnose <symptom>` stops before code.
 
-Collect: symptom, expected, repro steps. Resolve `<base>` per GUIDELINES. Run `git log --oneline -20` and `git diff <base> --stat`.
+Collect: symptom, expected, repro steps. Resolve `<base>` per CORE. Run `git log --oneline -20` and `git diff <base> --stat`.
 
 ## Hypothesis Investigation
 
@@ -37,17 +37,18 @@ Gap: <why missed>
 
 ## Fix
 
-0. **Symbol check** — every call, field access, and import in the patch must be a member of its target type/module per GUIDELINES `Verify symbol membership`. Unresolved → STOP, ask, wait.
-1. **Minimal** — root cause only
-2. **Debug** — `// DEBUG` for temp logs; remove before commit
-3. **Verify** — repro + module tests pass
-4. **Dependents** — for each changed symbol: `rg -n '<symbol>' --type <lang> . | rg -v 'test|spec|_test'`; confirm no caller depends on old signature or behavior; output `✅ <file:line>` or `❌ <file:line> — <what broke>`; any `❌` → fix inline before proceeding; append affected callers to fix log entry
-5. **Regression** — if an active plan exists, append a new TC (Given: trigger conditions; When: action; Then: expected non-buggy behavior; Verifies: invariant the bug violated) and implement it using the TC's `<test_fn_name>`. Otherwise write `should_not_<bug>_when_<trigger>`. Confirm `🔴` unfixed: failure must be caused by the missing fix, not a bad assertion. Confirm `🟢` fixed: implementation must be correct for all valid inputs — no hardcoded returns or special-casing of test input; violation → STOP, report fake impl, wait for explicit guidance. Measure coverage on changed files (see the execute-feature skill for stack commands):
+Bugs are single-PR. Branch first from `<base>` (never commit to `<base>` itself): `git checkout -b fix/<slug> <base> 2>/dev/null || git checkout fix/<slug>`; on resume, if it exists, verify `git merge-base --is-ancestor <base> fix/<slug>` — non-zero → STOP `❌ fix/<slug> not based on <base>`.
+
+0. **Symbol check** — every call, field access, and import in the patch must be a member of its target type/module per CORE `Verify symbol membership`. Unresolved → STOP, ask, wait.
+1. **Regression test first (RED)** — write the failing test that reproduces the bug. Active plan → append a new TC (Given: trigger conditions; When: action; Then: expected non-buggy behavior; Verifies: invariant the bug violated) and implement it using the TC's `<test_fn_name>`; otherwise name it `should_not_<bug>_when_<trigger>`. Confirm `🔴`: failure must come from the bug itself, not a bad assertion. Commit before the fix: `git add <test-files> && git commit -m "test(red): <bug>"` (skip if it already exists — resume).
+2. **Minimal fix (GREEN)** — root cause only; remove any `// DEBUG` temp logs before committing. Confirm `🟢`: correct for all valid inputs — no hardcoded returns or special-casing of test input; violation → STOP, report fake impl, wait for explicit guidance. Stage + commit: `git add <impl-files> && git commit -m "fix(<scope>): <summary>"`.
+3. **Verify** — repro + module tests pass. Coverage on changed files (see the execute-feature skill for stack commands):
    - `≥ 95%` → `✅ pass`
    - `90%–94%` → `⚠️` — log uncovered lines in fix log, continue
    - `< 90%` → `❌` — log in fix log with reason (untestable/generated code, unreachable branches, external deps), then STOP — ask: fix now / accept gap / split
+4. **Dependents** — for each changed symbol: `rg -n '<symbol>' --type <lang> . | rg -v 'test|spec|_test'`; confirm no caller depends on old signature or behavior; output `✅ <file:line>` or `❌ <file:line> — <what broke>`; any `❌` → fix inline before proceeding; append affected callers to fix log entry
 
-Append to plan if exists:
+Plan exists → append the Fix block and set status `implemented` (so review-code picks it up):
 ```
 ### Fix: <date> — <symptom>
 Cause: <file:line> | Change: <what> | Test: <name> | Callers: <count> checked, <count> fixed

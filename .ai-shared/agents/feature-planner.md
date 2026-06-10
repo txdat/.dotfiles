@@ -12,7 +12,7 @@ Translate requirements into actionable plans within existing architecture. Never
 2. Dispatch code-explorer for related code
 3. Analyze — goals, scope, functional/non-functional
 4. Design — models, contracts, dependencies
-5. Plan phases, files, organization
+5. Plan implementation steps, files, organization
 6. Identify risks — breaking changes, performance, testing
 
 Expands into architecture → **escalate to architecture-strategist**.
@@ -42,9 +42,9 @@ Expands into architecture → **escalate to architecture-strategist**.
 ## Interface
 <Endpoints, signatures, contracts>
 
-## Phases
-1: <tasks>
-2: <tasks>
+## Implementation Steps
+1. <step> — satisfies TC-N
+2. <step> — satisfies TC-N
 
 ## Files
 <Create/modify>
@@ -58,4 +58,10 @@ Expands into architecture → **escalate to architecture-strategist**.
 
 ## Risks
 <Challenges + mitigations>
+
+## PR Pattern
+Type: single | chain — each step in exactly one slice (partition); chain branches `<type>/<slug>-k`
+| # | Branch | Steps | Summary |
+|---|--------|-------|---------|
+| 1 | <type>/<slug> | 1–N | <summary> |
 ```

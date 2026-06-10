@@ -54,12 +54,12 @@ Out: <items>
 
 ## PR Pattern (provisional)
 Type: single | chain
-| # | Branch | Summary |
-|---|--------|---------|
-| 1 | <type>/<slug> | <summary> |
+| # | Branch | Steps | Summary |
+|---|--------|-------|---------|
+| 1 | <type>/<slug> | 1–N | <summary> |
 ```
 
-Rules: 5–10 Implementation Steps, dependency-ordered. Every Impl refs ≥1 TC-N; every TC referenced by ≥1 Impl. >10 → propose split. Symbols cited in Impl steps must be verified members of their target type/module before the step is written — see GUIDELINES `Verify symbol membership`.
+Rules: 5–10 Implementation Steps, dependency-ordered. Every Impl refs ≥1 TC-N; every TC referenced by ≥1 Impl. >10 → propose split. Symbols cited in Impl steps must be verified members of their target type/module before the step is written — see CORE `Verify symbol membership`.
 
 **Impact Analysis:** populate Affected Components from explore Key Files/Entry Points/Data Flow if available; scan only if no explore output exists. Affected Components ≥1 entry; API/Contract Changes and Data/Schema must each be answered.
 
@@ -86,6 +86,6 @@ Ask: "Changes?" then "Create issue?" → `gh issue create`, update `Issue:` fiel
 - **test** — test-only additions or refactors
 - **chore** — config, deps, tooling
 
-Enumerate every slice upfront — branch + one-line summary each — so the full chain is known before any PR exists. Save.
+Enumerate every slice upfront — branch + `Steps` + one-line summary each — so the full chain is known before any PR exists. Each Implementation Step belongs to exactly one slice (the `Steps` columns partition all steps), AND no TC spans slices — every step satisfying a given TC sits in the same slice, so each slice's TCs pass within that slice alone. execute-feature runs each slice's RED→GREEN over those steps' TCs. Save.
 
 Output: "Plan drafted. Run the review-feature skill."

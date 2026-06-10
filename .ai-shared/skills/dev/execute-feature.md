@@ -6,20 +6,27 @@ Partial: `<name> from <N>` → start at N; `<name> <N>` → run only N. No `// T
 ## Execution Strategy
 
 Independent (different files, no shared state) → parallel. Sequential (shared files/deps) → ordered.
-Agent: `rapid-engineer` if pattern exists, no edge cases, no security; else `dedicated-engineer`.
+Delegation is for parallelism only: sequential or small work runs inline on the main agent; independent steps fan out. When fanning out, pick `rapid-engineer` if pattern exists, no edge cases, no security; else `dedicated-engineer`.
 
 ## TDD Execution
 
 Phases in order: RED 🔴 → GREEN 🟢 → BLUE 🔵.
 
-**RED** (sequential, selected agent):
+**Branch & commit model.** Derive names from the plan's `## PR Pattern`; never commit to `<base>`. Always create from an **explicit** `<parent>` start point (never implicit HEAD); on resume, if the branch already exists, verify ancestry — `git merge-base --is-ancestor <parent> <branch>` non-zero → STOP `❌ <branch> not based on <parent>`. RED/GREEN commits land on the slice branch — create-pr reuses these branches.
+- **Single / ad-hoc** (`Type: single`): `<parent>` = `<base>`. `git checkout -b <type>/<slug> <base> 2>/dev/null || git checkout <type>/<slug>`. Run RED→GREEN once over all `## Test Cases`.
+- **Chain** (`Type: chain`): execute slices in PR-Pattern order. Per slice k, `<parent>` = `<base>` (k=1) else `<type>/<slug>-(k-1)`: `git checkout -b <type>/<slug>-k <parent> 2>/dev/null || git checkout <type>/<slug>-k`, then run RED→GREEN **scoped to that slice's `Steps` → TCs** — its `test(red): <slug>-k` commit precedes its implementation commit(s). Each slice branch is a self-contained RED→GREEN pair.
+
+**RED** (sequential, inline):
 - Feature/fix: translate each `## Test Cases` entry from the plan into test code — Given→setup, When→call, Then→assertion, function name from TC's `<test_fn_name>`. Do NOT redesign, merge, split, or invent cases. Ambiguous or missing field → STOP and ask. Then confirm each FAILS `🔴`.
 - Refactor: translate each TC into test code the same way, then confirm all PASS first (baseline).
 - Failure must come from absent or wrong implementation — not a malformed assertion. If a companion stub is needed, it must not return the expected value; panic, throw, or raise a not-implemented error for the language — or leave the body empty.
+- **RED gate — commit before any implementation:** feature/fix → `git add <test-files> [<stub-files>] && git commit -m "test(red): <scope>"` (chain: `<scope>` = `<slug>-k`), tests + throwing stubs only (no implementation); skip if a `test(red)` commit already exists (resume). Refactor → `git add <test-files> && git commit -m "test: baseline <scope>"` (passing baseline). GREEN must not begin until this commit exists — it is the verifiable proof RED ran.
 
-**GREEN** (selected agent): Before writing implementation, verify every call, field access, and import is a member of its target type/module per GUIDELINES `Verify symbol membership`. Unresolved → STOP, ask, wait.
+**GREEN**: Before writing implementation, verify every call, field access, and import is a member of its target type/module per CORE `Verify symbol membership`. Unresolved → STOP, ask, wait.
 
 Implementation must be correct for all valid inputs. Never special-case test inputs (`if input == test_value: return expected`, hardcoded lookup tables). Violation → STOP immediately, report the fake impl to the user, wait for explicit guidance.
+
+When a step's tests pass, stage and commit the implementation separately from RED: `git add <impl-files> && git commit -m "<type>(<scope>): <summary>"`. Keeps the `test(red)` commit as a standalone, verifiable artifact preceding the implementation.
 
 ≤3 steps or all sequential → run inline. Otherwise write `/tmp/ai-ctx-<slug>.md`:
 ```
@@ -33,7 +40,7 @@ Spawn per batch: "Read /tmp/ai-ctx-<slug>.md. Steps: N,M. Files: <list>. Off-lim
 - `90%–94%` → `⚠️` — log uncovered lines in `## Coverage Gaps`, continue
 - `< 90%` → `❌` — log in `## Coverage Gaps` with reason (untestable/generated code, unreachable branches, external deps), then STOP — ask: fix now / accept gap / split
 
-**BLUE** (after all GREEN steps, inline): selected agent refactors → `code-quality-auditor` verifies no behavior changes `🔵` → re-run coverage on BLUE-touched files; same targets apply
+**BLUE** (after all GREEN steps, inline): main agent refactors → `code-quality-auditor` verifies no behavior changes `🔵` → re-run coverage on BLUE-touched files; same targets apply
 
 ### Per-step Test Scope (GREEN + BLUE)
 
@@ -47,6 +54,7 @@ Per changed file, derive `<stem>` (no extension): `fd -t f '<stem>' | rg 'test|s
 | Python | `pytest <test_files> -q --cov=<changed_module> --cov-report=term-missing` |
 | TS/Jest | `npm test -- --testPathPattern=<test_file> --coverage --coverageReporters=text --collectCoverageFrom='["<changed_file>"]'` |
 | C++ | `cmake -DCMAKE_CXX_FLAGS=--coverage .. && ctest --test-dir build -R <test>` then `gcov -n <changed_src>` (GCC) or `llvm-cov report <bin> --sources <changed_src>` (Clang) |
+| Rust | `cargo llvm-cov -- <TestName> \| rg <changed_file>` |
 
 ## Scope Creep
 
@@ -66,4 +74,4 @@ Any `❌` → STOP. Log in `## Discovered Scope`. Ask: fix inline / separate tas
 
 ## Completion
 
-All `[x]` → lint + build + targeted tests (full suite only if convention or blast radius warrants) → status `implemented` → suggest the review-code skill. Surface `## Coverage Gaps` if non-empty.
+All `[x]` → lint + build + targeted tests (full suite only if convention or blast radius warrants) → status `implemented`. Print: "Implementation complete. Run the review-code skill." Surface `## Coverage Gaps` if non-empty.

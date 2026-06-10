@@ -5,7 +5,7 @@ Universal engineering rules. Loaded by the main session (via `GUIDELINES.md`) an
 ## Code
 **Match before inventing.** Mirror existing patterns and style.
 
-**Minimal footprint.** Every change traces to the request. No adjacent fixes or abstractions. Refactor only when explicitly asked. Remove only what you introduce; leave existing dead code alone. Spotted cleanup → note as an insight, do not apply.
+**Minimal footprint.** Every change traces to the request. No adjacent fixes or abstractions. Refactor only when explicitly asked. Remove only what you introduce; leave existing dead code alone. Spotted cleanup → note it (in your report/insights), do not apply.
 
 **Root causes only.** Never patch or mask symptoms.
 

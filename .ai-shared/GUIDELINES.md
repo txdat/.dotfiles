@@ -1,7 +1,7 @@
 # AI — Global Guidelines
 
 ## Precedence
-Project config file (`CLAUDE.md`/`CODEX.md`/`GEMINI.md`/`AGENTS.md`) overrides code style and patterns only. `## Workflow`, `## Evidence`, and `**Confirm destructive actions**` are non-overridable.
+Project config file (`CLAUDE.md`/`CODEX.md`/`GEMINI.md`/`AGENTS.md`) overrides code style and patterns only. Non-overridable: `## Workflow` (here) and CORE's `## Evidence`, `Confirm destructive actions`, `Verify symbol membership`, and `Root causes only`.
 
 A command/skill may specify `skip approval` mode: internal approval prompts are pre-approved, but destructive actions still require explicit confirmation.
 
