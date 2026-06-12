@@ -15,6 +15,9 @@
   "diagnostic.infoSign": "",
   "diagnostic.hintSign": "",
   "diagnostic.displayByAle": false,
+  "suggest.languageSourcePriority": 10,
+  "coc.source.file.priority": 9,
+  "coc.source.buffer.priority": 8,
   "python.formatting.provider": "black",
   "python.formatting.blackPath": "/home/txdat/.miniconda/bin/black",
   "languageserver": {
