@@ -6,7 +6,7 @@ Target from $ARGUMENTS or ask. Read project config file (CLAUDE.md/CODEX.md/GEMI
 
 Identify distinct areas (e.g. auth, API, DB). Single area → explore inline.
 
-Otherwise, write to `/tmp/ai-ctx-<slug>.md`:
+Otherwise, write to `/tmp/ai-ctx/<slug>.md`:
 ```
 Target: <feature/module/question>
 Stack: <detected>
@@ -16,7 +16,7 @@ Constraints: Read-only. Report findings only.
 
 Spawn parallel `code-explorer` per area:
 ```
-Read `/tmp/ai-ctx-<slug>.md` first.
+Read `/tmp/ai-ctx/<slug>.md` first.
 Explore: <area>. Report: entry points, key files, data flow, patterns, gotchas.
 ```
 

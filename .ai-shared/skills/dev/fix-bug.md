@@ -8,14 +8,14 @@ Collect: symptom, expected, repro steps. Resolve `<base>` per CORE. Run `git log
 
 Generate 3–5 hypotheses ranked by likelihood. ≤2 → investigate sequentially.
 
-Otherwise write `/tmp/ai-ctx-<slug>.md`:
+Otherwise write `/tmp/ai-ctx/<slug>.md`:
 ```
 Symptom: <description> | Expected: <behavior>
 Stack trace: <if any>
 Recent changes: <git log + diff summary>
 ```
 
-Spawn `code-explorer` per hypothesis — prompt: "Read /tmp/ai-ctx-<slug>.md. Investigate: `<hypothesis>`. Return: Verdict (CONFIRMED|ELIMINATED|INCONCLUSIVE), Confidence (high|med|low), Evidence ([+] supports / [-] contradicts, each file:line), Reasoning (1 sentence)."
+Spawn `code-explorer` per hypothesis — prompt: "Read /tmp/ai-ctx/<slug>.md. Investigate: `<hypothesis>`. Return: Verdict (CONFIRMED|ELIMINATED|INCONCLUSIVE), Confidence (high|med|low), Evidence ([+] supports / [-] contradicts, each file:line), Reasoning (1 sentence)."
 
 Select: highest-confidence CONFIRMED. None CONFIRMED → re-investigate top INCONCLUSIVE with deeper scope. All ELIMINATED → regenerate hypotheses.
 

@@ -6,13 +6,13 @@ Scope: simplification only. No features, bug fixes, or behavior changes.
 
 ## Analysis
 
-Single file → analyze inline. Otherwise, write to `/tmp/ai-ctx-<slug>.md`:
+Single file → analyze inline. Otherwise, write to `/tmp/ai-ctx/<slug>.md`:
 ```
 Standards: <from project config>
 Scope: simplification only
 ```
 
-Spawn `code-explorer` per file: "Read /tmp/ai-ctx-<slug>.md. Analyze <file>. Find: dead code · redundant logic · premature abstractions · over-engineering. Per finding: file:line, why, simpler form."
+Spawn `code-explorer` per file: "Read /tmp/ai-ctx/<slug>.md. Analyze <file>. Find: dead code · redundant logic · premature abstractions · over-engineering. Per finding: file:line, why, simpler form."
 
 ## Apply
 

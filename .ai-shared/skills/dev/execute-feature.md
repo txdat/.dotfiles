@@ -35,12 +35,12 @@ Implementation must be correct for all valid inputs. Never special-case test inp
 
 When a step's tests pass, stage and commit the implementation separately from RED: `git add <impl-files> && git commit -m "<type>(<scope>): <summary>"`. Keeps the `test(red)` commit as a standalone, verifiable artifact preceding the implementation.
 
-Delegating per Execution Strategy (a principal-tier step, or an independent junior/senior batch) → write `/tmp/ai-ctx-<slug>.md`:
+Delegating per Execution Strategy (a principal-tier step, or an independent junior/senior batch) → write `/tmp/ai-ctx/<slug>.md`:
 ```
 Plan: <path> | Stack: <detected>
 Constraints: ONLY assigned steps. No TODO. Run ONLY assigned tests. Scope creep → STOP. Plan divergence → STOP and report.
 ```
-Spawn each batch on its tier's agent: "Read /tmp/ai-ctx-<slug>.md. Steps: N,M. Files: <list>. Off-limits: <others>. TCs: TC-N,TC-M. Report: completed, TCs passing, coverage%, blockers." → `🟢 Step N: <done> (TC-N,TC-M ✅, coverage: X%)`
+Spawn each batch on its tier's agent: "Read /tmp/ai-ctx/<slug>.md. Steps: N,M. Files: <list>. Off-limits: <others>. TCs: TC-N,TC-M. Report: completed, TCs passing, coverage%, blockers." → `🟢 Step N: <done> (TC-N,TC-M ✅, coverage: X%)`
 
 **Coverage** (per GREEN/BLUE step):
 - `≥ 95%` → `✅ pass`

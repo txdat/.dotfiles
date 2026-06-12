@@ -27,7 +27,7 @@ Cite file contents, output, or test results. Never memory. If not found, say so.
 
 **Minimize tool calls.** Pipelines over sequences. Avoid redundant calls.
 
-**Subagent context:** Write to `/tmp/ai-ctx-<slug>.md` before spawning. Prompt: "Read `/tmp/ai-ctx-<slug>.md` first, then…"
+**Subagent context:** Write to `/tmp/ai-ctx/<slug>.md` before spawning. Prompt: "Read `/tmp/ai-ctx/<slug>.md` first, then…"
 
 ## Conventions
 **Git credentials.** All git/GitHub actions run under the personal token from `gh auth login` (account `txdat`). Route GitHub ops through `gh`; rely on its stored credential. Never hardcode a token, inject `GITHUB_TOKEN`/`GH_TOKEN`, or use any other account. `gh auth status` not showing `txdat` active → STOP, report, wait.
