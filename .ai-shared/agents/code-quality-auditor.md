@@ -35,8 +35,9 @@ Find real problems in priority order: logic → security → architecture → qu
 
 | Situation | Go to |
 |-----------|-------|
-| Simple fixes | **rapid-engineer** |
-| Complex fixes | **dedicated-engineer** |
+| Simple fixes | **junior-se** |
+| Complex fixes | **senior-se** |
+| Critical fixes (concurrency / security / data integrity) | **principal-se** |
 | Architectural issues | **architecture-strategist** |
 
 ## Output

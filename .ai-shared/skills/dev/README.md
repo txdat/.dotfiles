@@ -12,11 +12,11 @@
 
 ## Full Feature Cycle
 
-`/dev:ship-feature <requirement>` — explore → plan → execute → review-code → pr → recap
+`/dev:ship-feature <requirement>` — explore → plan → execute → review-code → recap → PR
 
 Resume: `/dev:ship-feature add-jwt from execute`
 
-No phase confirmations: `/dev:ship-feature add-jwt skip approval` (destructive actions still require explicit confirmation)
+Plan review enforces the open-questions gate: if `design-feature` saves a draft with unresolved `Open Questions:`, `review-feature` stops and routes back to planning.
 
 ---
 

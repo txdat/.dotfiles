@@ -2,7 +2,7 @@
 
 Cross-cutting changes: polling→events, sync→async, monolith→services, new integrations.
 
-Feature-level → use the design-feature skill. `skip approval` → auto-approve. No code.
+Feature-level → use the design-feature skill. No code.
 
 Filename: `docs/architecture/<date>_<slug>.md`. Read project config file (CLAUDE.md/CODEX.md/GEMINI.md/AGENTS.md).
 

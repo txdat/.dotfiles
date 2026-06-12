@@ -1,6 +1,6 @@
 # /create-pr — Create Pull Request
 
-Plans: `docs/plans/`. Find active plan. **Planned work requires status `reviewed`**: if a plan exists but isn't `reviewed` (e.g. `implemented`), STOP — run `/dev:review-code` first. No plan → warn, ask for PR scope, proceed ad-hoc. Read plan when present + project config file (CLAUDE.md/CODEX.md/GEMINI.md/AGENTS.md).
+Plans: `docs/plans/`. Find active plan. **Planned work requires status `reviewed` or `recapped`**: if a plan exists but isn't `reviewed`/`recapped` (e.g. `implemented`), STOP — run `/dev:review-code` first, then `/dev:recap` for the ship-feature flow. No plan → warn, ask for PR scope, proceed ad-hoc. Read plan when present + project config file (CLAUDE.md/CODEX.md/GEMINI.md/AGENTS.md).
 
 Resolve `<base>` per CORE. PR bases come from `<base>` and the chain order — not the current branch: execute-feature/fix-bug create the slice branches and commit there before this skill runs. Branch names and order come from `## PR Pattern` in the plan (ad-hoc: a single derived branch).
 
@@ -81,4 +81,4 @@ gh pr edit <pr-1-number> --body "$(printf '%s' "$body" | sed "\\#| <branch-k> |#
 
 Default `--draft`. Pass `ready` to open directly.
 
-Print PR URL. Update plan status to `pr-created`. Print: "Run /dev:recap before closing."
+Print PR URL. Update plan status to `archived`. Print: "Feature shipped."

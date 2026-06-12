@@ -23,8 +23,9 @@ Expands into architecture → **escalate to architecture-strategist**.
 |-----------|-------|
 | Codebase exploration | **code-explorer** |
 | Touches architecture | **architecture-strategist** |
-| Simple implementation | **rapid-engineer** |
-| Complex implementation | **dedicated-engineer** |
+| Simple implementation | **junior-se** |
+| Complex implementation | **senior-se** |
+| Critical implementation (concurrency / security / data integrity) | **principal-se** |
 
 ## Output
 

@@ -44,14 +44,15 @@ Bugs are single-PR. Branch first from `<base>` (never commit to `<base>` itself)
 2. **Minimal fix (GREEN)** — root cause only; remove any `// DEBUG` temp logs before committing. Confirm `🟢`: correct for all valid inputs — no hardcoded returns or special-casing of test input; violation → STOP, report fake impl, wait for explicit guidance. Stage + commit: `git add <impl-files> && git commit -m "fix(<scope>): <summary>"`.
 3. **Verify** — repro + module tests pass. Coverage on changed files (see the execute-feature skill for stack commands):
    - `≥ 95%` → `✅ pass`
-   - `90%–94%` → `⚠️` — log uncovered lines in fix log, continue
-   - `< 90%` → `❌` — log in fix log with reason (untestable/generated code, unreachable branches, external deps), then STOP — ask: fix now / accept gap / split
-4. **Dependents** — for each changed symbol: `rg -n '<symbol>' --type <lang> . | rg -v 'test|spec|_test'`; confirm no caller depends on old signature or behavior; output `✅ <file:line>` or `❌ <file:line> — <what broke>`; any `❌` → fix inline before proceeding; append affected callers to fix log entry
+   - `90%–94%` → `⚠️` — log uncovered lines in `## Coverage Gaps` (plan) or the fix report (planless), continue
+   - `< 90%` → `❌` — log in `## Coverage Gaps` (plan) or the fix report (planless) with reason (untestable/generated code, unreachable branches, external deps), then STOP — ask: fix now / accept gap / split
+4. **Dependents** — for each changed symbol: `rg -n '<symbol>' --type <lang> . | rg -v 'test|spec|_test'`; confirm no caller depends on old signature or behavior; output `✅ <file:line>` or `❌ <file:line> — <what broke>`; any `❌` → fix inline before proceeding; record affected callers in the Fix block (Callers field)
 
 Plan exists → append the Fix block and set status `implemented` (so review-code picks it up):
 ```
 ### Fix: <date> — <symptom>
 Cause: <file:line> | Change: <what> | Test: <name> | Callers: <count> checked, <count> fixed
 ```
+If the plan has no `## PR Pattern`, append a finalized one (`Type: single`, branch `fix/<slug>`) so create-pr targets the existing branch instead of deriving a new one.
 
 Output: "Bug fix complete. Run the review-code skill."

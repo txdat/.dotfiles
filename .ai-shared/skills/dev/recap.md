@@ -1,8 +1,6 @@
 # /recap — Session Insights & Memory Capture
 
-If `skip approval` context — skip "Anything to capture?" and "Does this look right?", apply automatically.
-
-Find active plan in `docs/plans/` (ship cycle: status `pr-created`). Resolve `<base>` per CORE. Run `git diff <base> --stat` and `git log <base>..HEAD --oneline`. Capture the PR URL via `gh pr view --json url -q .url` (chain → one per branch; none → omit). Ask: "Anything to capture?"
+Find active plan in `docs/plans/` (ship cycle: status `reviewed`). Resolve `<base>` per CORE. Run `git diff <base> --stat` and `git log <base>..HEAD --oneline`. PR is created after recap in the ship-feature flow; if a PR already exists, capture the PR URL via `gh pr view --json url -q .url` (chain → one per branch; none → omit). Ask: "Anything to capture?"
 
 ## Categories
 
@@ -23,6 +21,6 @@ Present extraction. Ask: "Does this look right?" Apply before writing.
 
 Append under section headers — never overwrite.
 
-Save to `docs/recaps/<basename>_<date>.md`: task, PR URL, insights, plan path. Update plan to `archived`.
+Save to `docs/recaps/<basename>_<date>.md`: task, PR URL if available, insights, plan path. Update plan to `recapped`.
 
-Print: task, PR URL, plan path, counts.
+Print: task, PR URL if available, plan path, counts. Print: "Recap complete. Run the create-pr skill."

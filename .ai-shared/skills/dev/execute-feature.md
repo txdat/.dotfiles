@@ -5,8 +5,15 @@ Partial: `<name> from <N>` → start at N; `<name> <N>` → run only N. No `// T
 
 ## Execution Strategy
 
-Independent (different files, no shared state) → parallel. Sequential (shared files/deps) → ordered.
-Delegation is for parallelism only: sequential or small work runs inline on the main agent; independent steps fan out. When fanning out, pick `rapid-engineer` if pattern exists, no edge cases, no security; else `dedicated-engineer`.
+Assign each GREEN step two axes from the plan:
+
+- **Tier** (capability): from `## Risk Flags`, `### Non-functional` Security, and Affected Components — security / concurrency / data-integrity → `principal-se`; edge-case-heavy or moderately complex → `senior-se`; pure pattern, no edge cases or security → `junior-se`.
+- **Independence**: different files, no shared state → parallelizable; shared files/deps → sequential (dependency-ordered).
+
+Route:
+- Any **principal-tier** step → `principal-se`; still obey Independence — shared files/deps run sequentially, only independent principal steps may run in parallel.
+- Junior/senior work that is sequential or small (`≤3` steps) → inline on the main agent (it is already full-capability; spawning buys nothing).
+- Independent junior/senior steps (`>3`) → fan out in **tier-homogeneous batches** — one batch per tier, never mix tiers in a batch.
 
 ## TDD Execution
 
@@ -28,12 +35,12 @@ Implementation must be correct for all valid inputs. Never special-case test inp
 
 When a step's tests pass, stage and commit the implementation separately from RED: `git add <impl-files> && git commit -m "<type>(<scope>): <summary>"`. Keeps the `test(red)` commit as a standalone, verifiable artifact preceding the implementation.
 
-≤3 steps or all sequential → run inline. Otherwise write `/tmp/ai-ctx-<slug>.md`:
+Delegating per Execution Strategy (a principal-tier step, or an independent junior/senior batch) → write `/tmp/ai-ctx-<slug>.md`:
 ```
 Plan: <path> | Stack: <detected>
-Constraints: ONLY assigned steps. No TODO. Run ONLY assigned tests. Scope creep → STOP.
+Constraints: ONLY assigned steps. No TODO. Run ONLY assigned tests. Scope creep → STOP. Plan divergence → STOP and report.
 ```
-Spawn per batch: "Read /tmp/ai-ctx-<slug>.md. Steps: N,M. Files: <list>. Off-limits: <others>. TCs: TC-N,TC-M. Report: completed, TCs passing, coverage%, blockers." → `🟢 Step N: <done> (TC-N,TC-M ✅, coverage: X%)`
+Spawn each batch on its tier's agent: "Read /tmp/ai-ctx-<slug>.md. Steps: N,M. Files: <list>. Off-limits: <others>. TCs: TC-N,TC-M. Report: completed, TCs passing, coverage%, blockers." → `🟢 Step N: <done> (TC-N,TC-M ✅, coverage: X%)`
 
 **Coverage** (per GREEN/BLUE step):
 - `≥ 95%` → `✅ pass`
@@ -60,6 +67,18 @@ Per changed file, derive `<stem>` (no extension): `fd -t f '<stem>' | rg 'test|s
 
 Discovered work → STOP. Log in `## Discovered Scope` with estimated effort. Ask: include / separate / skip?
 
+## Plan Deviation
+
+The plan is approved and locked. Same goal, different means than it specifies — a different approach or Design Decision, a substituted symbol/signature, a changed step structure, a different file/module than planned — is a deviation, not a free call. (Distinct from Scope Creep, which is *new* work.)
+
+Before implementing the divergence → STOP. Recap it in `## Deviations` (in the plan):
+- Plan said: <what the plan specified>
+- Doing instead: <the divergence>
+- Why: <what forced or motivated it — planned symbol absent, approach unworkable, …>
+- Tradeoff: <gained vs lost; risk introduced>
+
+Ask: proceed with deviation / follow plan as written / re-plan. Never deviate silently.
+
 ## Dependents Check
 
 After all GREEN + BLUE steps: for each modified symbol callable outside its own file (exported, public, non-private):
@@ -74,4 +93,4 @@ Any `❌` → STOP. Log in `## Discovered Scope`. Ask: fix inline / separate tas
 
 ## Completion
 
-All `[x]` → lint + build + targeted tests (full suite only if convention or blast radius warrants) → status `implemented`. Print: "Implementation complete. Run the review-code skill." Surface `## Coverage Gaps` if non-empty.
+All `[x]` → lint + build + targeted tests (full suite only if convention or blast radius warrants) → status `implemented`. Print: "Implementation complete. Run the review-code skill." Surface `## Coverage Gaps` and `## Deviations` if non-empty.
