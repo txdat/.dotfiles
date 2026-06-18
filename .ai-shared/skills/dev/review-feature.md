@@ -41,6 +41,10 @@ Flag undefined terms inline. One follow-up max.
 - Feature/fix: TCs describe new behavior (will fail until implemented).
 - Refactor: TCs pin existing behavior (must pass before and after).
 
+**Mechanism Invariants (blocking, conditional)**: if Impact Analysis introduces a new data structure (Data/Schema migration, or an Affected Component adds a type/collection/map/cache/index/queue/state container), `## Mechanism Invariants` MUST exist with ≥1 entry per new structure. Each entry names the init/identity guard and cites a boundary TC (drive to boundary — exhausted/zero/full/evicted — then operate on the same key, asserting no reset/re-init/corruption). Missing section, missing structure, unnamed guard, or no boundary TC → `❌`. Don't just confirm the fields are filled — judge whether the stated invariant is the *right* one and whether the TC actually violates-then-preserves it.
+
+**Cross-dimension coverage (blocking)**: when the plan spans N orthogonal axes (e.g. role × resource-type, limit-reached × fallback-path), the combination matrix must be covered — ≥1 TC per non-trivial cross-product, or the combo listed in `## Out of Scope` with a reason. Uncovered, unjustified combination → `❌`.
+
 ## Output
 
 ```

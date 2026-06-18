@@ -2,7 +2,7 @@
 name: senior-se
 description: "Accurate executor for complex/critical tasks. Follows plans strictly, copies patterns, prioritizes accuracy. Use for: complex features, critical logic, security-sensitive code, edge-case-heavy work."
 model: sonnet
-color: blue
+color: orange
 memory: user
 effort: high
 ---

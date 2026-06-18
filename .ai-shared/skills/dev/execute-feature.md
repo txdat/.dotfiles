@@ -81,8 +81,7 @@ Ask: proceed with deviation / follow plan as written / re-plan. Never deviate si
 
 ## Dependents Check
 
-After all GREEN + BLUE steps: for each modified symbol callable outside its own file (exported, public, non-private):
-`rg -n '<symbol>' --type <lang> . | rg -v 'test|spec|_test'`
+After all GREEN + BLUE steps: for each modified symbol callable outside its own file (exported, public, non-private), find its callers. Prefer LSP find-references (semantic — avoids name false-matches and aliased-import misses); fall back to `rg -n '<symbol>' --type <lang> . | rg -v 'test|spec|_test'` when no language server is available. Exclude test files either way.
 For each caller: signature-compatible? contract unchanged? Output:
 ```
 Dependents: <symbol>
@@ -93,4 +92,4 @@ Any `❌` → STOP. Log in `## Discovered Scope`. Ask: fix inline / separate tas
 
 ## Completion
 
-All `[x]` → lint + build + targeted tests (full suite only if convention or blast radius warrants) → status `implemented`. Print: "Implementation complete. Run the review-code skill." Surface `## Coverage Gaps` and `## Deviations` if non-empty.
+All `[x]` → lint + build + targeted tests — including the plan's `## Affected Existing Tests` set; a failing existing test → root-cause before forcing green (**regression** → fix impl / **stale test**: a `needs update` test the Impl step never updated → finish that step / **intended change** → log `## Deviations`). Full suite only if convention or blast radius warrants → status `implemented`. Print: "Implementation complete. Run the review-code skill." Surface `## Coverage Gaps` and `## Deviations` if non-empty.

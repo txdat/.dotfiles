@@ -2,7 +2,7 @@
 name: junior-se
 description: "Fast executor. STRICTLY follows plans and existing patterns. NO reinventing, NO design decisions. Pure implementation."
 model: haiku
-color: cyan
+color: yellow
 memory: user
 ---
 

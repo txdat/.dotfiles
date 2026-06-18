@@ -49,6 +49,12 @@ Open Questions: <unresolved unknowns — MUST be empty before handoff to review-
 ## Design Decisions
 | Decision | Options | Chosen | Reason |
 
+## Mechanism Invariants
+<only when the change introduces a new data structure — type, schema/table, collection, map, cache, index, queue, state container>
+- `<structure>`: <invariant that must hold across every operation on it — ordering, uniqueness, referential integrity, bounds/capacity, lifecycle (init/cleanup/eviction), concurrency/visibility>
+  - Maintained by: <the design mechanism that preserves it — name the initialization/identity guard (how a key/slot is first created vs. matched on revisit) and its boundary behavior>
+  - Verifies: TC-N
+
 ## Risk Flags
 - [ ] <risk>: <mitigation>
 
@@ -58,6 +64,10 @@ Open Questions: <unresolved unknowns — MUST be empty before handoff to review-
   - When: <action under test>
   - Then: <expected output / behavior>
   - Verifies: <invariant from Requirement>
+
+## Affected Existing Tests
+- [ ] `<test_file>::<test_fn>`: <why this change could affect it — symbol/contract it exercises>
+  - Expected: still passes (behavior preserved) | needs update (<what & why>)
 
 ## Implementation Steps
 - [ ] Step 1: <what> — satisfies TC-1[, TC-2]
@@ -76,12 +86,18 @@ Rules: 5–10 Implementation Steps, dependency-ordered. Every Impl refs ≥1 TC-
 
 **Impact Analysis:** populate Affected Components from explore Key Files/Entry Points/Data Flow if available; scan only if no explore output exists. Affected Components ≥1 entry; API/Contract Changes, Data/Schema, and Non-functional must each be answered. Each Non-functional commitment that requires code maps to an Implementation Step (mark `ops-only` if it needs none) — else execute never builds it.
 
+**Affected Existing Tests:** derive from Affected Components — for each changed file/module/symbol, find the existing tests exercising it via explore output → LSP find-references/call-hierarchy → `rg -l '<symbol>' <test-dirs>` (semantic first, textual fallback). Each row: *why* the change reaches it + a predicted outcome — `still passes` (behavior preserved — regression guard) or `needs update` (contract intentionally changed; note how, and an Implementation Step must update it). Predictions only, no runs; execute-feature runs them and root-causes any failure. Empty only when the change is isolated new code no existing test touches; else ≥1 entry.
+
 **Open Questions gate** (blocking): `## Assumptions & Open Questions` → Open Questions MUST be empty before handoff. Any unresolved → resolve inline within the clarify rounds, or ask the user; the draft may still be saved, but never hand off to review-feature while any remain. Settled answers move to Assumptions or fold into the relevant section.
 
 **TDD gate** (blocking):
 - Feature/fix: ≥1 TC; every TC has all four fields (Given/When/Then/Verifies); TCs describe new behavior that will initially fail.
 - Refactor: TCs pin existing behavior to preserve (must pass before and after); Given/When/Then describe current behavior, Verifies cites the invariant kept intact.
 - Bidirectional refs: every Impl → ≥1 TC-N; every TC → ≥1 Impl.
+
+**Mechanism Invariants gate** (blocking, conditional): triggers whenever Impact Analysis introduces a new data structure (Data/Schema migration, or an Affected Component adding a type/collection/map/cache/index/queue/state container). For each, `## Mechanism Invariants` MUST hold ≥1 entry — a structural property the mechanism silently depends on *beyond* the Requirement's stated behavior. Each entry names its init/identity guard and cites a TC-N obeying the TDD gate. Canonical TC: drive the structure to its boundary state (exhausted / zero / full / evicted), then operate again on the *same* key, asserting it does NOT reset, re-init, or corrupt. Empty only when no new data structure is introduced.
+
+**Cross-dimension coverage gate** (blocking): when the plan spans N orthogonal axes (e.g. role × resource-type, limit-reached × fallback-path), the combination matrix MUST be covered — ≥1 TC per non-trivial cross-product, or the combo listed in `## Out of Scope` with a reason. Uncovered, unjustified combination → gate not met.
 
 Save. Show: name, type, requirement, counts, path.
 
@@ -103,4 +119,4 @@ Ask: "Changes?" then "Create issue?" → `gh issue create`, update `Issue:` fiel
 
 Enumerate every slice upfront — branch + `Steps` + one-line summary each — so the full chain is known before any PR exists. Slice order respects `## Context` Dependencies (external/in-flight work, deployment order). Each Implementation Step belongs to exactly one slice (the `Steps` columns partition all steps), AND no TC spans slices — every step satisfying a given TC sits in the same slice, so each slice's TCs pass within that slice alone. execute-feature runs each slice's RED→GREEN over those steps' TCs. Save.
 
-Output (only once Open Questions gate passes): "Plan drafted. Run the review-feature skill."
+Output (only once all blocking gates pass — Open Questions, TDD, Mechanism Invariants, Cross-dimension coverage): "Plan drafted. Run the review-feature skill."
