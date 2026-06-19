@@ -6,4 +6,3 @@ effort: high
 ---
 
 Read `~/.ai-shared/skills/dev/execute-feature.md` and follow all instructions exactly.
-Your project config file is `CODEX.md`.

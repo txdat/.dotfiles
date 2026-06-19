@@ -6,4 +6,3 @@ effort: medium
 ---
 
 Read `~/.ai-shared/skills/dev/explore.md` and follow all instructions exactly.
-Your project config file is `CODEX.md`.
