@@ -51,5 +51,6 @@ Plan review enforces the open-questions gate: if `design-feature` saves a draft 
 | `/dev:explore <target>` | Map entry points, flow, patterns |
 | `/dev:simplify-code <target>` | Simplify without behavior change |
 | `/dev:recap` | Extract patterns → project config |
+| `/dev:write-rca <issue/pr>` | RCA/incident report from issues and PRs |
 | `/dev:create-issue <title>` | Standalone GitHub issue |
 | `/dev:create-pr [ready]` | Draft PR (or ready) |
