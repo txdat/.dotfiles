@@ -1,3 +1,5 @@
+[ -f ~/.env ] && source ~/.env
+
 #export TERM="xterm-256color"
 export EDITOR="vim --clean"
 
@@ -38,6 +40,8 @@ fi
 zstyle ':completion:*' matcher-list "m:{a-z}={A-Z}"
 zstyle ':completion:*' list-colors "${(s.:.)LS_COLORS}"
 
+source <(kubectl completion zsh)
+
 # highlighting
 source ~/.zsh/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
 
@@ -67,12 +71,8 @@ export FZF_DEFAULT_OPTS="
  --bind=ctrl-p:toggle-preview,alt-w:toggle-preview-wrap,alt-j:preview-page-down,alt-k:preview-page-up
 "
 
-# alias _fd="fd --color=always --hidden --follow --exclude .git "
-# alias _rg="rg --color=always --hidden --follow --no-heading --with-filename --line-number --column --smart-case -g '!{.git}/*' "
-# alias _fzf="fzf --preview 'bat --color=always {}'"
-
 # conda
-CONDA_HOME="$HOME/.miniconda"
+CONDA_HOME="$HOME/.miniconda3"
 
 if [[ -n "$CONDA_HOME" ]]; then
     export PATH="$CONDA_HOME/bin:$PATH"
@@ -94,65 +94,51 @@ export QT_QPA_PLATFORM=xcb
 
 export PATH="$HOME/.local/bin:$PATH"
 
-# emacs
-#export PATH="$HOME/.emacs.d/bin:$PATH"
-
 # rust
 export PATH="$HOME/.cargo/env:$HOME/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin:$PATH"
 
 # go
-#export PATH="$HOME/go/bin:$PATH"
+export PATH="$HOME/go/bin:$PATH"
 
-# haskell
-#export PATH="$HOME/.cabal/bin:$HOME/.ghcup/bin:$PATH"
-
-# java/scala
-#export JAVA_HOME='/usr/lib/jvm/default'
-#export PATH=$JAVA_HOME/bin:$PATH
-#export PATH=$HOME/.local/share/coursier/bin:$PATH
-
-# javascript/typescript
-# fnm
+# javascript
 FNM_PATH="$HOME/.local/share/fnm"
 if [ -d "$FNM_PATH" ]; then
   export PATH="$FNM_PATH:$PATH"
   eval "`fnm env`"
 fi
 
+# gcloud
+export PATH="$HOME/.google-cloud-sdk/bin:$PATH"
+export USE_GKE_GCLOUD_AUTH_PLUGIN=True
+if [ -f "$HOME/.google-cloud-sdk/path.zsh.inc" ]; then . "$HOME/.google-cloud-sdk/path.zsh.inc"; fi
+if [ -f "$HOME/.google-cloud-sdk/completion.zsh.inc" ]; then . "$HOME/.google-cloud-sdk/completion.zsh.inc"; fi
+
 # kubernetes
 export KUBECONFIG=$HOME/.kube/config
 
-# claude config
-export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
-export CLAUDE_CODE_DISABLE_1M_CONTEXT=1
+# claude
+export CLAUDE_CODE_ENABLE_TELEMETRY=0
+# export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
+# export CLAUDE_CODE_DISABLE_1M_CONTEXT=1
 export CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING=1
 export CLAUDE_CODE_DISABLE_AUTO_MEMORY=1
-export CLAUDE_CODE_ENABLE_TELEMETRY=0
+export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
 export CLAUDE_CODE_SUBAGENT_MODEL="sonnet"
-# export CLAUDE_CODE_EFFORT_LEVEL="medium"
+export CLAUDE_CODE_EFFORT_LEVEL="high"
 export ENABLE_CLAUDEAI_MCP_SERVERS=false
 
-[ -f ~/.env ] && source ~/.env
+alias claude1="ANTHROPIC_AUTH_TOKEN=$(echo $CLAUDE1_AUTH_TOKEN) claude"
+alias deepseek="CLAUDE_CONFIG_DIR='$HOME/.claude-deepseek' ANTHROPIC_BASE_URL='https://api.deepseek.com/anthropic' ANTHROPIC_API_KEY=$(echo $DEEPSEEK_API_KEY) ANTHROPIC_MODEL='deepseek-v4-pro[1m]' ANTHROPIC_DEFAULT_OPUS_MODEL='deepseek-v4-pro[1m]' ANTHROPIC_DEFAULT_SONNET_MODEL='deepseek-v4-pro[1m]' ANTHROPIC_DEFAULT_HAIKU_MODEL='deepseek-v4-flash[1m]' claude"
 
-# aliases
-alias ls="ls --color"
-alias lz="lazygit"
-alias g=git
 alias k=kubectl
-alias h=helm
-alias tf=terraform
-alias x2c="xclip -sel c" # copy stdout to clipboard
-alias f2c="xclip -sel c < " # copy data from file to clipboard
-alias c2f="xclip -sel c -o > " # copy data from clipboard to file
+complete -o default -F __start_kubectl k
+
+alias ls="ls --color"
+alias xsc="xclip -sel c" # copy stdout to clipboard
+alias xfc="xclip -sel c < " # copy data from file to clipboard
+alias xcf="xclip -sel c -o > " # copy data from clipboard to file
 alias tlmgr="/usr/share/texmf-dist/scripts/texlive/tlmgr.pl --usermode"
 
-alias npm="TZ=UTC npm"
-alias node="TZ=UTC node"
-alias jest="TZ=UTC NODE_ENV=test ./node_modules/.bin/jest"
-
-alias redis="sudo systemctl start docker.service && docker container start valkey"
-
-# update zsh's plugins
 update_zsh () {
     dir=$(pwd)
 
@@ -169,36 +155,18 @@ update_zsh () {
     cd $dir
 }
 
-# update system's packages
-update_system() {
-  local ignore_packages=""
+# update_system() {
+#   local ignore_packages=""
 
-  if [[ "$1" != "--no-skip" ]]; then
-    local pattern="^(linux|systemd|nvidia|cuda|cudnn)($|-)"
-    ignore_packages=$(pacman -Qq | grep -E "$pattern" | paste -sd, -)
-  fi
+#   if [[ "$1" != "--no-skip" ]]; then
+#     local pattern="^(linux|systemd|nvidia|cuda|cudnn)($|-)"
+#     ignore_packages=$(pacman -Qq | grep -E "$pattern" | paste -sd, -)
+#   fi
 
-  if [[ -n "$ignore_packages" ]]; then
-    sudo pacman -Syyu --ignore "$ignore_packages" && paru -Syyu --ignore "$ignore_packages"
-  else
-    sudo pacman -Syyu && paru -Syyu
-  fi
-  flatpak update
-}
-
-# Gcloud
-export PATH="$HOME/.google-cloud-sdk/bin:$PATH"
-export USE_GKE_GCLOUD_AUTH_PLUGIN=True
-# The next line updates PATH for the Google Cloud SDK.
-if [ -f "$HOME/.google-cloud-sdk/path.zsh.inc" ]; then . "$HOME/.google-cloud-sdk/path.zsh.inc"; fi
-# The next line enables shell command completion for gcloud.
-if [ -f "$HOME/.google-cloud-sdk/completion.zsh.inc" ]; then . "$HOME/.google-cloud-sdk/completion.zsh.inc"; fi
-
-# bun completions
-[ -s "/home/txdat/.bun/_bun" ] && source "/home/txdat/.bun/_bun"
-
-# bun
-export BUN_INSTALL="$HOME/.bun"
-export PATH="$BUN_INSTALL/bin:$PATH"
-
-
+#   if [[ -n "$ignore_packages" ]]; then
+#     sudo pacman -Syyu --ignore "$ignore_packages" && paru -Syyu --ignore "$ignore_packages"
+#   else
+#     sudo pacman -Syyu && paru -Syyu
+#   fi
+#   flatpak update
+# }
