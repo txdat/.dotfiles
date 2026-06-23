@@ -13,14 +13,14 @@ TERM = "xterm-256color"
 
 [font]
 builtin_box_drawing = true
-size = 9.5
+size = 10.5
 
 [font.bold]
-family = "Maple Mono NF CN"
+family = "Maple Mono Normal NL NF CN"
 style = "Bold"
 
 [font.bold_italic]
-family = "Maple Mono NF CN"
+family = "Maple Mono Normal NL NF CN"
 style = "Bold Italic"
 
 [font.glyph_offset]
@@ -28,11 +28,11 @@ x = 0
 y = 0
 
 [font.italic]
-family = "Maple Mono NF CN"
+family = "Maple Mono Normal NL NF CN"
 style = "Italic"
 
 [font.normal]
-family = "Maple Mono NF CN"
+family = "Maple Mono Normal NL NF CN"
 style = "Regular"
 
 [font.offset]

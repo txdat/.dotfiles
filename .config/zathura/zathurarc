@@ -1,6 +1,6 @@
 set window-height 3000
 set window-width 3000
-set font "Maple Mono NF CN 10"
+set font "Maple Mono Normal NL NF CN 10"
 set selection-clipboard clipboard
 set scroll-page-aware "true"
 set scroll-full-overlap 0.01
