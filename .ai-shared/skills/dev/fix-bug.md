@@ -53,6 +53,19 @@ Plan exists → append the Fix block and set status `implemented` (so review-cod
 ### Fix: <date> — <symptom>
 Cause: <file:line> | Change: <what> | Test: <name> | Callers: <count> checked, <count> fixed
 ```
-If the plan has no `## PR Pattern`, append a finalized one (`Type: single`, branch `fix/<slug>`) so create-pr targets the existing branch instead of deriving a new one.
+No active plan → create `docs/plans/<basename>_<date>_fix_<slug>.md` with status `implemented`, the Root Cause/Fix summary, the regression TC, affected tests, and the finalized PR Pattern. If the plan has no `## PR Pattern`, append a finalized one (`Type: single`, branch `fix/<slug>`) so create-pr targets the existing branch instead of deriving a new one.
 
-Output: "Bug fix complete. Run the review-code skill."
+## Self-Check (BLOCKING — do NOT emit completion until every item is ✅)
+
+Run this audit before the final output. If ANY item is unchecked → STOP, fix, re-check.
+
+- [ ] **RED gate** (Fix step 1): a `test(red): <bug>` commit holds the failing regression test only. Present: yes/no.
+- [ ] **Symbol membership** (Fix step 0, CORE `Verify symbol membership`): ran on every call/field/import in the patch. Unresolved: __.
+- [ ] **No fake fix** (Fix step 2): re-read the fix — correct for all valid inputs, no hardcoded returns or test-input special-casing. Offenders: __.
+- [ ] **Coverage** (Fix step 3 thresholds): changed files ✅ / ⚠️ logged / ❌ resolved. Result: __%.
+- [ ] **Dependents** (Fix step 4): every changed symbol checked against callers; each ❌ resolved. Open: __.
+- [ ] **Branch ancestry** (`## Fix`): `git merge-base --is-ancestor <base> fix/<slug>` returns 0. Verified: yes/no.
+- [ ] **No debug artifacts** (Fix step 2): no `// DEBUG`, `console.log`, `print(` temp logs in the fix diff. Found: __.
+- [ ] **Plan handoff**: fix plan exists, status `implemented`, Fix block present, PR Pattern finalized.
+
+If ALL checked → emit "Bug fix complete. Run the review-code skill."

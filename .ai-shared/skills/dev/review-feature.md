@@ -4,7 +4,7 @@ Do NOT write code.
 
 **Owns:** the WHAT and HOW. Design is still OPEN here — this is the last gate to change direction. Step back to the system level; do not just validate the document's fields.
 
-Find plan from $ARGUMENTS or by status `planning`/`approved`/`blocked-by-architecture`. If unfamiliar areas, suggest the explore skill.
+Find plan from $ARGUMENTS or by status `planning`/`blocked-by-architecture`. If unfamiliar areas, suggest the explore skill. If the only active plan is already `approved`, STOP and run execute-feature.
 
 Read plan + project config file (CLAUDE.md/CODEX.md/GEMINI.md/AGENTS.md).
 
@@ -44,6 +44,26 @@ Flag undefined terms inline. One follow-up max.
 **Mechanism Invariants (blocking, conditional)**: if Impact Analysis introduces a new data structure (Data/Schema migration, or an Affected Component adds a type/collection/map/cache/index/queue/state container), `## Mechanism Invariants` MUST exist with ≥1 entry per new structure. Each entry names the init/identity guard and cites a boundary TC (drive to boundary — exhausted/zero/full/evicted — then operate on the same key, asserting no reset/re-init/corruption). Missing section, missing structure, unnamed guard, or no boundary TC → `❌`. Don't just confirm the fields are filled — judge whether the stated invariant is the *right* one and whether the TC actually violates-then-preserves it.
 
 **Cross-dimension coverage (blocking)**: when the plan spans N orthogonal axes (e.g. role × resource-type, limit-reached × fallback-path), the combination matrix must be covered — ≥1 TC per non-trivial cross-product, or the combo listed in `## Out of Scope` with a reason. Uncovered, unjustified combination → `❌`.
+
+## Self-Check (BLOCKING — do NOT emit verdict until every item is ✅)
+
+Run this audit before the final output. If ANY blocking item is unchecked → verdict is NEEDS CHANGES.
+
+- [ ] **Open Questions gate** (`## Precondition`): Open Questions empty. Count: __.
+- [ ] **Approach** (Systemic Review): simplest correct solution? alternatives credible? Better one: yes/no (__).
+- [ ] **System fit** (Systemic Review): components/contracts/boundaries; deployment & migration order vs `## Context` Dependencies; `blocked-by-architecture` → honors doc `Contracts:`. Issues: __.
+- [ ] **Completeness** (Systemic Review): error modes, concurrency, scale, security, observability, edge cases. Gaps: __.
+- [ ] **Assumptions challenged** (Systemic Review): each assumption validated. Unsound: __.
+- [ ] **Non-functional mapping** (Structural Review): each code-requiring item maps to an Impl Step (or `ops-only`). Unmapped: __.
+- [ ] **TDD — TCs complete** (TDD): non-empty, before Impl Steps, each with Given/When/Then/Verifies. Orphans: __.
+- [ ] **TDD — Bidirectional refs** (TDD): every Impl → ≥1 TC; every TC → ≥1 Impl. Orphan TCs: __ / Impls: __.
+- [ ] **TDD — Correct mode** (TDD): feature/fix TCs fail-first; refactor TCs pass before + after.
+- [ ] **Mechanism Invariants** (conditional, that gate): new data structure → ≥1 entry per structure, init/identity guard + boundary TC; judge the invariant is the *right* one. Missing: __.
+- [ ] **Cross-dimension coverage** (conditional, that gate): N orthogonal axes → ≥1 TC per non-trivial cross-product, or combo in `## Out of Scope`. Uncovered: __.
+- [ ] **PR Pattern** (Structural Review): present; partitions all Impl Steps; no TC spans slices. Gaps/overlaps: __.
+- [ ] **Steps count** (Structural Review): 5–10 Impl Steps; >10 → split proposed. Count: __.
+
+If ANY ❌ → verdict NEEDS CHANGES. If all ✅ → verdict READY.
 
 ## Output
 

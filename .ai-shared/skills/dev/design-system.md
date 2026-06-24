@@ -76,4 +76,14 @@ Rollback: trigger: <condition>, steps: <high-level>, data: <reconciliation>
 
 Ask: "Create plan files?" → stubs with `Status: blocked-by-architecture`.
 
-Save. Print: path, chosen option, plan count. Output: "Run the review-system skill."
+## Self-Check (BLOCKING — do NOT emit completion until every item is ✅)
+
+Run this audit before the final output. If ANY item is unchecked → STOP, fix, re-check.
+
+- [ ] **Problem framing** (Phase 1): pain quantified, constraints justified, success measurable, `Contexts` filled.
+- [ ] **Options** (Phase 2): ≥2 viable, trade-offs honest per dimension, failure modes (detection + recovery) per option, dependencies identified.
+- [ ] **Decision** (Phase 3): rationale traces to trade-offs, rejected options have reasons, `Contracts:` invariants per boundary (or "no boundary changes").
+- [ ] **Migration** (Phase 4): phases independently deployable, each with rollback, realistic dual-run, objective cutover.
+- [ ] **Decomposition** (Phase 5): dependency-ordered, no cycles, first plan unblocked. Plan count: __.
+
+If ALL checked → save, emit "Run the review-system skill."

@@ -44,4 +44,16 @@ Explore: <area>. Report: entry points, key files, data flow, patterns, gotchas.
 - <unclear before planning>
 ```
 
-Print: "Exploration complete."
+## Self-Check (BLOCKING — do NOT emit completion until every item is ✅)
+
+Run this audit before the final output. If ANY item is unchecked → STOP, fix, re-check.
+
+- [ ] **Read-only**: no files modified.
+- [ ] **Entry Points** (`## Output`): ≥1 with file:line.
+- [ ] **Key Files** (`## Output`): ≥1 with description.
+- [ ] **Data Flow** (`## Output`): input → transform → output traced.
+- [ ] **Patterns** (`## Output`): ≥1 with location.
+- [ ] **Gotchas** (`## Output`): surfaced, or explicit `none found`.
+- [ ] **Open Questions** (`## Output`): listed for planning, or explicit `none`.
+
+If ALL checked → print: "Exploration complete."

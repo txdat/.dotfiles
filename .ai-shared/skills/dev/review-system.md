@@ -20,6 +20,20 @@ Find doc from $ARGUMENTS or latest `docs/architecture/`. Read doc + project conf
 
 **Warning:** single option, phase >2 weeks without checkpoint, team unfamiliar with key components
 
+## Self-Check (BLOCKING — do NOT emit verdict until every item is ✅)
+
+Run this audit before the final output. If ANY blocking item is unchecked → verdict is NEEDS REVISION.
+
+- [ ] **Problem quantified** (Checklist Problem): measurable pain, justified constraints, success target + baseline.
+- [ ] **Options sufficient** (Checklist Options): ≥2 viable, honest trade-offs, specific failure modes, dependencies, context coupling rated.
+- [ ] **Contracts** (Checklist Decision): invariants per affected boundary (or "no boundary changes"). Missing: __.
+- [ ] **Migration viable** (Checklist Migration): independently deployable phases, each rollback, realistic dual-run, objective cutover.
+- [ ] **Decomposition sound** (Checklist Decomposition): dependency-ordered, no cycles, first plan unblocked.
+- [ ] **Blocking checks** (`## Flags`): no missing critical-path failure mode, no destructive phase without rollback, no circular dependency, measurable success.
+
+If ALL ✅ → verdict APPROVED, update status to `approved`. Print: "Architecture approved. Create plans with the design-feature skill."
+If ANY ❌ → verdict NEEDS REVISION. List specific sections to revise.
+
 ## Output
 
 ```
@@ -40,6 +54,6 @@ Find doc from $ARGUMENTS or latest `docs/architecture/`. Read doc + project conf
 - <clarification needed>
 ```
 
-If APPROVED: update status to `approved`. Print: "Architecture approved. Create plans with the design-feature skill."
+If APPROVED: the Self-Check already authorized status `approved`. Print: "Architecture approved. Create plans with the design-feature skill."
 
 If NEEDS REVISION: list specific sections to revise.

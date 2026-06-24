@@ -50,6 +50,19 @@ Rules: commands explicit/complete (no aliases, no flag shortcuts), expect = spec
 
 Discovered work → STOP. Log in `## Discovered Scope` with estimated effort. Ask: include / separate / skip?
 
+## Self-Check (BLOCKING — do NOT emit completion until every item is ✅)
+
+Run this audit before marking the plan `implemented`. If ANY item is unchecked → STOP, fix, re-check.
+
+- [ ] **All steps written** (`## Execution`): every Implementation Step has config written. Missing: __.
+- [ ] **Validation passed** (`## Execution`): `terraform validate` / `kubectl --dry-run=client` / `yamllint` passed. Failures: __.
+- [ ] **Destructive flags** (`## Destructive Command Detection`): every destructive step flagged. Missed: __.
+- [ ] **Runbook appended** (`## Runbook Output`): `## Execution Runbook` present; each step Run + Expect + Rollback; destructive add Impact + Dry-run.
+- [ ] **Commands explicit** (Runbook Rules): no aliases, no flag shortcuts. Issues: __.
+- [ ] **Scope Creep logged** (`## Scope Creep`): discovered work in `## Discovered Scope`. Unlogged: __.
+
+If ALL checked → status `implemented` → print "Config + runbook complete. Review ⚠️ destructive steps, then execute manually."
+
 ## Completion
 
-`git diff --stat` → append runbook → status `implemented` → print "Config + runbook complete. Review ⚠️ destructive steps, then execute manually."
+`git diff --stat` → append runbook → run the Self-Check. Only then set status `implemented`.

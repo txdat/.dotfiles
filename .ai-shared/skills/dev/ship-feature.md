@@ -1,6 +1,6 @@
 # /ship-feature — Full Feature Cycle
 
-**explore → plan → execute → review-code → recap → pr**
+**explore → design-feature → review-feature → execute → review-code → recap → pr**
 
 `$ARGUMENTS`: `<requirement>` — append `from <step>` to resume.
 
@@ -24,6 +24,19 @@ Determine starting phase from `from <step>` or auto-detect from the active plan 
 ## Flow Control
 
 PAUSE after each phase — ask the user to confirm before proceeding.
+
+## Self-Check (BLOCKING — do NOT proceed to next phase until current phase is complete)
+
+At the end of each phase, verify the phase's own self-check (from its skill file) is fully ✅ before asking the user to confirm the next phase.
+
+- [ ] **Phase 1 explore**: `## Exploration` output present. Entry Points, Key Files, Data Flow, Patterns, Gotchas all populated.
+- [ ] **Phase 2 plan**: Plan status is `approved`. Open Questions empty. review-feature verdict was READY.
+- [ ] **Phase 3 execute**: Plan status is `implemented`. All GREEN steps passed coverage. No unlogged deviations or scope creep.
+- [ ] **Phase 4 review-code**: Verdict is PASS (or PASS WITH NOTES with all Should Fix items resolved). PR Pattern finalized.
+- [ ] **Phase 5 recap**: Plan status is `recapped`. Insights captured in docs/recaps/.
+- [ ] **Phase 6 pr**: PR created + URL printed. Plan status is `archived`.
+
+If any phase's self-check fails → do NOT proceed. Fix the phase first.
 
 ## Phases
 

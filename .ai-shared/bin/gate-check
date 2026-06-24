@@ -1,0 +1,398 @@
+#!/bin/bash
+# Gate checker — enforces dev skill workflow state-machine transitions.
+# Reads PreToolUse hook JSON from stdin, validates gate conditions per skill,
+# and outputs blocking JSON if a gate fails.
+#
+# Valid transitions:
+#   design-feature  → planning
+#   review-feature  → planning|blocked-by-architecture → approved
+#   execute-feature → approved → in-progress → implemented
+#   review-code     → implemented → reviewed
+#   recap           → reviewed → recapped
+#   create-pr       → reviewed|recapped → archived
+#   fix-bug         → (no plan gate; verifies repository context)
+#
+# Each skill's entry gate is the prerequisite status.
+# Review-code additionally requires test(red) proof for the plan slices.
+
+set -euo pipefail
+
+if ! command -v jq >/dev/null 2>&1; then
+  printf '{"continue":false,"stopReason":"gate-check requires jq to parse hook input.","decision":"block","reason":"gate-check requires jq to parse hook input."}\n'
+  exit 0
+fi
+
+HOOK_INPUT=$(cat)
+
+normalize_skill() {
+  local raw="${1#/}"
+  raw="${raw,,}"
+  raw="${raw//_/-}"
+
+  case "$raw" in
+    dev:*) echo "$raw"; return 0 ;;
+    dev-*) echo "dev:${raw#dev-}"; return 0 ;;
+  esac
+
+  if [[ "$raw" =~ dev[:-](create-pr|design-feature|design-infra|design-system|execute-feature|execute-infra|explore|fix-bug|recap|review-code|review-feature|review-system|ship-feature|simplify-code|write-rca|create-issue) ]]; then
+    echo "dev:${BASH_REMATCH[1]}"
+    return 0
+  fi
+
+  if [[ "$raw" =~ (^|[[:space:]/])(create-pr|design-feature|design-infra|design-system|execute-feature|execute-infra|explore|fix-bug|recap|review-code|review-feature|review-system|ship-feature|simplify-code|write-rca|create-issue)([[:space:]]|$) ]]; then
+    echo "dev:${BASH_REMATCH[2]}"
+    return 0
+  fi
+
+  echo ""
+}
+
+RAW_SKILL=$(
+  jq -r '
+    [
+      .tool_input.skill?,
+      .tool_input.skill_name?,
+      .tool_input.name?,
+      .tool_input.command?,
+      .tool_input.arguments?,
+      .skill?,
+      .skill_name?,
+      .arguments.skill?,
+      .command?
+    ]
+    | map(select(type == "string" and length > 0))
+    | .[0] // ""
+  ' <<<"$HOOK_INPUT" 2>/dev/null || true
+)
+SKILL=$(normalize_skill "$RAW_SKILL")
+[[ "$SKILL" == dev:* ]] || exit 0
+
+REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+cd "$REPO_ROOT"
+
+HOOK_TEXT=$(
+  jq -r '
+    [
+      .tool_input.arguments?,
+      .tool_input.command?,
+      .arguments?,
+      .command?,
+      .prompt?
+    ]
+    | map(select(type == "string"))
+    | join(" ")
+  ' <<<"$HOOK_INPUT" 2>/dev/null || true
+)
+
+# ── helpers ───────────────────────────────────────────────────────────
+
+find_plan() {
+  local dir="docs/plans"
+  [[ -d "$dir" ]] || return 1
+
+  local plan newest=""
+  local active='planning|approved|in-progress|implemented|reviewed|recapped|blocked-by-architecture'
+  while IFS= read -r plan; do
+    [[ -n "$plan" ]] || continue
+    if [[ -z "$newest" || "$plan" -nt "$newest" ]]; then
+      newest="$plan"
+    fi
+  done < <(grep -Erl "^Status:[[:space:]]*($active)([[:space:]|]|$)" "$dir" 2>/dev/null || true)
+
+  if [[ -z "$newest" ]]; then
+    while IFS= read -r plan; do
+      [[ -n "$plan" ]] || continue
+      if [[ -z "$newest" || "$plan" -nt "$newest" ]]; then
+        newest="$plan"
+      fi
+    done < <(grep -Erl "^Status:" "$dir" 2>/dev/null || true)
+  fi
+
+  [[ -n "$newest" ]] || return 1
+  echo "$newest"
+}
+
+find_explicit_plan() {
+  local candidate
+  if [[ "$HOOK_TEXT" =~ (docs/plans/[^[:space:]]+\.md) ]]; then
+    candidate="${BASH_REMATCH[1]}"
+    [[ -f "$candidate" ]] || return 1
+    echo "$candidate"
+    return 0
+  fi
+  return 1
+}
+
+plan_status() {
+  awk '
+    /^Status:/ {
+      sub(/^Status:[[:space:]]*/, "")
+      sub(/[[:space:]]*\|.*/, "")
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "")
+      print
+      exit
+    }
+  ' "$1" 2>/dev/null
+}
+
+# Plan header Type — feature | fix | refactor | infra (lives on the Status line:
+# "Status: ... | Type: <type> | Issue:"). Distinct from PR Pattern's single/chain.
+plan_type() {
+  awk '
+    /^Status:/ {
+      if (match($0, /Type:[[:space:]]*[^|]+/)) {
+        t = substr($0, RSTART, RLENGTH)
+        sub(/^Type:[[:space:]]*/, "", t)
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", t)
+        print tolower(t)
+      }
+      exit
+    }
+  ' "$1" 2>/dev/null
+}
+
+open_questions_count() {
+  # Count unresolved entries after "Open Questions:" only. Assumptions in the
+  # same section are not open questions.
+  awk '
+    function trim(s) {
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", s)
+      return s
+    }
+    function is_empty_marker(s) {
+      s = tolower(trim(s))
+      return s == "" || s == "none" || s == "n/a" || s == "empty" || s == "no unresolved" || s == "<none>" || s == "<n/a>"
+    }
+    /^## Assumptions & Open Questions/ { in_section=1; next }
+    /^## / && in_section { exit }
+    !in_section { next }
+    /^Open Questions:/ {
+      in_open=1
+      line=$0
+      sub(/^Open Questions:[[:space:]]*/, "", line)
+      line=trim(line)
+      if (line != "" && line !~ /^<.*MUST be empty.*>$/ && !is_empty_marker(line)) {
+        count++
+      }
+      next
+    }
+    in_open && /^[[:alpha:]][[:alpha:] ]*:/ { in_open=0; next }
+    in_open {
+      line=trim($0)
+      if (line == "" || line ~ /^<!--/) next
+      sub(/^[-*][[:space:]]+/, "", line)
+      if (line !~ /^<.*>$/ && !is_empty_marker(line)) count++
+    }
+    END { print count+0 }
+  ' "$1" 2>/dev/null
+}
+
+resolve_base() {
+  local remote_ref branch
+  remote_ref=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null || true)
+  if [[ -n "$remote_ref" ]]; then
+    branch="${remote_ref#refs/remotes/origin/}"
+    if git rev-parse --verify --quiet "$branch" >/dev/null; then
+      echo "$branch"
+    else
+      echo "origin/$branch"
+    fi
+    return 0
+  fi
+
+  if git rev-parse --verify --quiet main >/dev/null; then
+    echo "main"
+  elif git rev-parse --verify --quiet master >/dev/null; then
+    echo "master"
+  else
+    echo "HEAD"
+  fi
+}
+
+red_commit_count() {
+  local base="$1"
+  git log --format=%s "${base}..HEAD" 2>/dev/null | grep -Ec '^test\(red\):' || true
+}
+
+# Refactor slices prove TDD with a passing "test: baseline <scope>" commit
+# instead of a failing test(red): commit.
+baseline_commit_count() {
+  local base="$1"
+  git log --format=%s "${base}..HEAD" 2>/dev/null | grep -Ec '^test:[[:space:]]*baseline' || true
+}
+
+commits_after_latest_red() {
+  local base="$1"
+  local latest_red
+  latest_red=$(git log --format=%H --grep='^test(red):' "${base}..HEAD" 2>/dev/null | head -1 || true)
+  [[ -n "$latest_red" ]] || { echo 0; return 0; }
+  git rev-list --count "${latest_red}..HEAD" 2>/dev/null || echo 0
+}
+
+slice_count() {
+  local plan="$1"
+  awk '
+    /^## PR Pattern/ { in_pattern=1; next }
+    /^## / && in_pattern { exit }
+    in_pattern && /^\|[[:space:]]*[0-9]+[[:space:]]*\|/ { count++ }
+    END { print count+0 }
+  ' "$plan" 2>/dev/null
+}
+
+has_final_pr_pattern() {
+  local plan="$1"
+  grep -q '^## PR Pattern' "$plan" 2>/dev/null && ! grep -q '^## PR Pattern (provisional)' "$plan" 2>/dev/null
+}
+
+block() {
+  local reason="$1"
+  jq -cn --arg reason "$reason" \
+    '{continue:false, stopReason:$reason, decision:"block", reason:$reason}'
+  exit 0
+}
+
+warn() {
+  local reason="$1"
+  printf 'WARNING: %s\n' "$reason" >&2
+}
+
+# ── gate dispatch ─────────────────────────────────────────────────────
+
+PLAN=$(find_explicit_plan 2>/dev/null || find_plan 2>/dev/null || true)
+
+require_plan() {
+  [[ -n "$PLAN" ]] && return 0
+  block "No active plan found in docs/plans. Run design-feature first or pass the intended plan explicitly."
+}
+
+case "$SKILL" in
+
+  # ── review-feature: plan must be planning | blocked-by-architecture ──
+  dev:review-feature)
+    require_plan
+    if [[ -n "$PLAN" ]]; then
+      STATUS=$(plan_status "$PLAN")
+      case "$STATUS" in
+        planning|blocked-by-architecture) ;;
+        approved) block "Plan is already approved. Run execute-feature next." ;;
+        implemented|reviewed|recapped)    block "Plan status is '$STATUS' — too late for review-feature. Continue forward." ;;
+        archived)              block "Plan is shipped. Nothing to review." ;;
+        *)                                block "Plan status is '$STATUS' — expected 'planning' or 'blocked-by-architecture'. Run design-feature first." ;;
+      esac
+      OQ=$(open_questions_count "$PLAN")
+      if [[ "$OQ" -gt 0 ]]; then
+        block "Plan has $OQ unresolved Open Question(s). Resolve them in design-feature before review."
+      fi
+    fi
+    ;;
+
+  # ── execute-feature: plan must be approved (or in-progress for resume) ──
+  dev:execute-feature)
+    require_plan
+    if [[ -n "$PLAN" ]]; then
+      STATUS=$(plan_status "$PLAN")
+      case "$STATUS" in
+        approved|in-progress) ;;
+        planning|blocked-by-architecture) block "Plan status is '$STATUS' — not yet approved. Run review-feature first." ;;
+        implemented)                      block "Plan is already implemented. Run review-code next." ;;
+        reviewed|recapped)                block "Plan status is '$STATUS' — already past execution. Run review-code or create-pr." ;;
+        archived)              block "Plan is shipped. Nothing to execute." ;;
+        *)                                block "Plan status is '$STATUS' — expected 'approved' or 'in-progress'." ;;
+      esac
+    fi
+    ;;
+
+  # ── review-code: plan must be implemented + RED commit must exist ──
+  dev:review-code)
+    require_plan
+    if [[ -n "$PLAN" ]]; then
+      STATUS=$(plan_status "$PLAN")
+      case "$STATUS" in
+        implemented) ;;
+        planning|blocked-by-architecture|approved|in-progress)
+          block "Plan status is '$STATUS' — not yet implemented. Run execute-feature first." ;;
+        reviewed)      block "Plan is already reviewed. Run recap next." ;;
+        recapped)      block "Plan is already recapped. Run create-pr next." ;;
+        archived) block "Plan is shipped. Nothing to review." ;;
+        *)             block "Plan status is '$STATUS' — expected 'implemented'." ;;
+      esac
+    fi
+    BASE=$(resolve_base)
+    SLICES=$(slice_count "$PLAN")
+    [[ "$SLICES" -gt 0 ]] || SLICES=1
+    if [[ "$(plan_type "$PLAN")" == "refactor" ]]; then
+      BASELINES=$(baseline_commit_count "$BASE")
+      if [[ "$BASELINES" -lt "$SLICES" ]]; then
+        block "Found $BASELINES 'test: baseline' commit(s) between $BASE and HEAD; expected at least $SLICES for the plan slice count. Commit the passing baseline before refactor review."
+      fi
+    else
+      REDS=$(red_commit_count "$BASE")
+      if [[ "$REDS" -lt "$SLICES" ]]; then
+        block "Found $REDS test(red) commit(s) between $BASE and HEAD; expected at least $SLICES for the plan slice count. Run RED phase before code review."
+      fi
+      AFTER_LATEST_RED=$(commits_after_latest_red "$BASE")
+      if [[ "$AFTER_LATEST_RED" -eq 0 ]]; then
+        block "Latest test(red) commit has no later implementation commit. Finish GREEN before code review."
+      fi
+    fi
+    ;;
+
+  # ── recap: plan must be reviewed ──
+  dev:recap)
+    require_plan
+    if [[ -n "$PLAN" ]]; then
+      STATUS=$(plan_status "$PLAN")
+      case "$STATUS" in
+        reviewed) ;;
+        implemented)               block "Plan is implemented but not reviewed. Run review-code first." ;;
+        recapped)                  block "Plan is already recapped. Run create-pr next." ;;
+        planning|approved|in-progress) block "Plan status is '$STATUS' — not yet implemented. Continue the workflow." ;;
+        archived)       block "Plan is shipped. Nothing to recap." ;;
+        *)                         block "Plan status is '$STATUS' — expected 'reviewed'." ;;
+      esac
+    fi
+    ;;
+
+  # ── create-pr: plan must be reviewed or recapped ──
+  dev:create-pr)
+    require_plan
+    if [[ -n "$PLAN" ]]; then
+      STATUS=$(plan_status "$PLAN")
+      case "$STATUS" in
+        recapped) ;;
+        reviewed)              warn "Plan status is 'reviewed'; recap is being skipped. Reusable insights may be lost." ;;
+        implemented)           block "Plan status is 'implemented' — run review-code then recap first." ;;
+        planning|approved|in-progress) block "Plan status is '$STATUS' — not yet executed. Continue the workflow." ;;
+        archived)   block "PR already exists for this plan." ;;
+        *)                     block "Plan status is '$STATUS' — expected 'reviewed' or 'recapped'." ;;
+      esac
+      if ! has_final_pr_pattern "$PLAN"; then
+        block "Plan PR Pattern is missing or still provisional. Run review-code to finalize it before create-pr."
+      fi
+    fi
+    ;;
+
+  # ── ship-feature: reject already-shipped ──
+  dev:ship-feature)
+    if [[ -n "$PLAN" ]]; then
+      STATUS=$(plan_status "$PLAN")
+      [[ "$STATUS" == "archived" ]] && block "Plan is already archived — feature has already shipped."
+    fi
+    ;;
+
+  # ── fix-bug: no plan gate, but must run inside a git repo ──
+  dev:fix-bug)
+    # fix-bug creates its own branch from base — no plan needed.
+    # Just validate we're in a git repo.
+    git rev-parse --git-dir >/dev/null 2>&1 || block "Not in a git repository. fix-bug requires version control."
+    ;;
+
+  # ── design-feature, design-system, design-infra: no entry gate ──
+  dev:design-feature|dev:design-system|dev:design-infra|dev:explore|dev:simplify-code|dev:write-rca|dev:create-issue)
+    # These are entry-point skills — no prerequisite checks needed.
+    ;;
+
+  *) exit 0 ;;
+esac
+
+exit 0

@@ -101,9 +101,9 @@ Rules: 5–10 Implementation Steps, dependency-ordered. Every Impl refs ≥1 TC-
 
 Save. Show: name, type, requirement, counts, path.
 
-Ask: "Changes?" then "Create issue?" → `gh issue create`, update `Issue:` field.
+Ask: "Changes?" then "Create issue?" → if yes, `gh issue create`, update `Issue:` field.
 
-**PR Pattern (final step).** After issue creation, draft the provisional `## PR Pattern` — it records slicing intent and is finalized at review-code time (scope may shift during implementation).
+**PR Pattern (final step).** After the issue decision, draft the provisional `## PR Pattern` — it records slicing intent and is finalized at review-code time (scope may shift during implementation).
 
 **Single vs. chain:** each slice must be independently mergeable without breaking the app. One deployable unit → `Type: single` (branch `<type>/<slug>`). Otherwise → `Type: chain` (branches `<type>/<slug>-k`, k = 1…N).
 
@@ -119,4 +119,16 @@ Ask: "Changes?" then "Create issue?" → `gh issue create`, update `Issue:` fiel
 
 Enumerate every slice upfront — branch + `Steps` + one-line summary each — so the full chain is known before any PR exists. Slice order respects `## Context` Dependencies (external/in-flight work, deployment order). Each Implementation Step belongs to exactly one slice (the `Steps` columns partition all steps), AND no TC spans slices — every step satisfying a given TC sits in the same slice, so each slice's TCs pass within that slice alone. execute-feature runs each slice's RED→GREEN over those steps' TCs. Save.
 
-Output (only once all blocking gates pass — Open Questions, TDD, Mechanism Invariants, Cross-dimension coverage): "Plan drafted. Run the review-feature skill."
+## Self-Check (BLOCKING — do NOT emit completion until every item is ✅)
+
+Run this audit before the final output. If ANY item is unchecked → STOP, fix the plan, re-check.
+
+- [ ] **Open Questions** (`Open Questions gate`): `Open Questions:` empty. Count: __.
+- [ ] **TDD — Test Cases** (`TDD gate`): ≥1 TC, each with all four fields filled.
+- [ ] **TDD — Bidirectional refs** (`TDD gate`): every Impl → ≥1 TC; every TC → ≥1 Impl. Orphan TCs: __ / Impls: __.
+- [ ] **Mechanism Invariants** (`Mechanism Invariants gate`, conditional): new data structure → ≥1 entry per structure, init/identity guard + boundary TC. N/A if none.
+- [ ] **Cross-dimension coverage** (`Cross-dimension coverage gate`): every non-trivial combo of orthogonal axes has ≥1 TC or sits in `## Out of Scope`. Uncovered: __.
+- [ ] **PR Pattern** (`PR Pattern (final step)`): `## PR Pattern (provisional)` present; Impl Steps partitioned across slices; no TC spans slices.
+- [ ] **Non-functional mapping** (`Impact Analysis`): each code-requiring Non-functional item maps to an Impl Step (or `ops-only`). Unmapped: __.
+
+If ALL checked → emit "Plan drafted. Run the review-feature skill."

@@ -119,4 +119,17 @@ Missing evidence:
 - Include PR fix details, but do not let the fix description replace incident analysis.
 - End with useful gaps: what evidence would turn `UNKNOWN` or `Partial` into `Confirmed`.
 
-Print: report path, sources read/unreadable, confidence, `UNKNOWN` count, action item count.
+## Self-Check (BLOCKING — do NOT emit completion until every item is ✅)
+
+Run this audit before the final output. If ANY item is unchecked → STOP, fix, re-check.
+
+- [ ] **Sources normalized** (`## Source Intake`): all sources have S# IDs; unfetchable marked UNREADABLE. Count: __.
+- [ ] **Evidence classified** (`## Evidence Discipline`): every important claim tagged FACT / INFERENCE / UNKNOWN with citation.
+- [ ] **Root cause discipline** (`## Evidence Discipline`): Confirmed needs failure mode + impact link + causal mechanism + fix link; else "Root cause: Not confirmed" + missing evidence.
+- [ ] **No invented data** (`## Evidence Discipline`): no fabricated severity, times, impact, owners, due dates, alert names; UNKNOWN for gaps.
+- [ ] **Timeline factual** (`## Quality Bar`): ordered, timestamped, each event cites S#.
+- [ ] **Executive summary readable** (`## Quality Bar`): non-implementers can follow it.
+- [ ] **Corrective actions specific**: each action has owner + due (or UNKNOWN). Count: __.
+- [ ] **Open Questions listed** (`## Quality Bar`): evidence that would turn UNKNOWN/Partial → Confirmed documented.
+
+If ALL checked → print: report path, sources read/unreadable, confidence, UNKNOWN count, action item count.

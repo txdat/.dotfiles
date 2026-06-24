@@ -12,11 +12,13 @@
 
 ## Full Feature Cycle
 
-`/dev:ship-feature <requirement>` — explore → plan → execute → review-code → recap → PR
+`/dev:ship-feature <requirement>` — explore → design-feature → review-feature → execute → review-code → recap → PR
 
 Resume: `/dev:ship-feature add-jwt from execute`
 
 Plan review enforces the open-questions gate: if `design-feature` saves a draft with unresolved `Open Questions:`, `review-feature` stops and routes back to planning.
+
+Every dev skill ends with a blocking self-check. Do not emit the skill's handoff line until that checklist is verified against the artifacts.
 
 ---
 

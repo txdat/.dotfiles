@@ -20,7 +20,7 @@ Route:
 Phases in order: RED 🔴 → GREEN 🟢 → BLUE 🔵.
 
 **Branch & commit model.** Derive names from the plan's `## PR Pattern`; never commit to `<base>`. Always create from an **explicit** `<parent>` start point (never implicit HEAD); on resume, if the branch already exists, verify ancestry — `git merge-base --is-ancestor <parent> <branch>` non-zero → STOP `❌ <branch> not based on <parent>`. RED/GREEN commits land on the slice branch — create-pr reuses these branches.
-- **Single / ad-hoc** (`Type: single`): `<parent>` = `<base>`. `git checkout -b <type>/<slug> <base> 2>/dev/null || git checkout <type>/<slug>`. Run RED→GREEN once over all `## Test Cases`.
+- **Single** (`Type: single`): `<parent>` = `<base>`. `git checkout -b <type>/<slug> <base> 2>/dev/null || git checkout <type>/<slug>`. Run RED→GREEN once over all `## Test Cases`.
 - **Chain** (`Type: chain`): execute slices in PR-Pattern order. Per slice k, `<parent>` = `<base>` (k=1) else `<type>/<slug>-(k-1)`: `git checkout -b <type>/<slug>-k <parent> 2>/dev/null || git checkout <type>/<slug>-k`, then run RED→GREEN **scoped to that slice's `Steps` → TCs** — its `test(red): <slug>-k` commit precedes its implementation commit(s). Each slice branch is a self-contained RED→GREEN pair.
 
 **RED** (sequential, inline):
@@ -92,4 +92,21 @@ Any `❌` → STOP. Log in `## Discovered Scope`. Ask: fix inline / separate tas
 
 ## Completion
 
-All `[x]` → lint + build + targeted tests — including the plan's `## Affected Existing Tests` set; a failing existing test → root-cause before forcing green (**regression** → fix impl / **stale test**: a `needs update` test the Impl step never updated → finish that step / **intended change** → log `## Deviations`). Full suite only if convention or blast radius warrants → status `implemented`. Print: "Implementation complete. Run the review-code skill." Surface `## Coverage Gaps` and `## Deviations` if non-empty.
+All implementation items checked → lint + build + targeted tests — including the plan's `## Affected Existing Tests` set; a failing existing test → root-cause before forcing green (**regression** → fix impl / **stale test**: a `needs update` test the Impl step never updated → finish that step / **intended change** → log `## Deviations`). Full suite only if convention or blast radius warrants. Then run the Self-Check below.
+
+## Self-Check (BLOCKING — do NOT emit completion until every item is ✅)
+
+Run this audit before marking the plan `implemented`. If ANY item is unchecked → STOP, fix, re-check.
+
+- [ ] **Build + suite gate**: lint + build pass; targeted tests green (full suite if convention/blast radius warrants); no test force-greened over a failure.
+- [ ] **RED/baseline gate** (`## TDD Execution`): per slice the proof commit — `test(red)` feature/fix, `test: baseline` refactor — precedes that slice's impl commit(s). Proof commits: __ / slices: __ — match?
+- [ ] **Symbol membership** (CORE `Verify symbol membership`): ran on every new call, field access, import. Unresolved: __.
+- [ ] **No fake implementations** (`## TDD Execution` → GREEN): re-read the impl — no test-input special-casing, no lookup tables. Offenders: __.
+- [ ] **GREEN coverage** (`## TDD Execution` thresholds): every changed file ✅ / ⚠️ logged in `## Coverage Gaps` / ❌ resolved. Gaps: __.
+- [ ] **BLUE refactor**: all GREEN done → refactor → `code-quality-auditor` confirmed no behavior change → coverage re-run on BLUE-touched files, targets met.
+- [ ] **Dependents** (`## Dependents Check`): ran; every ❌ resolved. Open: __.
+- [ ] **Affected Existing Tests**: plan's set all pass OR each failure root-caused (regression fixed / stale test finished / intended change in `## Deviations`). Failing: __.
+- [ ] **Deviations logged** (`## Plan Deviation`): every divergence in `## Deviations` with Plan said / Doing instead / Why / Tradeoff. Unlogged: __.
+- [ ] **Scope Creep logged** (`## Scope Creep`): every discovery in `## Discovered Scope`. Unlogged: __.
+
+If ALL checked → status `implemented`. Print: "Implementation complete. Run the review-code skill." Surface `## Coverage Gaps` and `## Deviations` if non-empty.

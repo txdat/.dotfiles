@@ -23,4 +23,15 @@ Append under section headers — never overwrite.
 
 Save to `docs/recaps/<basename>_<date>.md`: task, PR URL if available, insights, plan path. Update plan to `recapped`.
 
-Print: task, PR URL if available, plan path, counts. Print: "Recap complete. Run the create-pr skill."
+## Self-Check (BLOCKING — do NOT emit completion until every item is ✅)
+
+Run this audit before the final output. If ANY item is unchecked → STOP, fix, re-check.
+
+- [ ] **Plan status**: status `reviewed`. Current: __.
+- [ ] **Diff reviewed** (top): `git diff <base> --stat` and `git log <base>..HEAD --oneline` captured.
+- [ ] **Categories correct** (`## Routing`): Facts/Concepts → recap only; Patterns/Anti-patterns → project config only. No cross-contamination.
+- [ ] **User approved**: extraction presented, user confirmed "Does this look right?"
+- [ ] **Sections appended**: appended under existing headers — nothing overwritten.
+- [ ] **File saved**: `docs/recaps/<basename>_<date>.md` with task, PR URL (if any), insights, plan path.
+
+If ALL checked → update plan to `recapped`. Print: task, PR URL if available, plan path, counts. Print: "Recap complete. Run the create-pr skill."

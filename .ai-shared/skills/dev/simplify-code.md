@@ -20,4 +20,13 @@ Present findings. Ask: "Apply all / pick / skip?"
 
 Apply approved inline. Run targeted tests — if fail, revert and report.
 
-Print: simplified, lines removed, test status.
+## Self-Check (BLOCKING — do NOT emit completion until every item is ✅)
+
+Run this audit before the final output. If ANY item is unchecked → STOP, fix, re-check.
+
+- [ ] **Scope** (top): only simplification — no features, fixes, or behavior changes.
+- [ ] **Tests pass** (`## Apply`): targeted tests run + pass post-change. Failures: __.
+- [ ] **Lines removed**: net reduction. Before: __ / after: __.
+- [ ] **User approved** (`## Apply`): findings presented, user chose Apply all / pick / skip before edits.
+
+If ALL checked → print: simplified, lines removed, test status.

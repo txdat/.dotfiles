@@ -1,0 +1,30 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(~/.dotfiles/.ai-shared/**)",
+      "Read(~/.ai-shared/**)",
+      "Bash(~/.ai-shared/bin/**)"
+    ]
+  },
+  "model": "sonnet",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Skill",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.ai-shared/bin/gate-check",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  },
+  "enableWorkflows": false,
+  "workflowKeywordTriggerEnabled": false,
+  "effortLevel": "high",
+  "awaySummaryEnabled": false,
+  "theme": "dark",
+  "fileCheckpointingEnabled": true
+}

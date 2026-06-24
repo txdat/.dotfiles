@@ -1,19 +1,19 @@
 # /create-pr — Create Pull Request
 
-Plans: `docs/plans/`. Find active plan. **Planned work requires status `reviewed` or `recapped`**: if a plan exists but isn't `reviewed`/`recapped` (e.g. `implemented`), STOP — run `/dev:review-code` first, then `/dev:recap` for the ship-feature flow. No plan → warn, ask for PR scope, proceed ad-hoc. Read plan when present + project config file (CLAUDE.md/CODEX.md/GEMINI.md/AGENTS.md).
+Plans: `docs/plans/`. Find active plan. **PR creation requires status `reviewed` or `recapped`**: if no plan exists, STOP and run `design-feature` or `fix-bug` first. If the plan is `implemented`, run `review-code`. If status is `reviewed`, continue but print: `⚠️ Recap skipped — reusable insights may be lost. Run recap first if this produced patterns worth preserving.` Read plan + project config file (CLAUDE.md/CODEX.md/GEMINI.md/AGENTS.md).
 
-Resolve `<base>` per CORE. PR bases come from `<base>` and the chain order — not the current branch: execute-feature/fix-bug create the slice branches and commit there before this skill runs. Branch names and order come from `## PR Pattern` in the plan (ad-hoc: a single derived branch).
+Resolve `<base>` per CORE. PR bases come from `<base>` and the chain order — not the current branch: execute-feature/fix-bug create the slice branches and commit there before this skill runs. Branch names and order come from the plan's finalized `## PR Pattern`.
 
 ## PR Pattern
 
 Read `## PR Pattern` from the active plan:
 - **Finalized** (no `(provisional)` marker) → use it: `single` or `chain`, with the listed branch names and summaries.
 - **Provisional** (unexpected once `reviewed` — review-code finalizes before flipping status) → STOP; run `/dev:review-code` to finalize against the actual diff.
-- **Absent** (no pattern, or no plan) → single ad-hoc PR: one slice, branch `<type>/<slug>` derived from the diff scope.
+- **Absent** → STOP; review-code/fix-bug must finalize a PR Pattern before create-pr.
 
 ## Procedure
 
-`<branch-k>` = branch name in row k of the plan's PR Pattern table (single PR: the sole row, `<type>/<slug>`; chain: `<type>/<slug>-k`; ad-hoc absent pattern: the single derived `<type>/<slug>`, k = 1).
+`<branch-k>` = branch name in row k of the plan's PR Pattern table (single PR: the sole row, `<type>/<slug>`; chain: `<type>/<slug>-k`).
 
 Define `<parent>` per context:
 - Single PR: `<parent>` = `<base>`
@@ -23,9 +23,9 @@ Define `<parent>` per context:
 
 For each PR (single = N of 1; chain = repeat for k = 1…N):
 
-**1. Branch** — **planned work:** `<branch-k>` must already exist (execute-feature/fix-bug created it from the correct parent) — absent → STOP `❌ <branch-k> missing — run execute-feature/fix-bug first`. **Ad-hoc** (no plan): create from `<base>`. Then switch onto it:
+**1. Branch** — `<branch-k>` must already exist (execute-feature/fix-bug created it from the correct parent) — absent → STOP `❌ <branch-k> missing — run execute-feature/fix-bug first`. Then switch onto it:
 ```bash
-git rev-parse --verify <branch-k> 2>/dev/null || git checkout -b <branch-k> <base>   # ad-hoc only; planned + missing → STOP above
+git rev-parse --verify <branch-k> >/dev/null || { echo "<branch-k> missing"; exit 1; }
 git checkout <branch-k>
 ```
 
@@ -81,4 +81,15 @@ gh pr edit <pr-1-number> --body "$(printf '%s' "$body" | sed "\\#| <branch-k> |#
 
 Default `--draft`. Pass `ready` to open directly.
 
-Print PR URL. Update plan status to `archived`. Print: "Feature shipped."
+## Self-Check (BLOCKING — do NOT emit completion until every item is ✅)
+
+Run this audit before creating the PR. If ANY item is unchecked → STOP, fix, re-check.
+
+- [ ] **Plan status** (top): status `reviewed` or `recapped`. Current: __. If `reviewed`, warning printed: yes/no.
+- [ ] **PR Pattern** (`## PR Pattern`): finalized (no `(provisional)`); provisional/absent → STOP per that section.
+- [ ] **Branches exist** (Procedure 1): each `<branch-k>` exists (`git rev-parse --verify`). Missing: __.
+- [ ] **Commits above parent** (Procedure 3): `git log <parent>..HEAD` non-empty per slice. Empty: __.
+- [ ] **Pre-flight clean** (Procedure 4): no `System.out`/`console.log`/`print(`/`// DEBUG`, no conflict markers in diff. Issues: __.
+- [ ] **PR description** (Procedure 5): title <72 chars; WHAT/HOW/Testing/Checklist present; `Closes #N` if `Issue:` set.
+
+If ALL checked → create PR, update plan to `archived`, print PR URL + "Feature shipped."

@@ -48,7 +48,20 @@ Rules: 5–15 Implementation Steps, dependency-ordered. >15 → split. Destructi
 
 **Gate**: pre-flight non-empty, each impl has verify, rollback has step.
 
-Save. Show: name, env, requirement, counts, path. Ask: "Changes?" then "Create issue?"
+## Self-Check (BLOCKING — do NOT emit completion until every item is ✅)
+
+Run this audit before the final output. If ANY item is unchecked → STOP, fix, re-check.
+
+- [ ] **Requirement** (`## Requirement`): measurable, scope explicit.
+- [ ] **Pre-flight non-empty** (`**Gate**`): ≥1 pre-flight command confirming state. Count: __.
+- [ ] **Implementation Steps** (Rules): 5–15, dependency-ordered. Count: __.
+- [ ] **Each impl has verify** (`**Gate**`): every Implementation Step has a Verification Step.
+- [ ] **Rollback** (`**Gate**`): trigger defined + ≥1 rollback step. Missing: __.
+- [ ] **Destructive gates** (Rules): every destructive step has dry-run + rollback. Destructive: __.
+- [ ] **Drift sync** (`**Drift detection**`): live vs config compared; drift → sync step first.
+- [ ] **Design Decisions** (`## Design Decisions`): alternatives considered.
+
+If ALL checked → save, show counts, ask "Changes?" then "Create issue?"
 
 ## Review
 
