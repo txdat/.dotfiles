@@ -15,7 +15,7 @@
           {
             "type": "command",
             "command": "~/.ai-shared/bin/gate-check",
-            "timeout": 10
+            "if": "Skill(dev:*)"
           }
         ]
       }
@@ -23,8 +23,16 @@
   },
   "enableWorkflows": false,
   "workflowKeywordTriggerEnabled": false,
+  "enabledPlugins": {
+    "frontend-design@claude-plugins-official": true,
+    "playwright@claude-plugins-official": true,
+    "typescript-lsp@claude-plugins-official": true,
+    "pyright-lsp@claude-plugins-official": true,
+    "mongodb@claude-plugins-official": true
+  },
   "effortLevel": "high",
   "awaySummaryEnabled": false,
+  "tui": "fullscreen",
   "theme": "dark",
   "fileCheckpointingEnabled": true
 }

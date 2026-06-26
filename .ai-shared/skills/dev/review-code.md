@@ -2,7 +2,7 @@
 
 **Scope (locked):** Design is FIXED. Review only whether the code faithfully implements the approved plan, plus code-level correctness, security, and quality. Do NOT re-evaluate requirements, scope, or design decisions — those are owned by review-feature. A genuine plan defect the code surfaces → record under `### ⚠️ Plan Defect (out of band)` and recommend re-running review-feature; never block code review on design grounds.
 
-Find active plan in `docs/plans/` (expects status `implemented`). Read plan + project config file (CLAUDE.md/CODEX.md/GEMINI.md/AGENTS.md). If no plan is found, STOP and run `design-feature` or `fix-bug` first.
+Resolve the session's active plan (expects status `implemented`): an explicit `docs/plans/<file>.md` (or its slug) in $ARGUMENTS pins it; otherwise the session's pinned plan, else the lone active plan. 0 or 2+ active and none named → STOP, ask which (or run `design-feature`/`fix-bug` first). Read plan + project config file (CLAUDE.md/CODEX.md/GEMINI.md/AGENTS.md).
 
 Resolve `<base>` per CORE. Run: `git diff <base> --stat`, `git diff <base>`, `git log <base>..HEAD --oneline`.
 

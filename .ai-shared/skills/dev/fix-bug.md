@@ -37,6 +37,8 @@ Gap: <why missed>
 
 ## Fix
 
+**Approval Gate (BLOCKING):** resolve the session's active plan — an explicit `docs/plans/<file>.md` path in $ARGUMENTS pins it (slug matching is NOT used here, since the symptom is free text); otherwise the session's pinned plan, else the lone active plan. If a plan is active and its `Status:` is `planning`/`blocked-by-architecture`, STOP — ask the user to approve it manually (set `Status: approved`) before the fix appends to it, or to drop the stale plan to run planless. If the active plan is already `reviewed`/`recapped`/`archived`, STOP — do not append a fix after review or shipping; either resume with a different active plan or run planless. No active plan → planless, proceed (fix-bug creates its own plan at the end).
+
 Bugs are single-PR. Branch first from `<base>` (never commit to `<base>` itself): `git checkout -b fix/<slug> <base> 2>/dev/null || git checkout fix/<slug>`; on resume, if it exists, verify `git merge-base --is-ancestor <base> fix/<slug>` — non-zero → STOP `❌ fix/<slug> not based on <base>`.
 
 0. **Symbol check** — every call, field access, and import in the patch must be a member of its target type/module per CORE `Verify symbol membership`. Unresolved → STOP, ask, wait.

@@ -1,6 +1,6 @@
 # /recap — Session Insights & Memory Capture
 
-Find active plan in `docs/plans/` (ship cycle: status `reviewed`). Resolve `<base>` per CORE. Run `git diff <base> --stat` and `git log <base>..HEAD --oneline`. PR is created after recap in the ship-feature flow; if a PR already exists, capture the PR URL via `gh pr view --json url -q .url` (chain → one per branch; none → omit). Ask: "Anything to capture?"
+Resolve the session's active plan (ship cycle: status `reviewed`): an explicit `docs/plans/<file>.md` (or its slug) in $ARGUMENTS pins it; otherwise the session's pinned plan, else the lone active plan. 0 or 2+ active and none named → STOP, ask which. Resolve `<base>` per CORE. Run `git diff <base> --stat` and `git log <base>..HEAD --oneline`. PR is created after recap in the ship-feature flow; if a PR already exists, capture the PR URL via `gh pr view --json url -q .url` (chain → one per branch; none → omit). Ask: "Anything to capture?"
 
 ## Categories
 

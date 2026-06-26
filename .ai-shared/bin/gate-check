@@ -5,15 +5,25 @@
 #
 # Valid transitions:
 #   design-feature  → planning
-#   review-feature  → planning|blocked-by-architecture → approved
+#   review-feature  → planning|blocked-by-architecture  (verdict READY; no status flip)
+#   (manual approve)→ approved        (human, or ship-feature auto-approves itself)
 #   execute-feature → approved → in-progress → implemented
+#   execute-infra   → approved → in-progress → implemented
 #   review-code     → implemented → reviewed
 #   recap           → reviewed → recapped
 #   create-pr       → reviewed|recapped → archived
-#   fix-bug         → (no plan gate; verifies repository context)
+#   fix-bug         → gated only when a plan is active (must be approved); else planless
 #
 # Each skill's entry gate is the prerequisite status.
-# Review-code additionally requires test(red) proof for the plan slices.
+# Review-code additionally requires proof-commit sequencing for the plan slices.
+#
+# Approval is NEVER set by review-feature — the human approves manually
+# (set "Status: approved"); ship-feature is the sole auto-approver.
+#
+# Active plan resolution is session-pinned (see resolve_plan): an explicit
+# plan ref in the skill args pins the session; otherwise the existing pin is
+# reused; otherwise the lone active plan is adopted. 0 or 2+ active and none
+# named → no plan (require_plan skills block).
 
 set -euo pipefail
 
@@ -24,24 +34,34 @@ fi
 
 HOOK_INPUT=$(cat)
 
-normalize_skill() {
+DEV_SKILL_SLUG_RE='create-issue|create-pr|design-feature|design-infra|design-system|execute-feature|execute-infra|explore|fix-bug|recap|review-code|review-feature|review-system|ship-feature|simplify-code|write-rca'
+
+is_dev_skill_slug() {
+  [[ "$1" =~ ^($DEV_SKILL_SLUG_RE)$ ]]
+}
+
+emit_skill_slug() {
+  local slug="$1"
+  is_dev_skill_slug "$slug" || return 1
+  echo "$slug"
+}
+
+extract_skill_slug() {
   local raw="${1#/}"
   raw="${raw,,}"
   raw="${raw//_/-}"
 
   case "$raw" in
-    dev:*) echo "$raw"; return 0 ;;
-    dev-*) echo "dev:${raw#dev-}"; return 0 ;;
+    dev:*) emit_skill_slug "${raw#dev:}" && return 0 ;;
+    dev-*) emit_skill_slug "${raw#dev-}" && return 0 ;;
   esac
 
-  if [[ "$raw" =~ dev[:-](create-pr|design-feature|design-infra|design-system|execute-feature|execute-infra|explore|fix-bug|recap|review-code|review-feature|review-system|ship-feature|simplify-code|write-rca|create-issue) ]]; then
-    echo "dev:${BASH_REMATCH[1]}"
-    return 0
+  if [[ "$raw" =~ dev[:-]($DEV_SKILL_SLUG_RE) ]]; then
+    emit_skill_slug "${BASH_REMATCH[1]}" && return 0
   fi
 
-  if [[ "$raw" =~ (^|[[:space:]/])(create-pr|design-feature|design-infra|design-system|execute-feature|execute-infra|explore|fix-bug|recap|review-code|review-feature|review-system|ship-feature|simplify-code|write-rca|create-issue)([[:space:]]|$) ]]; then
-    echo "dev:${BASH_REMATCH[2]}"
-    return 0
+  if [[ "$raw" =~ (^|[[:space:]/])($DEV_SKILL_SLUG_RE)([[:space:]]|$) ]]; then
+    emit_skill_slug "${BASH_REMATCH[2]}" && return 0
   fi
 
   echo ""
@@ -64,8 +84,9 @@ RAW_SKILL=$(
     | .[0] // ""
   ' <<<"$HOOK_INPUT" 2>/dev/null || true
 )
-SKILL=$(normalize_skill "$RAW_SKILL")
-[[ "$SKILL" == dev:* ]] || exit 0
+SKILL_SLUG=$(extract_skill_slug "$RAW_SKILL")
+[[ -n "$SKILL_SLUG" ]] || exit 0
+STATUS=""
 
 REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
 cd "$REPO_ROOT"
@@ -84,33 +105,18 @@ HOOK_TEXT=$(
   ' <<<"$HOOK_INPUT" 2>/dev/null || true
 )
 
+# Session id — keys the per-session active-plan pin. Fall back to a fixed
+# token so a missing id still shares one pin within the process tree.
+SESSION_ID=$(
+  jq -r '[.session_id?, .sessionId?, .session?.id?] | map(select(type=="string" and length>0)) | .[0] // ""' \
+    <<<"$HOOK_INPUT" 2>/dev/null || true
+)
+[[ -n "$SESSION_ID" ]] || SESSION_ID="default"
+SESSION_ID="${SESSION_ID//[^A-Za-z0-9._-]/_}"
+PIN_DIR="/tmp/ai-ctx"
+PIN_FILE="$PIN_DIR/active-plan.$SESSION_ID"
+
 # ── helpers ───────────────────────────────────────────────────────────
-
-find_plan() {
-  local dir="docs/plans"
-  [[ -d "$dir" ]] || return 1
-
-  local plan newest=""
-  local active='planning|approved|in-progress|implemented|reviewed|recapped|blocked-by-architecture'
-  while IFS= read -r plan; do
-    [[ -n "$plan" ]] || continue
-    if [[ -z "$newest" || "$plan" -nt "$newest" ]]; then
-      newest="$plan"
-    fi
-  done < <(grep -Erl "^Status:[[:space:]]*($active)([[:space:]|]|$)" "$dir" 2>/dev/null || true)
-
-  if [[ -z "$newest" ]]; then
-    while IFS= read -r plan; do
-      [[ -n "$plan" ]] || continue
-      if [[ -z "$newest" || "$plan" -nt "$newest" ]]; then
-        newest="$plan"
-      fi
-    done < <(grep -Erl "^Status:" "$dir" 2>/dev/null || true)
-  fi
-
-  [[ -n "$newest" ]] || return 1
-  echo "$newest"
-}
 
 find_explicit_plan() {
   local candidate
@@ -120,6 +126,98 @@ find_explicit_plan() {
     echo "$candidate"
     return 0
   fi
+  return 1
+}
+
+# A bare path was given but resolves to no file (e.g. "docs/plans/x.md" typo).
+explicit_path_given_but_missing() {
+  [[ "$HOOK_TEXT" =~ docs/plans/[^[:space:]]+\.md ]] || return 1
+  find_explicit_plan >/dev/null 2>&1 && return 1
+  return 0
+}
+
+# Match a unique filename token (slug) from the args against plan basenames.
+# Token must be ≥3 chars, appear in exactly one plan filename. Ambiguous or no
+# match → fail (treated as "not explicitly named").
+find_token_plan() {
+  local dir="docs/plans" tok match count=0 found=""
+  [[ -d "$dir" ]] || return 1
+  for tok in $HOOK_TEXT; do
+    [[ "$tok" == *.md || "$tok" == */* ]] && continue
+    [[ "$tok" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{2,}$ ]] || continue
+    count=0; match=""
+    while IFS= read -r found; do
+      [[ -n "$found" ]] || continue
+      count=$((count+1)); match="$found"
+    done < <(find "$dir" -maxdepth 1 -type f -name "*${tok}*.md" 2>/dev/null || true)
+    if [[ "$count" -eq 1 ]]; then
+      echo "$match"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Count plans in an active (non-archived) status.
+count_active_plans() {
+  local dir="docs/plans"
+  [[ -d "$dir" ]] || { echo 0; return 0; }
+  local active='planning|approved|in-progress|implemented|reviewed|recapped|blocked-by-architecture'
+  grep -Erl "^Status:[[:space:]]*($active)([[:space:]|]|$)" "$dir" 2>/dev/null | grep -c . || true
+}
+
+# The lone active plan, only when exactly one exists.
+lone_active_plan() {
+  local dir="docs/plans"
+  [[ -d "$dir" ]] || return 1
+  local active='planning|approved|in-progress|implemented|reviewed|recapped|blocked-by-architecture'
+  local n
+  n=$(grep -Erl "^Status:[[:space:]]*($active)([[:space:]|]|$)" "$dir" 2>/dev/null | grep -c . || true)
+  [[ "$n" -eq 1 ]] || return 1
+  grep -Erl "^Status:[[:space:]]*($active)([[:space:]|]|$)" "$dir" 2>/dev/null | head -1
+}
+
+pin_plan() {
+  mkdir -p "$PIN_DIR" 2>/dev/null || true
+  printf '%s\n' "$1" > "$PIN_FILE" 2>/dev/null || true
+}
+
+read_pin() {
+  [[ -f "$PIN_FILE" ]] || return 1
+  local p
+  p=$(head -1 "$PIN_FILE" 2>/dev/null || true)
+  [[ -n "$p" && -f "$p" ]] || return 1
+  # Stale if archived — drop the pin so a fresh plan can take over.
+  [[ "$(plan_status "$p")" == "archived" ]] && return 1
+  echo "$p"
+}
+
+# Skills whose argument is a plan name (so a bare slug token deliberately
+# names a plan). All other skills take free-text args (requirement, symptom)
+# where a stray word must NOT be treated as a plan reference.
+takes_plan_name() {
+  case "$1" in
+    review-feature|execute-feature|execute-infra|review-code|recap|create-pr) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# Session-pinned active-plan resolution. Order:
+#   1. explicit ref in args (path always; unique slug token only for
+#      plan-name skills — see takes_plan_name) → (re)pin + use
+#   2. existing valid session pin → use
+#   3. lone active plan → adopt + pin
+# Returns empty when 0 or 2+ active plans and none named.
+#
+# Slug-token matching is gated to plan-name skills so free-text args
+# (ship-feature requirement, fix-bug symptom, design-* prose) can never
+# silently pin — or block on — an unrelated plan.
+resolve_plan() {
+  local skill="$1" p
+  if p=$(find_explicit_plan 2>/dev/null); then pin_plan "$p"; echo "$p"; return 0; fi
+  if takes_plan_name "$skill" && p=$(find_token_plan 2>/dev/null); then pin_plan "$p"; echo "$p"; return 0; fi
+  if p=$(read_pin 2>/dev/null);           then echo "$p"; return 0; fi
+  if p=$(lone_active_plan 2>/dev/null);   then pin_plan "$p"; echo "$p"; return 0; fi
   return 1
 }
 
@@ -221,12 +319,33 @@ baseline_commit_count() {
   git log --format=%s "${base}..HEAD" 2>/dev/null | grep -Ec '^test:[[:space:]]*baseline' || true
 }
 
-commits_after_latest_red() {
-  local base="$1"
-  local latest_red
-  latest_red=$(git log --format=%H --grep='^test(red):' "${base}..HEAD" 2>/dev/null | head -1 || true)
-  [[ -n "$latest_red" ]] || { echo 0; return 0; }
-  git rev-list --count "${latest_red}..HEAD" 2>/dev/null || echo 0
+proof_sequence_ok() {
+  local base="$1" mode="$2" expected="$3" proof_re=""
+  case "$mode" in
+    red) proof_re='^test\(red\):' ;;
+    baseline) proof_re='^test:[[:space:]]*baseline' ;;
+    *) return 1 ;;
+  esac
+
+  git log --format=%s --reverse "${base}..HEAD" 2>/dev/null | awk \
+    -v proof_re="$proof_re" \
+    -v expected="$expected" '
+      BEGIN { proofs=0; waiting_for_impl=0; seen_proof=0; bad=0 }
+      $0 ~ proof_re {
+        if (waiting_for_impl) bad=1
+        proofs++
+        waiting_for_impl=1
+        seen_proof=1
+        next
+      }
+      {
+        if (!seen_proof) bad=1
+        if (waiting_for_impl) waiting_for_impl=0
+      }
+      END {
+        if (proofs < expected || waiting_for_impl || bad) exit 1
+      }
+    '
 }
 
 slice_count() {
@@ -258,20 +377,37 @@ warn() {
 
 # ── gate dispatch ─────────────────────────────────────────────────────
 
-PLAN=$(find_explicit_plan 2>/dev/null || find_plan 2>/dev/null || true)
+# Resolve (and possibly pin) the active plan only for skills that consume one.
+# Entry skills (design-*, explore, simplify-code, write-rca, create-issue) must
+# never write a pin — otherwise a lone plan would be pinned before design-feature
+# creates its successor, and the next gated skill would reuse the stale pin.
+case "$SKILL_SLUG" in
+  review-feature|execute-feature|execute-infra|review-code|recap|create-pr|fix-bug|ship-feature)
+    PLAN=$(resolve_plan "$SKILL_SLUG" 2>/dev/null || true) ;;
+  *)
+    PLAN="" ;;
+esac
+[[ -n "$PLAN" ]] && STATUS=$(plan_status "$PLAN")
 
 require_plan() {
   [[ -n "$PLAN" ]] && return 0
-  block "No active plan found in docs/plans. Run design-feature first or pass the intended plan explicitly."
+  if explicit_path_given_but_missing; then
+    block "Named plan not found. Pass an existing docs/plans/<file>.md."
+  fi
+  local n
+  n=$(count_active_plans)
+  if [[ "$n" -ge 2 ]]; then
+    block "Multiple active plans in docs/plans — name one explicitly for ${SKILL_SLUG}, e.g. docs/plans/<file>.md (or its slug)."
+  fi
+  block "No active plan in this session for ${SKILL_SLUG} — name it explicitly with docs/plans/<file>.md (or its slug), or run design-feature first."
 }
 
-case "$SKILL" in
+case "$SKILL_SLUG" in
 
   # ── review-feature: plan must be planning | blocked-by-architecture ──
-  dev:review-feature)
+  review-feature)
     require_plan
     if [[ -n "$PLAN" ]]; then
-      STATUS=$(plan_status "$PLAN")
       case "$STATUS" in
         planning|blocked-by-architecture) ;;
         approved) block "Plan is already approved. Run execute-feature next." ;;
@@ -286,14 +422,13 @@ case "$SKILL" in
     fi
     ;;
 
-  # ── execute-feature: plan must be approved (or in-progress for resume) ──
-  dev:execute-feature)
+  # ── execute-feature / execute-infra: plan must be approved (or in-progress for resume) ──
+  execute-feature|execute-infra)
     require_plan
     if [[ -n "$PLAN" ]]; then
-      STATUS=$(plan_status "$PLAN")
       case "$STATUS" in
         approved|in-progress) ;;
-        planning|blocked-by-architecture) block "Plan status is '$STATUS' — not yet approved. Run review-feature first." ;;
+        planning|blocked-by-architecture) block "Plan status is '$STATUS' — not approved. Approve manually (set 'Status: approved') if review-feature returned READY, else run review-feature first. Approval is never automatic outside ship-feature." ;;
         implemented)                      block "Plan is already implemented. Run review-code next." ;;
         reviewed|recapped)                block "Plan status is '$STATUS' — already past execution. Run review-code or create-pr." ;;
         archived)              block "Plan is shipped. Nothing to execute." ;;
@@ -303,10 +438,9 @@ case "$SKILL" in
     ;;
 
   # ── review-code: plan must be implemented + RED commit must exist ──
-  dev:review-code)
+  review-code)
     require_plan
     if [[ -n "$PLAN" ]]; then
-      STATUS=$(plan_status "$PLAN")
       case "$STATUS" in
         implemented) ;;
         planning|blocked-by-architecture|approved|in-progress)
@@ -325,23 +459,24 @@ case "$SKILL" in
       if [[ "$BASELINES" -lt "$SLICES" ]]; then
         block "Found $BASELINES 'test: baseline' commit(s) between $BASE and HEAD; expected at least $SLICES for the plan slice count. Commit the passing baseline before refactor review."
       fi
+      if ! proof_sequence_ok "$BASE" baseline "$SLICES"; then
+        block "Baseline proof is out of sequence. Each slice must have a 'test: baseline' commit followed by at least one refactor commit before the next slice."
+      fi
     else
       REDS=$(red_commit_count "$BASE")
       if [[ "$REDS" -lt "$SLICES" ]]; then
         block "Found $REDS test(red) commit(s) between $BASE and HEAD; expected at least $SLICES for the plan slice count. Run RED phase before code review."
       fi
-      AFTER_LATEST_RED=$(commits_after_latest_red "$BASE")
-      if [[ "$AFTER_LATEST_RED" -eq 0 ]]; then
-        block "Latest test(red) commit has no later implementation commit. Finish GREEN before code review."
+      if ! proof_sequence_ok "$BASE" red "$SLICES"; then
+        block "RED/GREEN proof is out of sequence. Each slice must have a 'test(red)' commit followed by at least one implementation commit before the next slice."
       fi
     fi
     ;;
 
   # ── recap: plan must be reviewed ──
-  dev:recap)
+  recap)
     require_plan
     if [[ -n "$PLAN" ]]; then
-      STATUS=$(plan_status "$PLAN")
       case "$STATUS" in
         reviewed) ;;
         implemented)               block "Plan is implemented but not reviewed. Run review-code first." ;;
@@ -354,10 +489,9 @@ case "$SKILL" in
     ;;
 
   # ── create-pr: plan must be reviewed or recapped ──
-  dev:create-pr)
+  create-pr)
     require_plan
     if [[ -n "$PLAN" ]]; then
-      STATUS=$(plan_status "$PLAN")
       case "$STATUS" in
         recapped) ;;
         reviewed)              warn "Plan status is 'reviewed'; recap is being skipped. Reusable insights may be lost." ;;
@@ -373,22 +507,31 @@ case "$SKILL" in
     ;;
 
   # ── ship-feature: reject already-shipped ──
-  dev:ship-feature)
+  ship-feature)
     if [[ -n "$PLAN" ]]; then
-      STATUS=$(plan_status "$PLAN")
       [[ "$STATUS" == "archived" ]] && block "Plan is already archived — feature has already shipped."
     fi
     ;;
 
-  # ── fix-bug: no plan gate, but must run inside a git repo ──
-  dev:fix-bug)
+  # ── fix-bug: planless by default; gated only when a plan is active ──
+  fix-bug)
     # fix-bug creates its own branch from base — no plan needed.
-    # Just validate we're in a git repo.
     git rev-parse --git-dir >/dev/null 2>&1 || block "Not in a git repository. fix-bug requires version control."
+    # When a session plan is active (named or pinned), the fix appends to it —
+    # but only while the plan is still pre-review. No active plan → planless.
+    if [[ -n "$PLAN" ]]; then
+      case "$STATUS" in
+        approved|in-progress|implemented) ;;
+        planning|blocked-by-architecture) block "Active plan '$PLAN' is '$STATUS' — not approved. Approve it manually (set 'Status: approved') before fix-bug appends a fix, or remove the stale plan to run planless." ;;
+        reviewed|recapped) block "Active plan '$PLAN' already passed review/recap. Do not append a fix without reopening the workflow; either run planless or use a different active plan." ;;
+        archived) block "Active plan '$PLAN' is already shipped. Run planless or name a different plan." ;;
+        *) block "Active plan status is '$STATUS' — approve the plan, continue its workflow, or remove it before fix-bug." ;;
+      esac
+    fi
     ;;
 
   # ── design-feature, design-system, design-infra: no entry gate ──
-  dev:design-feature|dev:design-system|dev:design-infra|dev:explore|dev:simplify-code|dev:write-rca|dev:create-issue)
+  design-feature|design-system|design-infra|explore|simplify-code|write-rca|create-issue)
     # These are entry-point skills — no prerequisite checks needed.
     ;;
 

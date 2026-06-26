@@ -1,6 +1,6 @@
 # /create-pr — Create Pull Request
 
-Plans: `docs/plans/`. Find active plan. **PR creation requires status `reviewed` or `recapped`**: if no plan exists, STOP and run `design-feature` or `fix-bug` first. If the plan is `implemented`, run `review-code`. If status is `reviewed`, continue but print: `⚠️ Recap skipped — reusable insights may be lost. Run recap first if this produced patterns worth preserving.` Read plan + project config file (CLAUDE.md/CODEX.md/GEMINI.md/AGENTS.md).
+Resolve the session's active plan: an explicit `docs/plans/<file>.md` (or its slug) in $ARGUMENTS pins it; otherwise the session's pinned plan, else the lone active plan. 0 or 2+ active and none named → STOP, ask which. **PR creation requires status `reviewed` or `recapped`**: if no plan is resolved, STOP and run `design-feature` or `fix-bug` first. If the plan is `implemented`, run `review-code`. If status is `reviewed`, continue but print: `⚠️ Recap skipped — reusable insights may be lost. Run recap first if this produced patterns worth preserving.` Read plan + project config file (CLAUDE.md/CODEX.md/GEMINI.md/AGENTS.md).
 
 Resolve `<base>` per CORE. PR bases come from `<base>` and the chain order — not the current branch: execute-feature/fix-bug create the slice branches and commit there before this skill runs. Branch names and order come from the plan's finalized `## PR Pattern`.
 

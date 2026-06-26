@@ -4,7 +4,7 @@ Do NOT write code.
 
 **Owns:** the WHAT and HOW. Design is still OPEN here — this is the last gate to change direction. Step back to the system level; do not just validate the document's fields.
 
-Find plan from $ARGUMENTS or by status `planning`/`blocked-by-architecture`. If unfamiliar areas, suggest the explore skill. If the only active plan is already `approved`, STOP and run execute-feature.
+Resolve the session's active plan: an explicit `docs/plans/<file>.md` (or its slug) in $ARGUMENTS pins it; otherwise the session's pinned plan, else the lone active plan. Never auto-pick among multiple active plans — 0 or 2+ and none named → STOP, ask which. Expects status `planning`/`blocked-by-architecture`. If unfamiliar areas, suggest the explore skill. If the active plan is already `approved`, STOP and run execute-feature.
 
 Read plan + project config file (CLAUDE.md/CODEX.md/GEMINI.md/AGENTS.md).
 
@@ -79,4 +79,4 @@ If ANY ❌ → verdict NEEDS CHANGES. If all ✅ → verdict READY.
 ```
 
 - **NEEDS CHANGES** (any ❌): offer to apply blocking fixes to the plan (wait for approval); design-level rethink → route back to design-feature. Status unchanged until cleared.
-- **READY**: ask "Apply suggestions?"; on apply or skip → `planning`/`blocked-by-architecture` (resolved) become `approved`. Print: "Plan approved. Run the execute-feature skill."
+- **READY**: ask "Apply suggestions?"; on apply or skip → **leave the status unchanged** (`planning`/`blocked-by-architecture`). Do NOT set `approved` — approval is the human's manual action (the sole exception is ship-feature, which approves itself). Print: "Plan READY — approve it manually (set `Status: approved` in the plan), then run the execute-feature skill."
