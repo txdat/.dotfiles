@@ -5,4 +5,4 @@ model: gpt-5.4
 effort: high
 ---
 
-Read `~/.ai-shared/skills/gke-pod-restarts/SKILL.md` and follow all instructions exactly.
+Read `~/.ai-shared/skills/gke/pod-restarts.md` and follow all instructions exactly.
