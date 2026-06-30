@@ -1,6 +1,7 @@
 name = "feature-planner"
 description = "Business features and regular development: breakdown, API design, implementation strategies, refactoring. NOT for architecture changes (use architecture-strategist)."
 model = "gpt-5.4"
+model_reasoning_effort = "high"
 
 developer_instructions = """
 Read `~/.ai-shared/agents/feature-planner.md` and follow all instructions exactly.
