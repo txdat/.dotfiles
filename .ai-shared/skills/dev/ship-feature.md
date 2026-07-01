@@ -30,10 +30,10 @@ At the end of each phase, verify the phase's own self-check (from its skill file
 
 - [ ] **Phase 1 explore**: `## Exploration` output present. Entry Points, Key Files, Data Flow, Patterns, Gotchas all populated.
 - [ ] **Phase 2 plan**: review-feature verdict was READY, Open Questions empty, then ship-feature set status `approved` (ship-feature auto-approves; standalone review-feature does not).
-- [ ] **Phase 3 execute**: Plan status is `implemented`. All GREEN steps passed coverage. No unlogged deviations or scope creep.
+- [ ] **Phase 3 execute**: Plan status is `implemented`. Plan's `Worktree:` field set and matches `git worktree list`. All GREEN steps passed coverage. No unlogged deviations or scope creep.
 - [ ] **Phase 4 review-code**: Verdict is PASS (or PASS WITH NOTES with all Should Fix items resolved). PR Pattern finalized.
 - [ ] **Phase 5 recap**: Plan status is `recapped`. Insights captured in docs/recaps/.
-- [ ] **Phase 6 pr**: PR created + URL printed. Plan status is `archived`.
+- [ ] **Phase 6 pr**: PR created + URL printed. Plan status is `archived`. Worktree removed, `Worktree:` field cleared.
 
 If any phase's self-check fails → do NOT proceed. Fix the phase first.
 

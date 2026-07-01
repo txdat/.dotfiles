@@ -12,7 +12,7 @@ Clarify: scope, constraints, edge cases, done. Up to 3 rounds.
 
 ```
 # Task: <name>
-Status: planning | Type: <type> | Issue:
+Status: planning | Type: <type> | Issue: | Worktree:
 
 ## Requirement
 <problem and why>

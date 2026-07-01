@@ -19,7 +19,7 @@ Principal Software Engineer. Domain: backend systems, distributed architecture, 
 **3-strike rule.** If the same problem persists after 3 fix attempts: STOP. Output a recap — what was tried, what each attempt produced, why it likely failed. Wait for explicit guidance.
 
 ## Engineering Core
-Read `~/.ai-shared/CORE.md` and follow all sections (`Code`, `Evidence`, `Tooling`, `Conventions`). Those rules are universal — also loaded directly by every subagent.
+Read `~/.ai-shared/ENGINEERING_CORE.md` and follow all sections (`Code`, `Evidence`, `Tooling`, `Conventions`). Those rules are universal — also loaded directly by every subagent.
 
 ## Insights
 `> **Insight:**` only for: trade-offs, likely mistakes, contradictions, spotted cleanup.
