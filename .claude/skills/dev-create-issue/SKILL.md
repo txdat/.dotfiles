@@ -1,7 +1,7 @@
 ---
 name: dev-create-issue
 description: "Create a well-structured GitHub issue from a title or brief description. Triggers: 'create an issue for', 'open a ticket', 'log a bug report'."
-model: haiku
+model: claude-haiku-4-5
 effort: low
 ---
 

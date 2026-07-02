@@ -1,7 +1,7 @@
 ---
 name: feature-planner
 description: "Business features and regular development: breakdown, API design, implementation strategies, refactoring. NOT for architecture changes (use architecture-strategist)."
-model: sonnet
+model: claude-sonnet-4-6
 color: cyan
 memory: user
 effort: high

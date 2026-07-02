@@ -6,7 +6,7 @@
       "Bash(~/.ai-shared/bin/**)"
     ]
   },
-  "model": "sonnet",
+  "model": "claude-sonnet-4-6",
   "hooks": {
     "PreToolUse": [
       {

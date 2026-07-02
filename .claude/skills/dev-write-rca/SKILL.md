@@ -1,7 +1,7 @@
 ---
 name: dev-write-rca
 description: "Write RCA/incident report from issues and PRs"
-model: sonnet
+model: claude-sonnet-4-6
 effort: medium
 ---
 

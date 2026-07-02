@@ -1,7 +1,7 @@
 ---
 name: dev-design-infra
 description: "Design infrastructure changes (Terraform, Kubernetes) with config and runbook. Outputs to docs/plans/. Triggers: 'plan the infra', 'design the deployment', 'how should we configure'."
-model: sonnet
+model: claude-sonnet-4-6
 effort: high
 ---
 
