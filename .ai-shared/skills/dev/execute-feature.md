@@ -70,7 +70,7 @@ Spawn each batch on its tier's agent: "Read /tmp/ai-ctx/<slug>.md. Steps: N,M. F
 
 ### Per-step Test Scope (GREEN + BLUE)
 
-Scope GREEN/BLUE verification to changed files only — never the full suite during individual steps.
+Scope GREEN/BLUE verification to changed files only — never the full suite (CORE `Never run the full test suite`).
 Per changed file, derive `<stem>` (no extension): `fd -t f '<stem>' | rg 'test|spec'`; fallback: `rg -l '(import|require|#include).*<stem>'` in test dirs. If none found: log `❌ no test file — <file>` in `## Coverage Gaps`, then STOP — ask: add test now / accept gap / split.
 
 | Stack | Command |
@@ -78,7 +78,7 @@ Per changed file, derive `<stem>` (no extension): `fd -t f '<stem>' | rg 'test|s
 | Maven | `mvn test -pl <mod> -Dtest=<Class>` |
 | Go | `go test -run <TestName> -coverprofile=c.out ./<pkg>/... && go tool cover -func=c.out \| grep <changed_file>` |
 | Python | `pytest <test_files> -q --cov=<changed_module> --cov-report=term-missing` |
-| TS/Jest | `npm test -- --testPathPattern=<test_file> --coverage --coverageReporters=text --collectCoverageFrom='["<changed_file>"]'` |
+| JS/TS | `npm test -- <test_file> --coverage \| rg <changed_file>` — single-run via the project's `test` script, never `npx jest`/`jest` directly (bypasses project config); the matched row is `<changed_file>`'s coverage %. Watch-mode script (Vitest default) → append `run`/`--watchAll=false` so it doesn't hang. |
 | C++ | `cmake -DCMAKE_CXX_FLAGS=--coverage .. && ctest --test-dir build -R <test>` then `gcov -n <changed_src>` (GCC) or `llvm-cov report <bin> --sources <changed_src>` (Clang) |
 | Rust | `cargo llvm-cov -- <TestName> \| rg <changed_file>` |
 
@@ -111,13 +111,13 @@ Any `❌` → STOP. Log in `## Discovered Scope`. Ask: fix inline / separate tas
 
 ## Completion
 
-All implementation items checked → lint + build + targeted tests — including the plan's `## Affected Existing Tests` set; a failing existing test → root-cause before forcing green (**regression** → fix impl / **stale test**: a `needs update` test the Impl step never updated → finish that step / **intended change** → log `## Deviations`). Full suite only if convention or blast radius warrants. Then run the Self-Check below.
+All implementation items checked → lint + build + targeted tests — including the plan's `## Affected Existing Tests` set; a failing existing test → root-cause before forcing green (**regression** → fix impl / **stale test**: a `needs update` test the Impl step never updated → finish that step / **intended change** → log `## Deviations`). Never run the full suite — targeted + `## Affected Existing Tests` only (CORE `Never run the full test suite`). Then run the Self-Check below.
 
 ## Self-Check (BLOCKING — do NOT emit completion until every item is ✅)
 
 Run this audit before marking the plan `implemented`. If ANY item is unchecked → STOP, fix, re-check.
 
-- [ ] **Build + suite gate**: lint + build pass; targeted tests green (full suite if convention/blast radius warrants); no test force-greened over a failure.
+- [ ] **Build + suite gate**: lint + build pass; targeted + `## Affected Existing Tests` green (never the full suite — CORE); no test force-greened over a failure.
 - [ ] **RED/baseline gate** (`## TDD Execution`): per slice the proof commit — `test(red)` feature/fix, `test: baseline` refactor — precedes that slice's impl commit(s). Proof commits: __ / slices: __ — match?
 - [ ] **Symbol membership** (CORE `Verify symbol membership`): ran on every new call, field access, import. Unresolved: __.
 - [ ] **No fake implementations** (`## TDD Execution` → GREEN): re-read the impl — no test-input special-casing, no lookup tables. Offenders: __.

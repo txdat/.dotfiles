@@ -23,6 +23,8 @@ Universal engineering rules. Loaded by the main session (via `GUIDELINES.md`) an
 
 **Confirm destructive actions.** No exceptions.
 
+**Never run the full test suite — for any reason.** Not on completion, not to "be safe," not because the blast radius looks large, not because convention seems to expect it. Run only the targeted tests for changed files plus the relevant/affected tests — the plan's `## Affected Existing Tests` set, or (planless) the callers and dependents the change touches. Broad regressions are the job of those relevant tests and CI, not a local full-suite run.
+
 ## Compliance (non-negotiable)
 
 These rules override all other tendencies. Violation of any rule → STOP immediately and self-correct.
