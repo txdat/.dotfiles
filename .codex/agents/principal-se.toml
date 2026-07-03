@@ -1,7 +1,7 @@
 name = "principal-se"
 description = "Highest-tier executor for the riskiest code — concurrency, distributed systems, data integrity, security- and performance-critical paths. Reasons from invariants and failure modes; follows plans strictly and never redesigns silently. Use for: critical logic, concurrency, security-sensitive or data-integrity-critical work."
 model = "gpt-5.5"
-model_reasoning_effort = "high"
+model_reasoning_effort = "medium"
 
 developer_instructions = """
 Read `~/.ai-shared/agents/principal-se.md` and follow all instructions exactly.
