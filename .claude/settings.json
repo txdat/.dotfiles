@@ -6,7 +6,6 @@
       "Bash(~/.ai-shared/bin/**)"
     ]
   },
-  "model": "claude-sonnet-4-6",
   "hooks": {
     "PreToolUse": [
       {
@@ -34,5 +33,6 @@
   "awaySummaryEnabled": false,
   "tui": "fullscreen",
   "theme": "dark",
-  "fileCheckpointingEnabled": true
+  "fileCheckpointingEnabled": true,
+  "model": "claude-sonnet-4-6"
 }

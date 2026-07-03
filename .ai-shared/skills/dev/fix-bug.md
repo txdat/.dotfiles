@@ -56,10 +56,7 @@ Symlink dependency directories from `$MAIN_ROOT` into `<worktree>` (never reinst
 0. **Symbol check** — every call, field access, and import in the patch must be a member of its target type/module per CORE `Verify symbol membership`. Unresolved → STOP, ask, wait.
 1. **Regression test first (RED)** — write the failing test that reproduces the bug. Active plan → append a new TC (Given: trigger conditions; When: action; Then: expected non-buggy behavior; Verifies: invariant the bug violated) and implement it using the TC's `<test_fn_name>`; otherwise name it `should_not_<bug>_when_<trigger>`. Confirm `🔴`: failure must come from the bug itself, not a bad assertion. Commit before the fix: `git add <test-files> && git commit -m "test(red): <bug>"` (skip if it already exists — resume).
 2. **Minimal fix (GREEN)** — root cause only; remove any `// DEBUG` temp logs before committing. Confirm `🟢`: correct for all valid inputs — no hardcoded returns or special-casing of test input; violation → STOP, report fake impl, wait for explicit guidance. Stage + commit: `git add <impl-files> && git commit -m "fix(<scope>): <summary>"`.
-3. **Verify** — repro + module tests pass. Coverage on changed files (see the execute-feature skill for stack commands):
-   - `≥ 95%` → `✅ pass`
-   - `90%–94%` → `⚠️` — log uncovered lines in `## Coverage Gaps` (plan) or the fix report (planless), continue
-   - `< 90%` → `❌` — log in `## Coverage Gaps` (plan) or the fix report (planless) with reason (untestable/generated code, unreachable branches, external deps), then STOP — ask: fix now / accept gap / split
+3. **Verify** — repro + module tests pass. Score coverage on changed files against **CORE gate #6** (thresholds, no-gaming, branch-vs-line, mock caveat, reason-governs — single source; execute-feature skill has the stack commands). Log every ⚠️/❌ in `## Coverage Gaps` (plan) or the fix report (planless); STOP-ask on ❌. Fix-specific: the regression test MUST assert the **branch that was buggy** — a passing line % with that branch unasserted is ❌ regardless of the number.
 4. **Dependents** — for each changed symbol: `rg -n '<symbol>' --type <lang> . | rg -v 'test|spec|_test'`; confirm no caller depends on old signature or behavior; output `✅ <file:line>` or `❌ <file:line> — <what broke>`; any `❌` → fix inline before proceeding; record affected callers in the Fix block (Callers field)
 
 Plan exists → if `<worktree>/docs/plans/<file>.md` is absent, copy it from `$MAIN_ROOT` first (`cp "$MAIN_ROOT/docs/plans/<file>.md" "<worktree>/docs/plans/<file>.md"` — design-feature/review-feature never commit it, so a fresh worktree checkout won't have it either). Then, in `<worktree>`'s copy, append the Fix block, ensure `Worktree: /tmp/ai-worktrees/<repo-basename>-fix-<slug>` is recorded, and set status `implemented` (so review-code picks it up), then commit: `git add docs/plans/<file>.md && git commit -m "docs(<scope>): mark plan implemented"`:
@@ -76,7 +73,7 @@ Run this audit before the final output. If ANY item is unchecked → STOP, fix, 
 - [ ] **RED gate** (Fix step 1): a `test(red): <bug>` commit holds the failing regression test only. Present: yes/no.
 - [ ] **Symbol membership** (Fix step 0, CORE `Verify symbol membership`): ran on every call/field/import in the patch. Unresolved: __.
 - [ ] **No fake fix** (Fix step 2): re-read the fix — correct for all valid inputs, no hardcoded returns or test-input special-casing. Offenders: __.
-- [ ] **Coverage** (Fix step 3 thresholds): changed files ✅ / ⚠️ logged / ❌ resolved. Result: __%.
+- [ ] **Coverage** (CORE gate #6): changed files ✅ / ⚠️ logged / ❌ resolved; buggy branch asserted. Result: __%.
 - [ ] **Dependents** (Fix step 4): every changed symbol checked against callers; each ❌ resolved. Open: __.
 - [ ] **Branch ancestry** (`## Fix`): `git -C <worktree> merge-base --is-ancestor <base> fix/<slug>` returns 0. Verified: yes/no.
 - [ ] **Worktree** (`## Fix` top): `<worktree>` created from `<base>`, plan's `Worktree:` field recorded and committed. Verified: yes/no.
