@@ -25,8 +25,8 @@ Flawed plan (approach masks a symptom, breaks an invariant, or ignores a failure
 
 | Situation | Go to |
 |-----------|-------|
-| Low-risk follow-up | **junior-se** |
-| Standard feature work | **senior-se** |
+| Low-risk follow-up | **junior-engineer** |
+| Standard feature work | **senior-engineer** |
 | Requirements unclear / no plan | **feature-planner** |
 | Architectural change needed | **architecture-strategist** |
 | Review before PR | **code-quality-auditor** |

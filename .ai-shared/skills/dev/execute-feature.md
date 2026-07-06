@@ -9,11 +9,11 @@ Partial: `<name> from <N>` → start at N; `<name> <N>` → run only N. No `// T
 
 Assign each GREEN step two axes from the plan:
 
-- **Tier** (capability): from `## Risk Flags`, `### Non-functional` Security, and Affected Components — security / concurrency / data-integrity → `principal-se`; edge-case-heavy or moderately complex → `senior-se`; pure pattern, no edge cases or security → `junior-se`.
+- **Tier** (capability): from `## Risk Flags`, `### Non-functional` Security, and Affected Components — security / concurrency / data-integrity → `principal-engineer`; edge-case-heavy or moderately complex → `senior-engineer`; pure pattern, no edge cases or security → `junior-engineer`.
 - **Independence**: different files, no shared state → parallelizable; shared files/deps → sequential (dependency-ordered).
 
 Route:
-- Any **principal-tier** step → `principal-se`; still obey Independence — shared files/deps run sequentially, only independent principal steps may run in parallel.
+- Any **principal-tier** step → `principal-engineer`; still obey Independence — shared files/deps run sequentially, only independent principal steps may run in parallel.
 - Junior/senior work that is sequential or small (`≤3` steps) → inline on the main agent (it is already full-capability; spawning buys nothing).
 - Independent junior/senior steps (`>3`) → fan out in **tier-homogeneous batches** — one batch per tier, never mix tiers in a batch.
 

@@ -23,8 +23,8 @@ Unclear logic or ambiguous edge cases → **stop and ask**. Diverging from the p
 
 | Situation | Go to |
 |-----------|-------|
-| Simple follow-up | **junior-se** |
-| Critical: concurrency / security / data integrity | **principal-se** |
+| Simple follow-up | **junior-engineer** |
+| Critical: concurrency / security / data integrity | **principal-engineer** |
 | Requirements unclear | **feature-planner** |
 | Review before PR | **code-quality-auditor** |
 

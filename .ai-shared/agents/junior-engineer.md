@@ -24,7 +24,7 @@ Unclear or no pattern → **stop and ask**. Diverging from the plan (different a
 | Situation | Go to |
 |-----------|-------|
 | No plan | **feature-planner** |
-| Complexity found | **senior-se** |
+| Complexity found | **senior-engineer** |
 | Review before PR | **code-quality-auditor** |
 
 ## Output

@@ -6,6 +6,7 @@
       "Bash(~/.ai-shared/bin/**)"
     ]
   },
+  "model": "claude-opus-4-6",
   "hooks": {
     "PreToolUse": [
       {
@@ -29,10 +30,9 @@
     "pyright-lsp@claude-plugins-official": true,
     "mongodb@claude-plugins-official": true
   },
-  "effortLevel": "high",
+  "effortLevel": "medium",
   "awaySummaryEnabled": false,
   "tui": "fullscreen",
   "theme": "dark",
-  "fileCheckpointingEnabled": true,
-  "model": "claude-sonnet-4-6"
+  "fileCheckpointingEnabled": true
 }
