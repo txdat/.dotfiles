@@ -1,7 +1,7 @@
 ---
 name: dev-review-code
 description: "Review code changes for correctness, architecture, scope, and hygiene."
-model: gpt-5.4
+model: gpt-5.5
 effort: high
 ---
 

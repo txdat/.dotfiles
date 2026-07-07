@@ -6,7 +6,7 @@
 # Valid transitions:
 #   design-feature  → planning
 #   review-feature  → planning|blocked-by-architecture  (verdict READY; no status flip)
-#   (manual approve)→ approved        (human, or ship-feature auto-approves itself)
+#   (human approve)  → approved        (manual, or confirmed at ship-feature's plan-phase PAUSE)
 #   execute-feature → approved → in-progress → implemented
 #   execute-infra   → approved → in-progress → implemented
 #   review-code     → implemented → reviewed
@@ -18,7 +18,8 @@
 # Review-code additionally requires proof-commit sequencing for the plan slices.
 #
 # Approval is NEVER set by review-feature — the human approves manually
-# (set "Status: approved"); ship-feature is the sole auto-approver.
+# (set "Status: approved") or confirms "Approve plan?" at ship-feature's PAUSE —
+# ship-feature is the only skill that flips the status, never without that answer.
 #
 # Active plan resolution is session-pinned (see resolve_plan): an explicit
 # plan ref in the skill args pins the session; otherwise the existing pin is

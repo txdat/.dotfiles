@@ -29,40 +29,4 @@ Expands into architecture → **escalate to architecture-strategist**.
 
 ## Output
 
-```
-## Overview
-<Goal, scope>
-
-## Requirements
-- Functional: <what>
-- Non-functional: <perf, security, scale>
-
-## Data Model
-<Schema, relationships>
-
-## Interface
-<Endpoints, signatures, contracts>
-
-## Implementation Steps
-1. <step> — satisfies TC-N
-2. <step> — satisfies TC-N
-
-## Files
-<Create/modify>
-
-## Test Cases
-- TC-1 `<test_fn_name>`: <scenario>
-  - Given: <preconditions / inputs>
-  - When: <action under test>
-  - Then: <expected output / behavior>
-  - Verifies: <invariant from Requirements>
-
-## Risks
-<Challenges + mitigations>
-
-## PR Pattern
-Type: single | chain — each step in exactly one slice (partition); chain branches `<type>/<slug>-k`
-| # | Branch | Steps | Summary |
-|---|--------|-------|---------|
-| 1 | <type>/<slug> | 1–N | <summary> |
-```
+Emit the plan using the template and gates in `~/.ai-shared/skills/dev/design-feature.md` — the full `## Draft` template (all sections: Requirement, Context, Scope, Assumptions & Open Questions, Impact Analysis, Design Decisions, Mechanism Invariants, Risk Flags, Test Cases, Affected Existing Tests, Implementation Steps, Out of Scope, PR Pattern) with all blocking gates applied (Open Questions, TDD, Mechanism Invariants, Cross-dimension, Mode classification). One template, one source: a plan that would fail review-feature's self-check is not done.

@@ -39,19 +39,7 @@ Gap: <why missed>
 
 **Approval Gate (BLOCKING):** resolve the session's active plan — an explicit `docs/plans/<file>.md` path in $ARGUMENTS pins it (slug matching is NOT used here, since the symptom is free text); otherwise the session's pinned plan, else the lone active plan. If a plan is active and its `Status:` is `planning`/`blocked-by-architecture`, STOP — ask the user to approve it manually (set `Status: approved`) before the fix appends to it, or to drop the stale plan to run planless. If the active plan is already `reviewed`/`recapped`/`archived`, STOP — do not append a fix after review or shipping; either resume with a different active plan or run planless. No active plan → planless, proceed (fix-bug creates its own plan at the end).
 
-Bugs are single-PR. `<worktree>` per CORE = `/tmp/ai-worktrees/<repo-basename>-fix-<slug>` (outside the repo tree), branch `fix/<slug>` off `<base>` (never commit to `<base>` itself). `$MAIN_ROOT` is never checked out or committed to — only `git worktree add`/`remove` touch it — so it stays wherever it was, shareable across concurrent agents.
-
-**Create (first run)** — active plan whose `Worktree:` is empty, or planless:
-```bash
-MAIN_ROOT=$(git rev-parse --show-toplevel)
-WORKTREE="/tmp/ai-worktrees/$(basename "$MAIN_ROOT")-fix-<slug>"
-git worktree add "$WORKTREE" -b fix/<slug> <base>
-```
-Active plan → record `Worktree: $WORKTREE` in its frontmatter immediately (planless plans get it at creation, below).
-
-**Resume** — `Worktree:` set (or the worktree dir already exists): reuse it, do **not** re-run `git worktree add`; `git worktree list` must show it (missing → STOP `❌ worktree <path> missing — recreate or ask`); if `fix/<slug>` exists, verify `git -C <worktree> merge-base --is-ancestor <base> fix/<slug>` — non-zero → STOP `❌ fix/<slug> not based on <base>`.
-
-Symlink dependency directories from `$MAIN_ROOT` into `<worktree>` (never reinstall — install new ones in `$MAIN_ROOT` first, see execute-feature's Dependency linking). All commands below run inside `<worktree>` (`cd <worktree>` or `git -C <worktree>`).
+Bugs are single-PR. Create / dependency-link / resume per **CORE `Plan worktree` → Worktree lifecycle** (single source — do not improvise). Skill-specific bindings: `<slug>` = fix slug so `WORKTREE=/tmp/ai-worktrees/<repo-basename>-fix-<slug>`, `<branch>` = `fix/<slug>`, `<parent>` = `<base>` (never commit to `<base>` itself). Active plan → record `Worktree:` in its frontmatter immediately; planless plans get it at creation (below). Plan-copy step applies only when a plan exists (see the copy note before the Fix block).
 
 0. **Symbol check** — every call, field access, and import in the patch must be a member of its target type/module per CORE `Verify symbol membership`. Unresolved → STOP, ask, wait.
 1. **Regression test first (RED)** — write the failing test that reproduces the bug. Active plan → append a new TC (Given: trigger conditions; When: action; Then: expected non-buggy behavior; Verifies: invariant the bug violated) and implement it using the TC's `<test_fn_name>`; otherwise name it `should_not_<bug>_when_<trigger>`. Confirm `🔴`: failure must come from the bug itself, not a bad assertion. Commit before the fix: `git add <test-files> && git commit -m "test(red): <bug>"` (skip if it already exists — resume).

@@ -18,7 +18,9 @@ Resume: `/dev:ship-feature add-jwt from execute`
 
 Plan review enforces the open-questions gate: if `design-feature` saves a draft with unresolved `Open Questions:`, `review-feature` stops and routes back to planning.
 
-**Manual approval.** `review-feature` never sets `approved` — on verdict READY it leaves the plan `planning` and tells you to approve it manually (set `Status: approved`). The implementing skills (`execute-feature`, `execute-infra`, and `fix-bug` when a plan is active) verify `approved` before touching files. `ship-feature` is the *sole* auto-approver: inside the full cycle it sets `approved` itself once review-feature returns READY.
+**Human approval, always.** `review-feature` never sets `approved` — on verdict READY it leaves the plan `planning` and tells you to approve it manually (set `Status: approved`). The implementing skills (`execute-feature`, `execute-infra`, and `fix-bug` when a plan is active) verify `approved` before touching files. `ship-feature` is the only skill that flips the status, and only after you confirm "Approve plan?" at its plan-phase PAUSE — there is no path to `approved` without a human answer.
+
+**Lite lane.** Small changes (≤2 non-test files, no new data structure, no contract/schema change, no security surface) get `Mode: lite` at design time: condensed plan (Requirement, Scope, TCs, 1–3 steps, single-PR pattern), structural-only review. Execution rigor is unchanged — RED commit, coverage, symbol membership all apply. Any lite condition proven false mid-flight → escalate to `Mode: full` and re-review; never widen a lite plan in place.
 
 **Session-pinned active plan.** Each session has one active plan. Establish it by naming an existing plan (`docs/plans/<file>.md` or its slug) in the skill args, or by running `design-feature` (the new plan is adopted on the next gated skill). It is then reused for the rest of the session; naming a different plan re-pins. With 0 or 2+ active plans and none named, gated skills STOP and ask which.
 

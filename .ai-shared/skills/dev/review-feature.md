@@ -12,6 +12,10 @@ Read plan + project config file (CLAUDE.md/CODEX.md/GEMINI.md/AGENTS.md).
 
 `## Assumptions & Open Questions` → Open Questions MUST be empty. Any unresolved → STOP, verdict NEEDS CHANGES, route back to design-feature. Never review an under-specified plan.
 
+## Lite Path
+
+`Mode: lite` on the Status line → first re-verify the four lite conditions (design-feature `## Mode`) against the plan yourself — any violated → `❌` NEEDS CHANGES, require `Mode: full` with backfilled sections. Conditions hold → run only the Precondition, Structural Review, and TDD gates below; skip Systemic Review; Mechanism Invariants and Cross-dimension are auto-N/A. Self-check: only the items marked `[lite]` apply.
+
 ## Systemic Review
 
 Step back from the document to the system:
@@ -49,19 +53,15 @@ Flag undefined terms inline. One follow-up max.
 
 Run this audit before the final output. If ANY blocking item is unchecked → verdict is NEEDS CHANGES.
 
-- [ ] **Open Questions gate** (`## Precondition`): Open Questions empty. Count: __.
+- [ ] **Open Questions gate** `[lite]` (`## Precondition`): Open Questions empty. Count: __.
+- [ ] **Lite eligibility** `[lite]` (`## Lite Path`): lite plan → all four conditions re-verified; violated → NEEDS CHANGES. Mode: __.
 - [ ] **Approach** (Systemic Review): simplest correct solution? alternatives credible? Better one: yes/no (__).
 - [ ] **System fit** (Systemic Review): components/contracts/boundaries; deployment & migration order vs `## Context` Dependencies; `blocked-by-architecture` → honors doc `Contracts:`. Issues: __.
-- [ ] **Completeness** (Systemic Review): error modes, concurrency, scale, security, observability, edge cases. Gaps: __.
-- [ ] **Assumptions challenged** (Systemic Review): each assumption validated. Unsound: __.
+- [ ] **Completeness** (Systemic Review): error modes, concurrency, scale, security, observability, edge cases; each assumption in `## Assumptions` challenged. Gaps/unsound: __.
 - [ ] **Non-functional mapping** (Structural Review): each code-requiring item maps to an Impl Step (or `ops-only`). Unmapped: __.
-- [ ] **TDD — TCs complete** (TDD): non-empty, before Impl Steps, each with Given/When/Then/Verifies. Orphans: __.
-- [ ] **TDD — Bidirectional refs** (TDD): every Impl → ≥1 TC; every TC → ≥1 Impl. Orphan TCs: __ / Impls: __.
-- [ ] **TDD — Correct mode** (TDD): feature/fix TCs fail-first; refactor TCs pass before + after.
-- [ ] **Mechanism Invariants** (conditional, that gate): new data structure → ≥1 entry per structure, init/identity guard + boundary TC; judge the invariant is the *right* one. Missing: __.
-- [ ] **Cross-dimension coverage** (conditional, that gate): N orthogonal axes → ≥1 TC per non-trivial cross-product, or combo in `## Out of Scope`. Uncovered: __.
-- [ ] **PR Pattern** (Structural Review): present; partitions all Impl Steps; no TC spans slices. Gaps/overlaps: __.
-- [ ] **Steps count** (Structural Review): 5–10 Impl Steps; >10 → split proposed. Count: __.
+- [ ] **TDD** `[lite]` (TDD): TCs non-empty, before Impl Steps, all four fields filled; bidirectional refs (every Impl → ≥1 TC, every TC → ≥1 Impl); correct mode (feature/fix fail-first; refactor pass before + after). Orphan TCs: __ / Impls: __.
+- [ ] **Conditional gates** (Mechanism Invariants + Cross-dimension): new structure → ≥1 entry each, init/identity guard + boundary TC, invariant judged *right*; orthogonal axes → each non-trivial combo has a TC or an `## Out of Scope` reason. Missing/uncovered: __.
+- [ ] **Structure** `[lite]` (Structural Review): PR Pattern present, partitions all Impl Steps, no TC spans slices; steps 5–10 (lite: 1–3), >10 → split proposed. Gaps/overlaps/count: __.
 
 If ANY ❌ → verdict NEEDS CHANGES. If all ✅ → verdict READY.
 
@@ -79,4 +79,4 @@ If ANY ❌ → verdict NEEDS CHANGES. If all ✅ → verdict READY.
 ```
 
 - **NEEDS CHANGES** (any ❌): offer to apply blocking fixes to the plan (wait for approval); design-level rethink → route back to design-feature. Status unchanged until cleared.
-- **READY**: ask "Apply suggestions?"; on apply or skip → **leave the status unchanged** (`planning`/`blocked-by-architecture`). Do NOT set `approved` — approval is the human's manual action (the sole exception is ship-feature, which approves itself). Print: "Plan READY — approve it manually (set `Status: approved` in the plan), then run the execute-feature skill."
+- **READY**: ask "Apply suggestions?"; on apply or skip → **leave the status unchanged** (`planning`/`blocked-by-architecture`). Do NOT set `approved` — approval is the human's action, always: manually (set `Status: approved`), or by answering "Approve plan?" at ship-feature's plan-phase PAUSE (ship-feature flips the status only after that confirmation). Print: "Plan READY — approve it manually (set `Status: approved` in the plan), then run the execute-feature skill."

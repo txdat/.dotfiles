@@ -6,13 +6,26 @@ Filename: `docs/plans/<basename>_<date>_<type>_<slug>.md`. Type: feature/fix/ref
 
 Read project config file (CLAUDE.md/CODEX.md/GEMINI.md/AGENTS.md). Filling a `blocked-by-architecture` stub → also read its source `docs/architecture/` doc and honor its `Contracts:` boundary invariants; cite the doc in Design Decisions. No code.
 
+## Mode
+
+After clarify, classify the change. `Mode: lite` only when ALL hold — else `full`:
+
+- ≤2 non-test files touched (predicted from Affected Components)
+- no new data structure (type, schema/table, collection, map, cache, index, queue, state container)
+- no API/contract change (breaking **or** additive) and no data/schema migration
+- no security surface (authz, input validation, secrets, data exposure)
+
+Record on the Status line. **Lite plan** keeps only: Requirement, Scope, Test Cases, Implementation Steps (1–3), PR Pattern (`Type: single` forced); Impact Analysis collapses to one line (`Impact: <files> — <why contained>`); Mechanism Invariants and Cross-dimension gates are auto-N/A (eligibility already excludes their triggers). The Open Questions gate and TDD gate apply unchanged — lite trims paperwork, never rigor.
+
+**Escalation (any phase, one-way):** the moment any lite condition proves false — a third file, a hidden contract change, a new structure — STOP, flip `Mode: full`, backfill the full sections, re-run review-feature. Never widen a lite plan in place.
+
 ## Draft
 
 Clarify: scope, constraints, edge cases, done. Up to 3 rounds.
 
 ```
 # Task: <name>
-Status: planning | Type: <type> | Issue: | Worktree:
+Status: planning | Type: <type> | Mode: full|lite | Issue: | Worktree:
 
 ## Requirement
 <problem and why>
@@ -82,7 +95,7 @@ Type: single | chain
 | 1 | <type>/<slug> | 1–N | <summary> |
 ```
 
-Rules: 5–10 Implementation Steps, dependency-ordered. Every Impl refs ≥1 TC-N; every TC referenced by ≥1 Impl. >10 → propose split. Symbols cited in Impl steps must be verified members of their target type/module before the step is written — see CORE `Verify symbol membership`.
+Rules: 5–10 Implementation Steps (lite: 1–3), dependency-ordered. Every Impl refs ≥1 TC-N; every TC referenced by ≥1 Impl. >10 → propose split. Symbols cited in Impl steps must be verified members of their target type/module before the step is written — see CORE `Verify symbol membership`.
 
 **Impact Analysis:** populate Affected Components from explore Key Files/Entry Points/Data Flow if available; scan only if no explore output exists. Affected Components ≥1 entry; API/Contract Changes, Data/Schema, and Non-functional must each be answered. Each Non-functional commitment that requires code maps to an Implementation Step (mark `ops-only` if it needs none) — else execute never builds it.
 
@@ -121,8 +134,9 @@ Enumerate every slice upfront — branch + `Steps` + one-line summary each — s
 
 ## Self-Check (BLOCKING — do NOT emit completion until every item is ✅)
 
-Run this audit before the final output. If ANY item is unchecked → STOP, fix the plan, re-check.
+Run this audit before the final output. If ANY item is unchecked → STOP, fix the plan, re-check. Lite plans (`Mode: lite`): only the **Mode**, **Open Questions**, both **TDD**, and **PR Pattern** items apply.
 
+- [ ] **Mode** (`## Mode`): all four lite conditions re-verified against the drafted plan — any false → `Mode: full` with full sections. Mode: __.
 - [ ] **Open Questions** (`Open Questions gate`): `Open Questions:` empty. Count: __.
 - [ ] **TDD — Test Cases** (`TDD gate`): ≥1 TC, each with all four fields filled.
 - [ ] **TDD — Bidirectional refs** (`TDD gate`): every Impl → ≥1 TC; every TC → ≥1 Impl. Orphan TCs: __ / Impls: __.

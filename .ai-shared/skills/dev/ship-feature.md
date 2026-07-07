@@ -24,25 +24,16 @@ Determine starting phase from `from <step>` or auto-detect from the active plan 
 
 PAUSE after each phase — ask the user to confirm before proceeding.
 
-## Self-Check (BLOCKING — do NOT proceed to next phase until current phase is complete)
+## Phase Gate (BLOCKING)
 
-At the end of each phase, verify the phase's own self-check (from its skill file) is fully ✅ before asking the user to confirm the next phase.
-
-- [ ] **Phase 1 explore**: `## Exploration` output present. Entry Points, Key Files, Data Flow, Patterns, Gotchas all populated.
-- [ ] **Phase 2 plan**: review-feature verdict was READY, Open Questions empty, then ship-feature set status `approved` (ship-feature auto-approves; standalone review-feature does not).
-- [ ] **Phase 3 execute**: Plan status is `implemented`. Plan's `Worktree:` field set and matches `git worktree list`. All GREEN steps passed coverage. No unlogged deviations or scope creep.
-- [ ] **Phase 4 review-code**: Verdict is PASS (or PASS WITH NOTES with all Should Fix items resolved). PR Pattern finalized.
-- [ ] **Phase 5 recap**: Plan status is `recapped`. Insights captured in docs/recaps/.
-- [ ] **Phase 6 pr**: PR created + URL printed. Plan status is `archived`. Worktree removed, `Worktree:` field cleared.
-
-If any phase's self-check fails → do NOT proceed. Fix the phase first.
+Each phase's own skill owns its `## Self-Check` — do NOT re-audit it here. A phase is complete only when its skill emitted its completion line (explore: `## Exploration` report; design-feature: "Plan drafted…"; review-feature: verdict; execute-feature: "Implementation complete…"; review-code: verdict; recap: status `recapped`; create-pr: PR URL + status `archived`). No completion line, or the skill stopped on a gate → do NOT proceed; fix that phase first.
 
 ## Phases
 
 Once the plan file exists, pass its explicit `docs/plans/<file>.md` path to every sub-skill invocation (design-feature, review-feature, execute-feature, review-code, recap, create-pr) so each gates the same plan — never rely on implicit resolution.
 
 1. **explore** → explore skill
-2. **plan** → no plan file → design-feature skill (draft), then review-feature skill only if `Open Questions:` is empty / design-feature emitted "Plan drafted. Run the review-feature skill."; plan with status `planning`/`blocked-by-architecture` → review-feature skill only if `Open Questions:` is empty. **Auto-approve:** once review-feature returns verdict READY, ship-feature sets the plan's `Status: approved` itself — ship-feature is the *sole* auto-approver (standalone review-feature never flips status). Must reach `approved` before execute.
+2. **plan** → no plan file → design-feature skill (draft), then review-feature skill only if `Open Questions:` is empty / design-feature emitted "Plan drafted. Run the review-feature skill."; plan with status `planning`/`blocked-by-architecture` → review-feature skill only if `Open Questions:` is empty. **Approval:** once review-feature returns verdict READY, use the phase PAUSE — print the verdict + a plan summary (requirement, mode, slices, TC/step counts, deviational risks) and ask **"Approve plan? (sets `Status: approved`)"**. Only on the user's confirmation does ship-feature flip `Status: approved` (it remains the only skill that flips it; standalone review-feature never does). Declined → treat as NEEDS CHANGES feedback, route back. Must reach `approved` before execute.
 3. **execute** → **entry gate (BLOCKING):** plan `Status:` must be `approved`/`in-progress`, else STOP (covers `from execute` on an un-approved plan). Then execute-feature skill (RED→GREEN→BLUE).
 4. **review-code** → review-code skill — if rework needed, fix inline and re-review
 5. **recap** → recap skill

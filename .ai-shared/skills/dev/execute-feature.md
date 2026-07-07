@@ -2,7 +2,7 @@
 
 Resolve the session's active plan: an explicit `docs/plans/<file>.md` (or its slug) in $ARGUMENTS pins it; otherwise the session's pinned plan, else the lone active plan. 0 or 2+ active and none named → STOP, ask which.
 
-**Approval Gate (BLOCKING):** the plan's `Status:` MUST be `approved` (or `in-progress` on resume). `planning`/`blocked-by-architecture` → STOP; ask the user to approve it manually (set `Status: approved`). Never self-approve — only ship-feature may auto-approve. Then set `in-progress`. Read project config file (CLAUDE.md/CODEX.md/GEMINI.md/AGENTS.md).
+**Approval Gate (BLOCKING):** the plan's `Status:` MUST be `approved` (or `in-progress` on resume). `planning`/`blocked-by-architecture` → STOP; ask the user to approve it manually (set `Status: approved`). Never self-approve — only ship-feature flips the status, and only after the user confirms at its plan-phase PAUSE. Then set `in-progress`. Read project config file (CLAUDE.md/CODEX.md/GEMINI.md/AGENTS.md).
 Partial: `<name> from <N>` → start at N; `<name> <N>` → run only N. No `// TODO` — if blocked, say so.
 
 ## Execution Strategy
@@ -21,23 +21,7 @@ Route:
 
 Phases in order: RED 🔴 → GREEN 🟢 → BLUE 🔵.
 
-**Worktree & branch model.** Derive names from the plan's `## PR Pattern`; never commit to `<base>`. One worktree per plan, reused across all its slices, created from an **explicit** `<parent>` start point (never implicit HEAD). `<worktree>` per CORE (`/tmp/ai-worktrees/<repo-basename>-<slug>`, outside the repo tree). `$MAIN_ROOT` itself is never checked out or committed to by any skill — only `git worktree add`/`remove` touch it — so it stays on whatever branch it was on (default branch or otherwise), safe to leave shared across concurrent agents/plans.
-
-**Create (first run):**
-```bash
-MAIN_ROOT=$(git rev-parse --show-toplevel)
-WORKTREE="/tmp/ai-worktrees/$(basename "$MAIN_ROOT")-<slug>"
-git worktree add "$WORKTREE" -b <type>/<slug> <base>   # single, or chain slice 1
-```
-Record `Worktree: <path>` (the resolved `$WORKTREE`) in the plan's frontmatter immediately — every downstream skill (review-code, recap, create-pr) resolves `<worktree>` from this field (CORE `Plan worktree`), not the main working tree.
-
-**Plan file copy (once, right after create).** design-feature/review-feature only ever write `docs/plans/<file>.md` into `$MAIN_ROOT`'s working tree — it is never committed there, so `<base>`'s history doesn't contain it and the fresh worktree checkout won't either. Copy it over explicitly: `cp "$MAIN_ROOT/docs/plans/<file>.md" "$WORKTREE/docs/plans/<file>.md"`. From this point on, edit and commit the plan *inside* `<worktree>`, not the main working tree — every commit below that touches Status/`## Deviations`/`## Coverage Gaps`/`## Discovered Scope` stages the plan file alongside the code it describes. Never leave plan edits uncommitted when the worktree is later removed.
-
-**Dependency linking (once, right after the plan-file copy, before any test run):** for each dependency directory present at `$MAIN_ROOT` and absent in `<worktree>` (`node_modules`, `vendor`, `.venv`, `venv`, `Pods`, or project convention) — symlink, never reinstall or copy: `ln -s "$MAIN_ROOT/<dep>" "<worktree>/<dep>"`. The symlink target is shared with every other worktree off this repo. Plan needs a **new** dependency → install it in `$MAIN_ROOT` first (`npm install <pkg>` etc., run there, never inside `<worktree>`), then symlink as usual — installing inside a worktree would mutate the shared target underneath any other agent's concurrent worktree. Lockfile differs from `<base>` → warn and still symlink; do not auto-reinstall. (These dep dirs are normally gitignored; a project that doesn't ignore one leaves its symlink untracked, so create-pr's `git worktree remove` will need confirmed `--force` at teardown.)
-
-**Resume:** `Worktree:` set → reuse it, `git worktree list` must show it (missing → STOP `❌ worktree <path> missing — recreate or ask`); verify ancestry — `git -C <worktree> merge-base --is-ancestor <parent> <branch>` non-zero → STOP `❌ <branch> not based on <parent>`.
-
-All commands below run inside `<worktree>` (`cd <worktree>` or `git -C <worktree>`).
+**Worktree & branch model.** Derive names from the plan's `## PR Pattern`; never commit to `<base>`. One worktree per plan, reused across all its slices. Create / plan-copy / dependency-link / resume per **CORE `Plan worktree` → Worktree lifecycle** (single source — do not improvise). Skill-specific bindings: `<slug>` from the plan filename, `<branch>` = `<type>/<slug>` (single, or chain slice 1), `<parent>` = `<base>`. Every commit below that touches Status/`## Deviations`/`## Coverage Gaps`/`## Discovered Scope` stages the plan file alongside the code it describes.
 
 - **Single** (`Type: single`): `<parent>` = `<base>`. Run RED→GREEN once over all `## Test Cases`.
 - **Chain** (`Type: chain`): execute slices in PR-Pattern order, sequentially, each on its own branch inside the same worktree. Per slice k, `<parent>` = `<base>` (k=1) else `<type>/<slug>-(k-1)`: `git checkout -b <type>/<slug>-k <parent>`, then run RED→GREEN **scoped to that slice's `Steps` → TCs** — its `test(red): <slug>-k` commit precedes its implementation commit(s). Each slice branch is a self-contained RED→GREEN pair.
@@ -85,19 +69,11 @@ Each command reports line/statement %; the **Branch** column is how to get branc
 
 ## Scope Creep
 
-Discovered work → STOP. Log in `## Discovered Scope` with estimated effort. Ask: include / separate / skip?
+Discovered work → STOP. Log in `## Discovered Scope` with estimated effort. Ask: include / separate / skip? **Lite plans:** discovered work that breaks any lite condition (third file, contract change, new structure, security surface) additionally forces escalation per design-feature `## Mode` — STOP, flip `Mode: full`, route back through review-feature.
 
 ## Plan Deviation
 
-The plan is approved and locked. Same goal, different means than it specifies — a different approach or Design Decision, a substituted symbol/signature, a changed step structure, a different file/module than planned — is a deviation, not a free call. (Distinct from Scope Creep, which is *new* work.)
-
-Before implementing the divergence → STOP. Recap it in `## Deviations` (in the plan):
-- Plan said: <what the plan specified>
-- Doing instead: <the divergence>
-- Why: <what forced or motivated it — planned symbol absent, approach unworkable, …>
-- Tradeoff: <gained vs lost; risk introduced>
-
-Ask: proceed with deviation / follow plan as written / re-plan. Never deviate silently.
+The plan is approved and locked. Divergence protocol per **CORE #5** (definition, `## Deviations` fields, ask proceed/follow/re-plan). Never deviate silently.
 
 ## Dependents Check
 
@@ -118,16 +94,13 @@ All implementation items checked → lint + build + targeted tests — including
 
 Run this audit before marking the plan `implemented`. If ANY item is unchecked → STOP, fix, re-check.
 
-- [ ] **Build + suite gate**: lint + build pass; targeted + `## Affected Existing Tests` green (never the full suite — CORE); no test force-greened over a failure.
-- [ ] **RED/baseline gate** (`## TDD Execution`): per slice the proof commit — `test(red)` feature/fix, `test: baseline` refactor — precedes that slice's impl commit(s). Proof commits: __ / slices: __ — match?
+- [ ] **Build + tests** (`## Completion`): lint + build pass; targeted tests + the plan's `## Affected Existing Tests` set green — each failure root-caused (regression fixed / stale test finished / intended change in `## Deviations`), none force-greened. Failing: __.
+- [ ] **Git state** (`## TDD Execution`): per slice the proof commit — `test(red)` feature/fix, `test: baseline` refactor — precedes that slice's impl commit(s) (proof commits: __ / slices: __); `<worktree>` matches the plan's `Worktree:` field; `git -C <worktree> status --porcelain` shows no uncommitted plan-file changes.
 - [ ] **Symbol membership** (CORE `Verify symbol membership`): ran on every new call, field access, import. Unresolved: __.
-- [ ] **No fake implementations** (`## TDD Execution` → GREEN): re-read the impl — no test-input special-casing, no lookup tables. Offenders: __.
+- [ ] **No fake implementations** (CORE #3): re-read the impl — no test-input special-casing, no lookup tables. Offenders: __.
 - [ ] **GREEN coverage** (CORE gate #6): every changed file ✅ / ⚠️ logged in `## Coverage Gaps` / ❌ resolved. Gaps: __.
 - [ ] **BLUE refactor**: all GREEN done → refactor → `code-quality-auditor` confirmed no behavior change → coverage re-run on BLUE-touched files, targets met.
 - [ ] **Dependents** (`## Dependents Check`): ran; every ❌ resolved. Open: __.
-- [ ] **Affected Existing Tests**: plan's set all pass OR each failure root-caused (regression fixed / stale test finished / intended change in `## Deviations`). Failing: __.
-- [ ] **Deviations logged** (`## Plan Deviation`): every divergence in `## Deviations` with Plan said / Doing instead / Why / Tradeoff. Unlogged: __.
-- [ ] **Scope Creep logged** (`## Scope Creep`): every discovery in `## Discovered Scope`. Unlogged: __.
-- [ ] **Worktree clean** (`## TDD Execution` → Worktree & branch model): `<worktree>` matches plan's `Worktree:` field; `git -C <worktree> status --porcelain` shows no uncommitted plan-file changes. Dirty: __.
+- [ ] **Deviations & Scope** (CORE #5, #7): every divergence in `## Deviations` (all four fields), every discovery in `## Discovered Scope`; lite plan still satisfies its four conditions (else escalation ran). Unlogged: __.
 
 If ALL checked → set status `implemented` in the worktree's plan copy and commit it: `git add docs/plans/<file>.md && git commit -m "docs(<scope>): mark plan implemented"` (skip if nothing to commit). Print: "Implementation complete. Run the review-code skill." Surface `## Coverage Gaps` and `## Deviations` if non-empty.
