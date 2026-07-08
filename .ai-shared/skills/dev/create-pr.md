@@ -88,7 +88,7 @@ cp "<worktree>/docs/plans/<file>.md" "$MAIN_ROOT/docs/plans/<file>.md"   # then 
 cd "$MAIN_ROOT"
 git worktree remove <worktree>
 ```
-Refuses due to uncommitted changes → STOP, show them (an upstream skill skipped its plan commit, or a non-gitignored dep symlink is untracked); forcing removal (`--force`) requires explicit user confirmation (CORE `Confirm destructive actions`).
+Refuses due to uncommitted changes → STOP, show them (an upstream skill skipped its plan commit, or a non-gitignored dep symlink is untracked); forcing removal (`--force`) requires explicit user confirmation (EXEC_CORE `Confirm destructive actions`).
 
 ## Self-Check (BLOCKING — do NOT emit completion until every item is ✅)
 

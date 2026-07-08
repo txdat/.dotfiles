@@ -95,7 +95,7 @@ Type: single | chain
 | 1 | <type>/<slug> | 1–N | <summary> |
 ```
 
-Rules: 5–10 Implementation Steps (lite: 1–3), dependency-ordered. Every Impl refs ≥1 TC-N; every TC referenced by ≥1 Impl. >10 → propose split. Symbols cited in Impl steps must be verified members of their target type/module before the step is written — see CORE `Verify symbol membership`.
+Rules: 5–10 Implementation Steps (lite: 1–3), dependency-ordered. Every Impl refs ≥1 TC-N; every TC referenced by ≥1 Impl. >10 → propose split. Symbols cited in Impl steps must be verified members of their target type/module before the step is written — see EXEC_CORE `Verify symbol membership`.
 
 **Impact Analysis:** populate Affected Components from explore Key Files/Entry Points/Data Flow if available; scan only if no explore output exists. Affected Components ≥1 entry; API/Contract Changes, Data/Schema, and Non-functional must each be answered. Each Non-functional commitment that requires code maps to an Implementation Step (mark `ops-only` if it needs none) — else execute never builds it.
 

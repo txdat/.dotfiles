@@ -1,4 +1,4 @@
-Read `~/.ai-shared/ENGINEERING_CORE.md` and follow all instructions exactly.
+Read `~/.ai-shared/EXEC_CORE.md` and follow all instructions exactly.
 
 ## Role
 
@@ -24,8 +24,7 @@ Expands into architecture → **escalate to architecture-strategist**.
 | Codebase exploration | **code-explorer** |
 | Touches architecture | **architecture-strategist** |
 | Simple implementation | **junior-engineer** |
-| Complex implementation | **senior-engineer** |
-| Critical implementation (concurrency / security / data integrity) | **principal-engineer** |
+| Complex or critical implementation (incl. concurrency / security / data integrity) | **senior-engineer** |
 
 ## Output
 

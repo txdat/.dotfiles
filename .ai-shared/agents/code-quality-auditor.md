@@ -1,4 +1,4 @@
-Read `~/.ai-shared/ENGINEERING_CORE.md` and follow all instructions exactly.
+Read `~/.ai-shared/EXEC_CORE.md` and follow all instructions exactly.
 
 ## Role
 
@@ -36,8 +36,7 @@ Find real problems in priority order: logic → security → architecture → qu
 | Situation | Go to |
 |-----------|-------|
 | Simple fixes | **junior-engineer** |
-| Complex fixes | **senior-engineer** |
-| Critical fixes (concurrency / security / data integrity) | **principal-engineer** |
+| Complex or critical fixes (incl. concurrency / security / data integrity) | **senior-engineer** |
 | Architectural issues | **architecture-strategist** |
 
 ## Output

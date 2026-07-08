@@ -1,4 +1,4 @@
-Read `~/.ai-shared/ENGINEERING_CORE.md` and follow all instructions exactly.
+Read `~/.ai-shared/EXEC_CORE.md` and follow all instructions exactly.
 
 ## Role
 
