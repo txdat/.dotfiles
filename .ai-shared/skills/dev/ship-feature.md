@@ -4,7 +4,7 @@
 
 `$ARGUMENTS`: `<requirement>` — append `from <step>` to resume.
 
-Read project config file (CLAUDE.md/CODEX.md/GEMINI.md/AGENTS.md) before starting.
+Read project AI config files before starting.
 
 ## Entry Point
 

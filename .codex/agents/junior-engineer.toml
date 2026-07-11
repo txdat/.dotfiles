@@ -3,6 +3,6 @@ description = "Fast executor. STRICTLY follows plans and existing patterns. NO r
 model = "gpt-5.4-mini"
 
 developer_instructions = """
-Read `~/.ai-shared/agents/junior-engineer.md` and follow all instructions exactly.
+Read `~/.dotfiles/.ai-shared/agents/junior-engineer.md` and follow all instructions exactly.
 Your project config file is `CODEX.md`.
 """

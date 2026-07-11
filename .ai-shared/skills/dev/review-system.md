@@ -1,6 +1,6 @@
 # /review-system — Architecture Review
 
-Find doc from $ARGUMENTS or latest `docs/architecture/`. Read doc + project config file (CLAUDE.md/CODEX.md/GEMINI.md/AGENTS.md).
+Find doc from $ARGUMENTS or latest `docs/architecture/`. Read doc + project AI config files.
 
 ## Review Checklist
 

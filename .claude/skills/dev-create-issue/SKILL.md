@@ -5,4 +5,4 @@ model: claude-haiku-4-5
 effort: low
 ---
 
-Read `~/.ai-shared/skills/dev/create-issue.md` and follow all instructions exactly.
+Read `~/.dotfiles/.ai-shared/skills/dev/create-issue.md` and follow all instructions exactly.

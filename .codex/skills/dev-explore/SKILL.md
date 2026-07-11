@@ -5,4 +5,4 @@ model: gpt-5.4-mini
 effort: medium
 ---
 
-Read `~/.ai-shared/skills/dev/explore.md` and follow all instructions exactly.
+Read `~/.dotfiles/.ai-shared/skills/dev/explore.md` and follow all instructions exactly.

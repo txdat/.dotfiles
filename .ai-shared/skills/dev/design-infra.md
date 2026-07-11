@@ -2,7 +2,7 @@
 
 Warn if active infra plan exists. Filename: `docs/plans/<basename>_<date>_infra_<slug>.md`.
 
-Read project config file (CLAUDE.md/CODEX.md/GEMINI.md/AGENTS.md). No apply. Read-only OK (`terraform show`, `kubectl get`).
+Read project AI config files. No apply. Read-only OK (`terraform show`, `kubectl get`).
 
 **Drift detection**: compare live vs config. If drift → add sync step first.
 

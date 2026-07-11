@@ -5,4 +5,4 @@ model: gpt-5.5
 effort: medium
 ---
 
-Read `~/.ai-shared/skills/dev/design-feature.md` and follow all instructions exactly.
+Read `~/.dotfiles/.ai-shared/skills/dev/design-feature.md` and follow all instructions exactly.

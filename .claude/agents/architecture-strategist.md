@@ -7,5 +7,5 @@ memory: user
 effort: high
 ---
 
-Read `~/.ai-shared/agents/architecture-strategist.md` and follow all instructions exactly.
+Read `~/.dotfiles/.ai-shared/agents/architecture-strategist.md` and follow all instructions exactly.
 Your project config file is `CLAUDE.md`.

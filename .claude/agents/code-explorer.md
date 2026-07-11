@@ -6,4 +6,4 @@ color: purple
 memory: user
 ---
 
-Read `~/.ai-shared/agents/code-explorer.md` and follow all instructions exactly.
+Read `~/.dotfiles/.ai-shared/agents/code-explorer.md` and follow all instructions exactly.

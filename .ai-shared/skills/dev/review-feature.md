@@ -6,7 +6,7 @@ Do NOT write code.
 
 Resolve the session's active plan: an explicit `docs/plans/<file>.md` (or its slug) in $ARGUMENTS pins it; otherwise the session's pinned plan, else the lone active plan. Never auto-pick among multiple active plans — 0 or 2+ and none named → STOP, ask which. Expects status `planning`/`blocked-by-architecture`. If unfamiliar areas, suggest the explore skill. If the active plan is already `approved`, STOP and run execute-feature.
 
-Read plan + project config file (CLAUDE.md/CODEX.md/GEMINI.md/AGENTS.md).
+Read plan + project AI config files.
 
 ## Precondition (blocking)
 

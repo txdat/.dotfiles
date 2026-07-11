@@ -5,4 +5,4 @@ model: claude-sonnet-4-6
 effort: medium
 ---
 
-Read `~/.ai-shared/skills/dev/execute-infra.md` and follow all instructions exactly.
+Read `~/.dotfiles/.ai-shared/skills/dev/execute-infra.md` and follow all instructions exactly.

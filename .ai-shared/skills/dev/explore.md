@@ -1,6 +1,6 @@
 # /explore — Codebase Exploration
 
-Target from $ARGUMENTS or ask. Read project config file (CLAUDE.md/CODEX.md/GEMINI.md/AGENTS.md). Do NOT modify files.
+Target from $ARGUMENTS or ask. Read project AI config files. Do NOT modify files.
 
 ## Area Decomposition
 

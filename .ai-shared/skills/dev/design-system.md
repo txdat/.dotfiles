@@ -4,7 +4,7 @@ Cross-cutting changes: polling→events, sync→async, monolith→services, new 
 
 Feature-level → use the design-feature skill. No code.
 
-Filename: `docs/architecture/<date>_<slug>.md`. Read project config file (CLAUDE.md/CODEX.md/GEMINI.md/AGENTS.md).
+Filename: `docs/architecture/<date>_<slug>.md`. Read project AI config files.
 
 ## Phase 1 — Problem Framing
 

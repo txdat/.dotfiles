@@ -1,6 +1,6 @@
 # /simplify-code — Simplify Existing Code
 
-Target from $ARGUMENTS or ask. Read target + project config file (CLAUDE.md/CODEX.md/GEMINI.md/AGENTS.md).
+Target from $ARGUMENTS or ask. Read target + project AI config files.
 
 Scope: simplification only. No features, bug fixes, or behavior changes.
 

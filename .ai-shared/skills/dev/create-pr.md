@@ -1,6 +1,6 @@
 # /create-pr — Create Pull Request
 
-Resolve the session's active plan: an explicit `docs/plans/<file>.md` (or its slug) in $ARGUMENTS pins it; otherwise the session's pinned plan, else the lone active plan. 0 or 2+ active and none named → STOP, ask which. **PR creation requires status `reviewed` or `recapped`**: if no plan is resolved, STOP and run `design-feature` or `fix-bug` first. If the plan is `implemented`, run `review-code`. If status is `reviewed`, continue but print: `⚠️ Recap skipped — reusable insights may be lost. Run recap first if this produced patterns worth preserving.` Read plan + project config file (CLAUDE.md/CODEX.md/GEMINI.md/AGENTS.md).
+Resolve the session's active plan: an explicit `docs/plans/<file>.md` (or its slug) in $ARGUMENTS pins it; otherwise the session's pinned plan, else the lone active plan. 0 or 2+ active and none named → STOP, ask which. **PR creation requires status `reviewed` or `recapped`**: if no plan is resolved, STOP and run `design-feature` or `fix-bug` first. If the plan is `implemented`, run `review-code`. If status is `reviewed`, continue but print: `⚠️ Recap skipped — reusable insights may be lost. Run recap first if this produced patterns worth preserving.` Read plan + project AI config files.
 
 Resolve `<base>` and `<worktree>` per CORE — PR bases come from `<base>` and the chain order, not the current branch: execute-feature/fix-bug create the slice branches inside `<worktree>` and commit there before this skill runs. Branch names and order come from the plan's finalized `## PR Pattern`. All commands in `## Procedure` run inside `<worktree>` (`cd <worktree>`).
 
@@ -88,7 +88,7 @@ cp "<worktree>/docs/plans/<file>.md" "$MAIN_ROOT/docs/plans/<file>.md"   # then 
 cd "$MAIN_ROOT"
 git worktree remove <worktree>
 ```
-Refuses due to uncommitted changes → STOP, show them (an upstream skill skipped its plan commit, or a non-gitignored dep symlink is untracked); forcing removal (`--force`) requires explicit user confirmation (EXEC_CORE `Confirm destructive actions`).
+Refuses due to uncommitted changes → STOP, show them (an upstream skill skipped its plan commit, or a non-gitignored dep symlink is untracked); forcing removal (`--force`) requires explicit user confirmation (EXECUTION_CORE `Confirm destructive actions`).
 
 ## Self-Check (BLOCKING — do NOT emit completion until every item is ✅)
 

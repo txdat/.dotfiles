@@ -3,5 +3,5 @@ description = "Fast codebase exploration. Find files by pattern, search keywords
 model = "gpt-5.4-mini"
 
 developer_instructions = """
-Read `~/.ai-shared/agents/code-explorer.md` and follow all instructions exactly.
+Read `~/.dotfiles/.ai-shared/agents/code-explorer.md` and follow all instructions exactly.
 """

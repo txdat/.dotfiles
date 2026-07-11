@@ -4,7 +4,7 @@ Warn if active plan exists. Unfamiliar area → suggest the explore skill.
 
 Filename: `docs/plans/<basename>_<date>_<type>_<slug>.md`. Type: feature/fix/refactor.
 
-Read project config file (CLAUDE.md/CODEX.md/GEMINI.md/AGENTS.md). Filling a `blocked-by-architecture` stub → also read its source `docs/architecture/` doc and honor its `Contracts:` boundary invariants; cite the doc in Design Decisions. No code.
+Read project AI config files. Filling a `blocked-by-architecture` stub → also read its source `docs/architecture/` doc and honor its `Contracts:` boundary invariants; cite the doc in Design Decisions. No code.
 
 ## Mode
 
@@ -95,7 +95,7 @@ Type: single | chain
 | 1 | <type>/<slug> | 1–N | <summary> |
 ```
 
-Rules: 5–10 Implementation Steps (lite: 1–3), dependency-ordered. Every Impl refs ≥1 TC-N; every TC referenced by ≥1 Impl. >10 → propose split. Symbols cited in Impl steps must be verified members of their target type/module before the step is written — see EXEC_CORE `Verify symbol membership`.
+Rules: 5–10 Implementation Steps (lite: 1–3), dependency-ordered. Every Impl refs ≥1 TC-N; every TC referenced by ≥1 Impl. >10 → propose split. Symbols cited in Impl steps must be verified members of their target type/module before the step is written — see EXECUTION_CORE `Verify symbol membership`.
 
 **Impact Analysis:** populate Affected Components from explore Key Files/Entry Points/Data Flow if available; scan only if no explore output exists. Affected Components ≥1 entry; API/Contract Changes, Data/Schema, and Non-functional must each be answered. Each Non-functional commitment that requires code maps to an Implementation Step (mark `ops-only` if it needs none) — else execute never builds it.
 

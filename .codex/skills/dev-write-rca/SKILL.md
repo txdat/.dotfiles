@@ -5,4 +5,4 @@ model: gpt-5.4
 effort: medium
 ---
 
-Read `~/.ai-shared/skills/dev/write-rca.md` and follow all instructions exactly.
+Read `~/.dotfiles/.ai-shared/skills/dev/write-rca.md` and follow all instructions exactly.

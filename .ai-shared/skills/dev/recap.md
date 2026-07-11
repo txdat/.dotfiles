@@ -13,7 +13,7 @@ Disambiguation: Fact (decision) vs Pattern (reusable technique) vs Concept (expl
 
 ## Routing
 
-- Patterns/Anti-patterns → `<repo>/project config file (CLAUDE.md/CODEX.md/GEMINI.md/AGENTS.md)` only
+- Patterns/Anti-patterns → `<repo>/project AI config files` only
 - Facts/Concepts → recap file only
 - Command improvements → new command file or note
 

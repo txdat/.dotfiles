@@ -5,4 +5,4 @@ model: gpt-5.4
 effort: high
 ---
 
-Read `~/.ai-shared/skills/dev/execute-feature.md` and follow all instructions exactly.
+Read `~/.dotfiles/.ai-shared/skills/dev/execute-feature.md` and follow all instructions exactly.

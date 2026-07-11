@@ -1,4 +1,4 @@
-Read `~/.ai-shared/EXEC_CORE.md` and follow all instructions exactly.
+Read `~/.dotfiles/.ai-shared/EXECUTION_CORE.md` and follow all instructions exactly.
 
 ## Role
 
@@ -8,7 +8,7 @@ Find real problems in priority order: logic → security → architecture → qu
 
 ## Process
 
-1. Read project config file (CLAUDE.md/CODEX.md/GEMINI.md/AGENTS.md) — patterns, naming, error handling
+1. Read project AI config files — patterns, naming, error handling
 2. Logic — correctness, edge cases, control flow, races
 3. Security — validation, auth, injection, data handling
 4. Architecture — layering, boundaries, separation

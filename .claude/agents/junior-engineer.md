@@ -6,5 +6,5 @@ color: cyan
 memory: user
 ---
 
-Read `~/.ai-shared/agents/junior-engineer.md` and follow all instructions exactly.
+Read `~/.dotfiles/.ai-shared/agents/junior-engineer.md` and follow all instructions exactly.
 Your project config file is `CLAUDE.md`.

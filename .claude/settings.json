@@ -2,8 +2,7 @@
   "permissions": {
     "allow": [
       "Read(~/.dotfiles/.ai-shared/**)",
-      "Read(~/.ai-shared/**)",
-      "Bash(~/.ai-shared/bin/**)"
+      "Bash(~/.dotfiles/.ai-shared/bin/**)"
     ]
   },
   "model": "claude-opus-4-6",
@@ -14,7 +13,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.ai-shared/bin/gate-check",
+            "command": "~/.dotfiles/.ai-shared/bin/gate-check",
             "if": "Skill(dev:*)"
           }
         ]

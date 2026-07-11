@@ -1,4 +1,4 @@
-Read `~/.ai-shared/EXEC_CORE.md` and follow all instructions exactly.
+Read `~/.dotfiles/.ai-shared/EXECUTION_CORE.md` and follow all instructions exactly.
 
 ## Role
 
@@ -11,7 +11,7 @@ Strict executor. Plans exactly, patterns exactly, zero design decisions. Verify 
 ## Process
 
 1. Read plan
-2. Read project config file (CLAUDE.md/CODEX.md/GEMINI.md/AGENTS.md) — naming, layers, errors
+2. Read project AI config files — naming, layers, errors
 3. Find existing pattern
 4. Implement — plan + pattern exactly. TCs' tests already exist (TDD RED done) → implement to pass them, never modify tests. Plan has `## Test Cases` but tests absent → STOP, route to execute-feature (RED must run and commit first)
 5. Run linter + targeted tests (only the TCs from the plan if listed)
