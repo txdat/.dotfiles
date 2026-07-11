@@ -2,7 +2,7 @@
 
 Modes: `<symptom>` full fix; `diagnose <symptom>` stops before code.
 
-Collect: symptom, expected, repro steps. Resolve `<base>` per CORE. Run `git log --oneline -20` and `git diff <base> --stat`.
+Collect: symptom, expected, repro steps, issue ref (`#<n>`). Every fix must be issue-backed (gate-check blocks review-code on an empty `Issue:`): no ref given → ask; none exists → `gh issue create` (title = symptom) before the Fix phase. Resolve `<base>` per CORE. Run `git log --oneline -20` and `git diff <base> --stat`.
 
 ## Hypothesis Investigation
 
@@ -52,7 +52,7 @@ Plan exists → if `<worktree>/docs/plans/<file>.md` is absent, copy it from `$M
 ### Fix: <date> — <symptom>
 Cause: <file:line> | Change: <what> | Test: <name> | Callers: <count> checked, <count> fixed
 ```
-No active plan → create `<worktree>/docs/plans/<basename>_<date>_fix_<slug>.md` with status `implemented`, `Worktree: /tmp/ai-worktrees/<repo-basename>-fix-<slug>`, the Root Cause/Fix summary, the regression TC, affected tests, and the finalized PR Pattern, then commit it. If the plan has no `## PR Pattern`, append a finalized one (`Type: single`, branch `fix/<slug>`) so create-pr targets the existing branch instead of deriving a new one.
+No active plan → create `<worktree>/docs/plans/<basename>_<date>_fix_<slug>.md` with status `implemented`, `Issue: #<n>` (collected above — required), `Worktree: /tmp/ai-worktrees/<repo-basename>-fix-<slug>`, the Root Cause/Fix summary, the regression TC, affected tests, and the finalized PR Pattern, then commit it. If the plan has no `## PR Pattern`, append a finalized one (`Type: single`, branch `fix/<slug>`) so create-pr targets the existing branch instead of deriving a new one.
 
 ## Self-Check (BLOCKING — do NOT emit completion until every item is ✅)
 

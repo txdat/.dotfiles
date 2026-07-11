@@ -114,7 +114,7 @@ Rules: 5–10 Implementation Steps (lite: 1–3), dependency-ordered. Every Impl
 
 Save. Show: name, type, requirement, counts, path.
 
-Ask: "Changes?" then "Create issue?" → if yes, `gh issue create`, update `Issue:` field.
+Ask: "Changes?" then "Create issue?" → if yes, `gh issue create`, update `Issue:` field. Every plan (feature/fix/refactor) MUST be issue-backed: an empty `Issue:` blocks execute-feature (gate-check), so a "no" here defers issue creation, it doesn't waive it.
 
 **PR Pattern (final step).** After the issue decision, draft the provisional `## PR Pattern` — it records slicing intent and is finalized at review-code time (scope may shift during implementation).
 

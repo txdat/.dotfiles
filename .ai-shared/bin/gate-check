@@ -5,8 +5,8 @@
 #
 # Valid transitions:
 #   design-feature  → planning
-#   review-feature  → planning|blocked-by-architecture  (verdict READY; no status flip)
-#   (human approve)  → approved        (manual, or confirmed at ship-feature's plan-phase PAUSE)
+#   review-feature  → planning|blocked-by-architecture (verdict READY; no status flip)
+#   (human approve) → approved (manual, or confirmed at ship-feature's plan-phase PAUSE)
 #   execute-feature → approved → in-progress → implemented
 #   execute-infra   → approved → in-progress → implemented
 #   review-code     → implemented → reviewed
@@ -250,6 +250,32 @@ plan_type() {
   ' "$1" 2>/dev/null
 }
 
+# Plan header Issue value (same Status line: "... | Issue: <ref> | Worktree:").
+plan_issue() {
+  awk '
+    /^Status:/ {
+      if (match($0, /Issue:[[:space:]]*[^|]+/)) {
+        t = substr($0, RSTART, RLENGTH)
+        sub(/^Issue:[[:space:]]*/, "", t)
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", t)
+        print t
+      }
+      exit
+    }
+  ' "$1" 2>/dev/null
+}
+
+# True when the Issue field holds a real reference (not empty/none/placeholder).
+has_issue() {
+  local v
+  v=$(plan_issue "$1")
+  v="${v,,}"
+  case "$v" in
+    ""|none|n/a|"<"*">") return 1 ;;
+    *) return 0 ;;
+  esac
+}
+
 open_questions_count() {
   # Count unresolved entries after "Open Questions:" only. Assumptions in the
   # same section are not open questions.
@@ -435,6 +461,10 @@ case "$SKILL_SLUG" in
         archived)              block "Plan is shipped. Nothing to execute." ;;
         *)                                block "Plan status is '$STATUS' — expected 'approved' or 'in-progress'." ;;
       esac
+      # Every plan (feature/fix/refactor/infra) must be issue-backed before implementation.
+      if ! has_issue "$PLAN"; then
+        block "Plan has no linked issue — the 'Issue:' field in the plan header is empty. Create one ('gh issue create' or design-feature's 'Create issue?' step), record it as 'Issue: #<n>', then re-run."
+      fi
     fi
     ;;
 
@@ -451,6 +481,10 @@ case "$SKILL_SLUG" in
         archived) block "Plan is shipped. Nothing to review." ;;
         *)             block "Plan status is '$STATUS' — expected 'implemented'." ;;
       esac
+      # Catches plans that entered implemented without the execute gate (planless fix-bug).
+      if ! has_issue "$PLAN"; then
+        block "Plan has no linked issue — the 'Issue:' field in the plan header is empty. Create one ('gh issue create'), record it as 'Issue: #<n>', then re-run."
+      fi
     fi
     BASE=$(resolve_base)
     SLICES=$(slice_count "$PLAN")
@@ -528,6 +562,9 @@ case "$SKILL_SLUG" in
         archived) block "Active plan '$PLAN' is already shipped. Run planless or name a different plan." ;;
         *) block "Active plan status is '$STATUS' — approve the plan, continue its workflow, or remove it before fix-bug." ;;
       esac
+      if ! has_issue "$PLAN"; then
+        block "Active plan '$PLAN' has no linked issue — the 'Issue:' field is empty. Create one ('gh issue create'), record it as 'Issue: #<n>', then re-run."
+      fi
     fi
     ;;
 
