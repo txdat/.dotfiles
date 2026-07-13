@@ -1,94 +1,50 @@
 # /execute-feature — Implement the Approved Plan
 
-Resolve the session's active plan: an explicit `docs/plans/<file>.md` (or its slug) in $ARGUMENTS pins it; otherwise the session's pinned plan, else the lone active plan. 0 or 2+ active and none named → STOP, ask which.
+Resolve the active plan per CORE. Entry status is `approved` or `in-progress`; `gate-check` owns plan/issue/status. Read the Goal, every AC and TC, the plan, and project AI config. `$ARGUMENTS`: `<plan> [from N|N]`; partial execution must preserve dependency order. No TODO placeholders.
 
-**Approval + Issue Gates (BLOCKING):** the plan's `Status:` MUST be `approved` (or `in-progress` on resume), and `Issue:` MUST contain a valid `#<number>`. `planning`/`blocked-by-architecture` → STOP; ask the user to approve it manually (set `Status: approved`) or through ship-feature's explicit `Approve plan?` pause. Empty/invalid `Issue:` → STOP and create/link the issue first. Never self-approve. Then set `in-progress`. Read project AI config files.
-Partial: `<name> from <N>` → start at N; `<name> <N>` → run only N. No `// TODO` — if blocked, say so.
+## Setup
 
-## Execution Strategy
+Use `worktree.md` exactly. Bind `<slug>` from the plan filename; single branch `<type>/<slug>`, chain branches `<type>/<slug>-k`; first parent `<base>`, later chain parent the preceding branch. Never commit to `<base>` or edit the main-tree locator after copying it.
 
-Assign each GREEN step two axes from the plan:
+Once the worktree copy exists, set `Status: in-progress` and commit `docs(<scope>): start plan execution` before proof. Plan edits are separate from proof commits and otherwise accompany the code they describe.
 
-- **Tier** (capability): from `## Risk Flags`, `### Non-functional` Security, and Affected Components — edge-case-heavy, moderately complex, or critical → `senior-engineer`; pure pattern, no edge cases or security → `junior-engineer`. **Critical** = security / concurrency / data-integrity; note these step numbers — the dispatch (or inline execution) must apply senior's invariants/failure-modes discipline to them.
-- **Independence**: different files, no shared state → parallelizable; shared files/deps → sequential (dependency-ordered).
+## Strategy
 
-Route:
-- Work that is sequential or small (`≤3` steps) → inline on the main agent (it is already full-capability; spawning buys nothing). Inline critical steps still follow senior's **Critical steps** rule (state invariants + failure modes before writing).
-- Independent steps (`>3`) → fan out in **tier-homogeneous batches** — one batch per tier, never mix tiers in a batch. Before dispatch, the main agent assigns each worker an exclusive list of source/test files; any overlap, plan-file edit, or shared generated output makes those steps sequential.
+Execute inline by default. Delegate only when more than three steps are genuinely independent with exclusive source/test files. Route by step, not by convenience: critical steps → `senior-engineer`; simple, well-patterned steps → `junior-engineer`. Workers receive the Goal, owning ACs, TCs, steps, critical invariants, file ownership, and off-limits paths, and may neither edit plans nor run Git. The main agent verifies the resulting file union, reruns the union of targeted tests and coverage, and alone commits.
 
-## TDD Execution
+Security, concurrency, or data-integrity steps are critical: state invariants and failure modes before editing, whether inline or delegated.
 
-Phases in order: RED 🔴 → GREEN 🟢 → BLUE 🔵.
+## RED → GREEN → BLUE
 
-**Worktree & branch model.** Derive names from the plan's `## PR Pattern`; never commit to `<base>`. One worktree per plan, reused across all its slices. Create / plan-copy / dependency-link / resume per **`~/.dotfiles/.ai-shared/skills/dev/worktree.md`** (single source — do not improvise). Skill-specific bindings: `<slug>` from the plan filename, `<branch>` = `<type>/<slug>` (single, or chain slice 1), `<parent>` = `<base>`. Every commit below that touches Status/`## Deviations`/`## Coverage Gaps`/`## Discovered Scope` stages the plan file alongside the code it describes.
+Read and follow `tdd.md` (single source). The approved Goal → AC → TC spec is the oracle; TDD consumes it and may not invent or reinterpret behavior. For a single PR, execute all TCs as one proof/GREEN unit. For a chain, process slices sequentially in PR-Pattern order; each slice gets its own branch and proof/GREEN pair scoped to the TCs wholly owned by that slice.
 
-- **Single** (`Type: single`): `<parent>` = `<base>`. Run RED→GREEN once over all `## Test Cases`.
-- **Chain** (`Type: chain`): execute slices in PR-Pattern order, sequentially, each on its own branch inside the same worktree. Per slice k, `<parent>` = `<base>` (k=1) else `<type>/<slug>-(k-1)`: `git checkout -b <type>/<slug>-k <parent>`, then run RED→GREEN **scoped to that slice's `Steps` → TCs** — its `test(red): <slug>-k` commit precedes its implementation commit(s). Each slice branch is a self-contained RED→GREEN pair.
+Before each GREEN:
 
-**RED** (sequential, inline):
-- Feature/fix: translate each `## Test Cases` entry from the plan into test code — Given→setup, When→call, Then→assertion, function name from TC's `<test_fn_name>`. Do NOT redesign, merge, split, or invent cases. Ambiguous or missing field → STOP and ask. Then confirm each FAILS `🔴`.
-- Refactor: translate each TC into test code the same way, then confirm all PASS first (baseline).
-- Failure must come from absent or wrong implementation — not a malformed assertion. If a companion stub is needed, it must not return the expected value; panic, throw, or raise a not-implemented error for the language — or leave the body empty.
-- **RED gate — commit before any implementation:** feature/fix → `git add <test-files> [<stub-files>] [docs/plans/<file>.md if changed] && git commit -m "test(red): <scope>"` (chain: `<scope>` = `<slug>-k`), tests + throwing stubs only (no implementation); skip if a `test(red)` commit already exists (resume). Refactor → `git add <test-files> [docs/plans/<file>.md if changed] && git commit -m "test: baseline <scope>"` (passing baseline). GREEN must not begin until this commit exists — it is the verifiable proof RED ran.
+1. Verify each new call, field access, and import against its target type/module per EXECUTION_CORE.
+2. Run `dev-check proof <commit> [--test <in-source-test-path>] [--stub <throwing-stub-path>]`.
+3. Commit implementation separately after its targeted tests pass. Any test-input special case or hardcoded expected-value table is a fake implementation → STOP and report.
 
-**GREEN**: Before writing implementation, verify every call, field access, and import is a member of its target type/module per EXECUTION_CORE `Verify symbol membership`. Unresolved → STOP, ask, wait.
+After all GREEN work, perform BLUE as defined in `tdd.md`: inspect for worthwhile simplification and refactor only when beneficial. If BLUE changed any file, rerun its targeted tests and coverage and have `code-quality-auditor` verify behavior is unchanged; "no refactor needed" is a valid outcome and needs no dispatch.
 
-Implementation must be correct for all valid inputs. Never special-case test inputs (`if input == test_value: return expected`, hardcoded lookup tables). Violation → STOP immediately, report the fake impl to the user, wait for explicit guidance.
+## Verification
 
-After a step or independent batch's tests pass, the **main agent only** stages and commits the implementation separately from RED: `git add <impl-files> [docs/plans/<file>.md if changed] && git commit -m "<type>(<scope>): <summary>"`. Each worker runs only its assigned target tests for feedback. For a concurrent batch, after every worker reports, the main agent verifies the changed-file set (`git status --porcelain` — it lists untracked new files, which `git diff` misses) is exactly the union of assigned files (plus the plan file, if the main agent itself edited it), runs the union of every worker's target tests and coverage as the final evidence, then makes one implementation commit. Keeps the `test(red)` commit as a standalone, verifiable artifact preceding the implementation.
+For every changed file, derive targeted tests using project conventions, semantic references, then filename/import search. No test found → log a Coverage Gap and STOP: return through design/review and re-approval for a new TC, accept a stated gap, or split. Never add unapproved behavior and never run the full suite unless EXECUTION_CORE permits it.
 
-Delegating per Execution Strategy (an independent batch) → write `/tmp/ai-ctx/<slug>.md`:
-```
-Plan: <path> | Stack: <detected>
-Constraints: ONLY assigned steps. No TODO. Run ONLY assigned tests. Scope creep → STOP. Plan divergence → STOP and report.
-```
-Spawn each batch on its tier's agent: "Read /tmp/ai-ctx/<slug>.md. Steps: N,M. Critical: <step numbers | none>. Files: <exclusive list>. Off-limits: <all others, especially docs/plans/**>. Do not run any Git command or edit plans. Run only your assigned target tests. TCs: TC-N,TC-M. Report: changed files, target-test result, blockers." Once all workers return, the main agent validates scope and runs the union of their target tests plus coverage before reporting `🟢 Step N: <done> (TC-N,TC-M ✅, coverage: X%)`.
+At first scoring read `coverage.md`. Measure touched/changed files, run `dev-check coverage <percent> [uncovered-critical]`, and apply CORE #6 judgment. Log every ⚠️/❌ in `## Coverage Gaps`; ❌ → STOP and ask. Coverage-driven new behavior must enter through a reviewed, re-approved plan TC.
 
-**Coverage**: score each GREEN/BLUE step against **CORE gate #6** (thresholds, no-gaming, reason-governs-downward). Run per changed file on that step only; log every ⚠️/❌ in `## Coverage Gaps`; STOP-ask on ❌. Before the first scoring, read **`~/.dotfiles/.ai-shared/skills/dev/coverage.md`** (single source — CORE #6 points there): measurement mechanics (branch-vs-line, denominator curation, mock caveat — each with its fallback), the per-stack command table, patch (diff-cover) granularity, and the `Closing a gap` protocol (behavior-first — a ⚠️/❌ is answered by naming behaviors, never by writing tests at red lines; new tests enter through TCs only).
+After GREEN/BLUE, follow `dependents.md` for every changed externally reachable symbol. Breakage or unresolved reachability → log `## Discovered Scope`, STOP, and ask: re-plan/re-review, separate, or narrow via a recorded CORE #5 deviation. Never ship a known-broken caller.
 
-**BLUE** (after all GREEN steps, inline): main agent refactors → `code-quality-auditor` verifies no behavior changes `🔵` → re-run coverage on BLUE-touched files; same targets apply
+Run lint, build, the TC tests, and `## Affected Existing Tests`. Root-cause failures: regression → fix implementation; incomplete implementation → finish its step. A conflict among Goal, AC, TC, domain contract, or observed intended behavior is not a free deviation: STOP and go back through `approval.md`. Run `dev-check artifacts <base> HEAD`.
 
-### Per-step Test Scope (GREEN + BLUE)
+Scope discovered beyond the approved plan follows CORE #7. Including it requires design-feature, review-feature, and `approval.md`'s pause again. Divergence of means within unchanged behavior follows CORE #5; any behavior change goes back through `approval.md`.
 
-Scope GREEN/BLUE verification to changed files only — never the full suite (EXECUTION_CORE `Never run the full test suite`).
-Per changed file, derive `<stem>` (no extension): `fd -t f '<stem>' | rg 'test|spec'`; fallback: `rg -l '(import|require|#include).*<stem>'` in test dirs. If none found: log `❌ no test file — <file>` in `## Coverage Gaps`, then STOP — ask: add test now / accept gap / split. Run the stack's measurement command from coverage.md's table (Branch column for logic files) and gate at patch granularity where it offers one.
+## Self-Check (BLOCKING)
 
-## Scope Creep
+- [ ] **Behavior:** every TC is implemented, its parent AC and the Goal are satisfied, and targeted/affected tests, lint, and build pass; failures were root-caused.
+- [ ] **Symbols and implementation:** all new symbols resolve; no fake implementation or hollow test. Issues: __.
+- [ ] **Coverage:** each changed file is ✅ or ⚠️ logged; no unresolved ❌; BLUE-touched files remeasured. Gaps: __.
+- [ ] **Dependents:** evidence blocks complete; breakage/unknowns were STOP-asked. Open: __.
+- [ ] **Scope:** all deviations have four CORE #5 fields; discoveries follow CORE #7. Open: __.
+- [ ] **Delegation, if used:** exclusive ownership held; main agent verified file union and reran combined tests/coverage. Violations: __.
 
-Discovered work → STOP. Log in `## Discovered Scope` with estimated effort. Ask: include / separate / skip? **Lite plans:** discovered work that breaks any lite condition (third file, contract change, new structure, security surface) additionally forces escalation per design-feature `## Mode` — STOP, flip `Mode: full`, route back through review-feature.
-
-## Plan Deviation
-
-The plan is approved and locked. Divergence protocol per **CORE #5** (definition, `## Deviations` fields, ask proceed/follow/re-plan). Never deviate silently.
-
-## Dependents Check
-
-After all GREEN + BLUE steps: for each modified symbol callable outside its own file (exported, public, non-private), find its callers. Prefer LSP find-references (semantic — avoids name false-matches and aliased-import misses); fall back to `rg -n '<symbol>' --type <lang> . | rg -v 'test|spec|_test'` when no language server is available. Exclude test files either way.
-For each caller: signature-compatible? contract unchanged? Output:
-```
-Dependents: <symbol>
-  ✅ <file:line> — compatible
-  ❌ <file:line> — <what broke>
-```
-Any `❌` → STOP. Log in `## Discovered Scope`. Ask: fix inline / separate task / skip?
-
-## Completion
-
-All implementation items checked → lint + build + targeted tests — including the plan's `## Affected Existing Tests` set; a failing existing test → root-cause before forcing green (**regression** → fix impl / **stale test**: a `needs update` test the Impl step never updated → finish that step / **intended change** → log `## Deviations`). Never run the full suite — targeted + `## Affected Existing Tests` only (EXECUTION_CORE `Never run the full test suite`). Then run the Self-Check below.
-
-## Self-Check (BLOCKING — do NOT emit completion until every item is ✅)
-
-Run this audit before marking the plan `implemented`. If ANY item is unchecked → STOP, fix, re-check.
-
-- [ ] **Build + tests** (`## Completion`): lint + build pass; targeted tests + the plan's `## Affected Existing Tests` set green — each failure root-caused (regression fixed / stale test finished / intended change in `## Deviations`), none force-greened. Failing: __.
-- [ ] **Issue linked** (top): `Issue:` contains a valid `#<number>` before implementation began. Value: __.
-- [ ] **Git state** (`## TDD Execution`): per slice the proof commit — `test(red)` feature/fix, `test: baseline` refactor — precedes that slice's impl commit(s) (proof commits: __ / slices: __); `<worktree>` matches the plan's `Worktree:` field; `git -C <worktree> status --porcelain` shows no uncommitted plan-file changes.
-- [ ] **Worker ownership + verification** (`## Execution Strategy`): each concurrent worker had exclusive files, made no Git or plan-file changes, and ran only its assigned target tests; after all workers returned, the main agent validated the batch changed-file set (`git status --porcelain`) and ran the union of assigned target tests plus coverage before its commit. Violations: __.
-- [ ] **Symbol membership** (EXECUTION_CORE `Verify symbol membership`): ran on every new call, field access, import. Unresolved: __.
-- [ ] **No fake implementations** (EXECUTION_CORE `No fake implementations`): re-read the impl — no test-input special-casing, no lookup tables. Offenders: __.
-- [ ] **GREEN coverage** (CORE gate #6): every changed file ✅ / ⚠️ logged in `## Coverage Gaps` / ❌ resolved. Gaps: __.
-- [ ] **BLUE refactor**: all GREEN done → refactor → `code-quality-auditor` confirmed no behavior change → coverage re-run on BLUE-touched files, targets met.
-- [ ] **Dependents** (`## Dependents Check`): ran; every ❌ resolved. Open: __.
-- [ ] **Deviations & Scope** (CORE #5, #7): every divergence in `## Deviations` (all four fields), every discovery in `## Discovered Scope`; lite plan still satisfies its four conditions (else escalation ran). Unlogged: __.
-
-If ALL checked → set status `implemented` in the worktree's plan copy and commit it: `git add docs/plans/<file>.md && git commit -m "docs(<scope>): mark plan implemented"` (skip if nothing to commit). Print: "Implementation complete. Run the review-code skill." Surface `## Coverage Gaps` and `## Deviations` if non-empty.
+All checked → set the worktree plan to `implemented`, commit `docs(<scope>): mark plan implemented`, and print: `Implementation complete. Run review-code for independent AC verification.` Surface non-empty Coverage Gaps and Deviations.

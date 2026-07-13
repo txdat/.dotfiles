@@ -2,7 +2,7 @@
 
 For plan-linked issues, use the design-feature skill instead.
 
-Collect from $ARGUMENTS or ask: title (required), description, labels, milestone.
+Collect from $ARGUMENTS or ask: title, problem/context, and expected outcome (required); labels and milestone (optional). Build the body from the required problem/context and expected outcome.
 
 ```bash
 gh issue create --title "..." --body "..." [--label "..."] [--milestone "..."]

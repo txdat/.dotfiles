@@ -1,6 +1,6 @@
 ---
 name: dev-design-system
-description: "Design system-level architecture and cross-cutting patterns. Outputs to docs/architecture/. Triggers: 'design the system', 'architecture decision', 'cross-cutting concern', 'high-level design'."
+description: "Design cross-cutting architecture changes such as new communication patterns, service boundaries, or integrations, with options, contracts, migration, rollback, and decomposition."
 model: claude-opus-4-6
 effort: high
 ---

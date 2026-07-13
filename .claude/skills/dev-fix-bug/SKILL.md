@@ -1,8 +1,8 @@
 ---
 name: dev-fix-bug
-description: "Diagnose a bug from a symptom description and apply a minimal targeted fix. Triggers: 'fix this bug', 'something is broken', 'why is X failing', 'there's a regression'."
+description: "Diagnose an issue-backed bug from ranked hypotheses and evidence, then optionally apply a minimal RED-first fix with coverage, caller verification, and review handoff."
 model: claude-sonnet-4-6
-effort: high
+effort: medium
 ---
 
 Read `~/.dotfiles/.ai-shared/skills/dev/fix-bug.md` and follow all instructions exactly.

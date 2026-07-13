@@ -1,68 +1,52 @@
-# /review-code — Code Change Review
+# /review-code — Review Implemented Plan Work
 
-**Scope (locked):** Design is FIXED. Review only whether the code faithfully implements the approved plan, plus code-level correctness, security, and quality. Do NOT re-evaluate requirements, scope, or design decisions — those are owned by review-feature. A genuine plan defect the code surfaces → record under `### ⚠️ Plan Defect (out of band)` and recommend re-running review-feature; never block code review on design grounds.
+Behavior is locked to the approved Goal/AC/TC spec. Review fidelity plus independent semantic correctness, security, and quality; do not reopen preferences owned by review-feature. A plan defect that makes work incorrect, insecure, lossy, or unverifiable is blocking and returns the plan through `approval.md`. Cosmetic design observations are out-of-band notes.
 
-Resolve the session's active plan (expects status `implemented`): an explicit `docs/plans/<file>.md` (or its slug) in $ARGUMENTS pins it; otherwise the session's pinned plan, else the lone active plan. 0 or 2+ active and none named → STOP, ask which (or run `design-feature`/`fix-bug` first). `Issue:` MUST contain a valid `#<number>`; empty/invalid → STOP and create/link the issue before review. Read plan + project AI config files.
+Resolve the active plan per CORE; entry status is `implemented`, and `gate-check` owns plan, issue, worktree, and proof-order gates. Read plan/config and inspect `<base>..HEAD` diff, stat, and log inside `<worktree>`.
 
-Resolve `<base>` and `<worktree>` per CORE. Run inside `<worktree>`: `git -C <worktree> diff <base> --stat`, `git -C <worktree> diff <base>`, `git -C <worktree> log <base>..HEAD --oneline`.
+## Review
 
-Review in three sequential phases. For each phase: note positives, flag blocking issues, classify non-blocking items. For `Type: infra`, use the Infrastructure substitution below instead of app-code TDD checks.
+Review sequentially and cite blocking findings as `file:line — issue — impact — required fix`.
 
-**Phase A — Correctness + TDD**: code faithfully implements the plan; edge cases handled; no silent exceptions; failure paths covered. If plan has `## Test Cases`: every TC has a corresponding test (matched by `<test_fn_name>`); each test's setup/call/assertion aligns with the TC's Given/When/Then; no additional behavioral test cases beyond plan TCs unless logged in `## Discovered Scope`. Each test meets coverage.md's quality bar — it would fail if its named behavior broke; hollow tests (assert-nothing, trivial asserts, mock-call-only, implementation-mirroring expectation) → `❌ hollow test — <file:line>` (blocking). Every call, field access, and import resolves to a member of its target type/module per EXECUTION_CORE `Verify symbol membership`; unresolved → `❌ <file:line> — <receiver_type>.<symbol> not a member`. **TDD proof** (verify CORE #4 from history): `git -C <worktree> log <base>..HEAD --oneline` must show, per slice, the proof commit preceding that slice's impl commit(s) — `test(red)` with a tests-only diff (feature/fix; single PR is one pair, chain one per slice) or passing `test: baseline` (refactor). Absent, out of order, or containing implementation → `❌ RED/baseline skipped — no valid proof commit precedes impl` (blocking).
+### A. Goal and acceptance evidence
 
-**Infrastructure substitution (Type: infra):** Phase A verifies every Implementation Step produced its planned config, the recorded `terraform validate`/`kubectl --dry-run=client`/`yamllint` evidence matches the changed files, each Verification Step has a specific expected state, and `## Execution Runbook` has explicit Run/Expect/Rollback entries. Destructive commands require Impact and a dry-run; missing or non-actionable rollback → `❌`. Application-code changes in an infra diff are a blocking scope violation — split them into a design-feature plan. App-code TC, coverage, symbol-membership, and RED/baseline requirements are otherwise N/A.
+- read the original Goal before using tests as an oracle; independently describe the delivered observable outcome;
+- verify each AC one by one against its Source, Success, and Failure fields; report `AC-N: PASS|FAIL — <evidence>`;
+- attempt at least one counterexample where all planned TCs pass but the AC or Goal fails; a known counterexample is blocking;
+- then verify every TC has a test with matching name, owning `Proves: AC-N`, and Given/When/Then behavior; extra behavioral tests require `## Discovered Scope`;
+- each test would fail when its named behavior breaks—assert-nothing, trivial assertions, mock-call-only checks, and implementation-mirroring expectations are blocking;
+- independently rerun TC tests plus `## Affected Existing Tests`;
+- verify new calls/fields/imports resolve to their target type/module;
+- inspect every proof commit with `dev-check proof <commit> [--test <in-source-test-path>] [--stub <throwing-stub-path>]`, then confirm its failure/baseline evidence and meaningful assertion. `gate-check` already verifies proof ordering.
 
-**Phase B — Architecture + Data**: project config layering respected; no framework leaks; context boundaries respected (no domain concepts leaking across); parameterized queries; transactions and concurrency correct; non-functional commitments met per plan's `### Non-functional` (authz/data exposure, observability hooks, statically-detectable performance regressions — N+1, unbounded queries, missing pagination — against the stated budget)
+Passing all TCs is insufficient when any AC or the Goal fails. Implementation failure against a sound AC/TC is rework; a wrong or ambiguous AC or TC is a plan defect and goes back through `approval.md`.
 
-**Phase C — Scope + Hygiene**: no out-of-plan changes except those recapped in `## Deviations` (verify each carries Plan said / Doing instead / Why / Tradeoff — unlogged divergence → `❌`); no debug logs, stray TODOs, or secrets
+### B. Architecture and data
 
-Blocking item format: `File:Line — issue — why it matters — required fix`
+Check layering and context boundaries, parameterized queries, transactions/concurrency, backward compatibility, and every plan Non-functional commitment (security/data exposure, observability, performance budget).
 
-Non-blocking item format — classify each:
-- **Should fix**: style drift, minor correctness risk, maintainability debt — include suggested fix
-- **Skip**: negligible impact, intentional trade-off, or out of scope — include reason
+### C. Scope and hygiene
 
-Verdict rules:
-- **REWORK REQUIRED**: any blocking items exist
-- **PASS WITH NOTES**: no blocking items, but has one or more "Should Fix" items
-- **PASS**: no blocking items, no "Should Fix" items
+Require every out-of-plan change to appear in `## Deviations` with all four CORE #5 fields. Check secrets and TODOs, then run `dev-check artifacts <base> HEAD`.
 
-## Self-Check (BLOCKING — do NOT emit verdict until every item is ✅)
+Classify non-blocking observations as **Should fix** (material minor risk/debt) or **Skip** (negligible, intentional, or out of scope) with reasons.
 
-Run this audit before the final output. If ANY blocking item is unchecked → verdict is REWORK REQUIRED.
+Verdict: any blocking finding → `REWORK REQUIRED`; none plus Should Fix → `PASS WITH NOTES`; otherwise `PASS`.
 
-- [ ] **Phase A — TDD proof** (Phase A, app plans only): per slice, `test(red)` (feature/fix) or `test: baseline` (refactor) precedes that slice's impl commit(s), diff tests-only. Missing: __ / infra: N/A.
-- [ ] **Phase A — TC coverage** (Phase A, app plans only): every plan TC has an aligned test (`<test_fn_name>`, Given/When/Then). Missing/misaligned: __ / infra: N/A.
-- [ ] **Phase A — No extra TC** (Phase A, app plans only): no behavioral tests beyond plan TCs unless in `## Discovered Scope`. Extras: __ / infra: N/A.
-- [ ] **Phase A — Test quality** (Phase A, app plans only): every test fails if its named behavior breaks. Hollow: __ / infra: N/A.
-- [ ] **Phase A — Symbol membership** (Phase A, app plans only): every call/field/import resolves. Unresolved: __ / infra: N/A.
-- [ ] **Phase A — Infrastructure validation** (Infrastructure substitution, infra plans only): config matches every step; validation evidence, Verification Steps, Runbook, destructive impact/dry-run/rollback are concrete. Violations: __ / app: N/A.
-- [ ] **Phase B — Architecture + Data** (Phase B): layering, boundaries, parameterized queries, transactions/concurrency, non-functional commitments. Violations: __.
-- [ ] **Phase C — Scope** (Phase C): no out-of-plan changes except those in `## Deviations` (Plan said / Doing instead / Why / Tradeoff). Unlogged: __.
-- [ ] **Phase C — Hygiene** (Phase C): no debug logs, stray TODOs, or secrets. Issues: __.
-- [ ] **PR Pattern finalization** (Post-report PASS): diff compared against `## PR Pattern (provisional)`; slices match → `(provisional)` removed, else revised slices proposed; missing → REWORK. Status: __.
-- [ ] **Issue linked** (top): `Issue:` contains a valid `#<number>`. Value: __.
+## Self-Check (BLOCKING)
 
-If ANY ❌ → verdict REWORK REQUIRED. If zero ❌ but has Should Fix items → PASS WITH NOTES. If zero ❌ and zero Should Fix → PASS.
+- [ ] **Goal/behavior:** every AC has independent PASS evidence against the Goal; adversarial counterexample attempted; every TC maps to its AC and test; edge/failure paths and meaningful assertions verified. Gaps: __.
+- [ ] **Proof and symbols:** proof contents independently checked; app symbols resolve. Issues: __.
+- [ ] **Architecture/data:** boundaries, security, transactions/concurrency, compatibility, and Non-functional commitments checked. Issues: __.
+- [ ] **Scope/hygiene:** deviations complete; no unplanned change, secret, TODO, or debug/conflict artifact. Issues: __.
+- [ ] **PR Pattern:** actual diff remains independently mergeable under the provisional slices; every step is owned and no TC spans slices. Issues: __.
 
-## Output
+## Output and Actions
 
-```
-## Code Review Report
-### Summary
-(2–3 sentences: what changed, overall quality signal, verdict rationale)
-### ✅ What's Good
-### ❌ Blocking (fix before PR)
-### ⚠️ Non-blocking
-#### Should Fix
-#### Skip
-### ⚠️ Plan Defect (out of band)
-(design issues the code surfaced — does not affect verdict; recommend re-running review-feature)
-### Verdict: PASS | PASS WITH NOTES | REWORK REQUIRED
-```
+Report Summary, Goal outcome, per-AC evidence, per-TC evidence, counterexample attempted, What's Good, Blocking, Non-blocking (Should Fix/Skip), out-of-band Plan Defects, and verdict.
 
-## Post-report actions
+- `REWORK REQUIRED`: offer fixes; wait for approval before editing.
+- `PASS WITH NOTES`: ask which Should Fix items to apply/skip; wait. Continue only after all are resolved.
+- `PASS`: compare the actual diff with the provisional PR Pattern and finalize it. Match → remove `(provisional)`; drift → propose a corrected pattern and wait for approval; missing → REWORK.
 
-- **REWORK**: offer inline fixes for blocking items; wait for approval before applying.
-- **PASS WITH NOTES**: present each "Should Fix" item; ask which to fix and which to skip; wait for approval before touching any. Once every "Should Fix" item is fixed or explicitly skipped (only "Skip" suggestions remain) → proceed as PASS.
-- **PASS**: finalize PR Pattern *first* — compare the diff against `## PR Pattern (provisional)` in the plan: slices match → remove `(provisional)` and save; scope drifted → propose revised slices, wait for approval, update and save; missing PR Pattern → REWORK REQUIRED. Only once finalization is complete → set status `reviewed` in the worktree's plan copy (with the finalized PR Pattern) and commit it: `git -C <worktree> add docs/plans/<file>.md && git -C <worktree> commit -m "docs(<scope>): review passed"`. Print: "Review passed. Run the recap skill."
+After PASS finalization, set the worktree plan to `reviewed`, commit `docs(<scope>): review passed`, and print: `Review passed; every AC independently verified. Run the create-pr skill.`

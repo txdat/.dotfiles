@@ -1,0 +1,69 @@
+#!/bin/bash
+set -euo pipefail
+
+pass() { printf 'PASS %s\n' "$*"; }
+warn() { printf 'WARN %s\n' "$*"; }
+block() { printf 'BLOCK %s\n' "$*" >&2; exit 1; }
+usage() { block "usage: dev-check proof <commit> [--test path] [--stub path] | artifacts <base> [head] | coverage <percent> [uncovered-critical]"; }
+
+case "${1:-}" in
+  proof)
+    [[ $# -ge 2 ]] || usage
+    commit="$2"; shift 2
+    git rev-parse --verify "$commit^{commit}" >/dev/null 2>&1 || block "unknown proof commit: $commit"
+    test_paths=(); stub_paths=()
+    while [[ $# -gt 0 ]]; do
+      kind="$1"; shift
+      [[ $# -gt 0 ]] || usage
+      case "$kind" in
+        --test) test_paths+=("$1") ;;
+        --stub) stub_paths+=("$1") ;;
+        *) usage ;;
+      esac
+      shift
+    done
+    found=0
+    while IFS= read -r path; do
+      [[ -n "$path" ]] || continue
+      found=1
+      test_path=${path,,}
+      case "$test_path" in
+        test/*|tests/*|spec/*|specs/*|__tests__/*|fixtures/*|testdata/*|*/test/*|*/tests/*|*/spec/*|*/specs/*|*/__tests__/*|*/fixtures/*|*/testdata/*|*_test.*|*_spec.*|*.test.*|*.spec.*) continue ;;
+      esac
+      case "$path" in *Test.*|*Spec.*) continue ;; esac
+      allowed_test=false
+      for test_file in "${test_paths[@]}"; do [[ "$path" == "$test_file" ]] && allowed_test=true; done
+      $allowed_test && continue
+      allowed_stub=false
+      for stub in "${stub_paths[@]}"; do [[ "$path" == "$stub" ]] && allowed_stub=true; done
+      $allowed_stub || block "proof touches non-test path: $path"
+      additions=$(git show --format= --unified=0 "$commit" -- "$path" | sed -n 's/^+\([^+]\)/\1/p')
+      # Throwing expression bodies are the permitted stub form (tdd.md):
+      # C# `=> throw ...`, Rust `=> panic!/todo!/unimplemented!/unreachable!`.
+      if printf '%s\n' "$additions" \
+        | rg -v '(=>|return)[[:space:]]*(throw\b|panic!|todo!|unimplemented!|unreachable!|raise\b)' \
+        | rg -n 'return[[:space:]]+[^;[:space:]]|=>[[:space:]]*[^;{[:space:]]' >/dev/null; then
+        block "stub contains value implementation: $path"
+      fi
+    done < <(git diff-tree --no-commit-id --name-only -r "$commit")
+    [[ "$found" -eq 1 ]] || block "proof commit is empty: $commit"
+    pass "proof commit $commit"
+    ;;
+  artifacts)
+    [[ $# -ge 2 && $# -le 3 ]] || usage
+    range="$2..${3:-HEAD}"
+    findings=$(git diff "$range" | sed -n '/^+++ /d; /^+/p' | rg -n 'System\.out|console\.log|// DEBUG|print\(|^\+[<>]{7}|^\+={7}' || true)
+    [[ -z "$findings" ]] || block "artifacts in $range\n$findings"
+    pass "artifact scan $range"
+    ;;
+  coverage)
+    [[ $# -ge 2 && $# -le 3 ]] || usage
+    pct="$2"; critical="${3:-}"
+    awk -v n="$pct" 'BEGIN { exit !(n ~ /^[0-9]+([.][0-9]+)?$/ && n >= 0 && n <= 100) }' || block "invalid coverage percent: $pct"
+    [[ "$critical" != uncovered-critical ]] || block "critical path uncovered at ${pct}%"
+    if awk -v n="$pct" 'BEGIN { exit !(n >= 90) }'; then pass "coverage ${pct}%"
+    elif awk -v n="$pct" 'BEGIN { exit !(n >= 80) }'; then warn "coverage ${pct}% — log gap"
+    else block "coverage ${pct}% — below 80%"; fi
+    ;;
+  *) usage ;;
+esac

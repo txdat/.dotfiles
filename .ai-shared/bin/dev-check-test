@@ -1,0 +1,58 @@
+#!/bin/bash
+set -euo pipefail
+
+ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+CHECK="$ROOT/bin/dev-check"
+TMP=$(mktemp -d /tmp/dev-check-test.XXXXXX)
+trap 'rm -rf "$TMP"' EXIT
+git -C "$TMP" init -q -b main
+git -C "$TMP" config user.email dev-check@example.test
+git -C "$TMP" config user.name dev-check-test
+mkdir -p "$TMP/tests" "$TMP/src"
+printf 'seed\n' > "$TMP/README.md"
+git -C "$TMP" add . && git -C "$TMP" commit -qm seed
+
+ok() { (cd "$TMP" && "$CHECK" "$@") >/dev/null || { printf 'FAIL %s\n' "$*"; exit 1; }; printf 'PASS %s\n' "$*"; }
+bad() { if (cd "$TMP" && "$CHECK" "$@") >/dev/null 2>&1; then printf 'FAIL expected block: %s\n' "$*"; exit 1; fi; printf 'PASS blocks %s\n' "$*"; }
+
+printf 'assert behavior\n' > "$TMP/tests/unit_test.py"
+git -C "$TMP" add . && git -C "$TMP" commit -qm 'test(red): unit'
+proof=$(git -C "$TMP" rev-parse HEAD)
+ok proof "$proof"
+
+git -C "$TMP" commit --allow-empty -qm 'test(red): empty'
+bad proof HEAD
+git -C "$TMP" reset -q --hard HEAD~1
+
+printf 'return 1\n' > "$TMP/src/unit.py"
+git -C "$TMP" add . && git -C "$TMP" commit -qm 'test(red): bad stub'
+bad proof HEAD --stub src/unit.py
+
+git -C "$TMP" reset -q --hard HEAD~1
+mkdir -p "$TMP/src"
+printf '#[test]\nfn behavior() {}\n' > "$TMP/src/lib.rs"
+git -C "$TMP" add . && git -C "$TMP" commit -qm 'test(red): inline rust test'
+ok proof HEAD --test src/lib.rs
+
+printf 'fn stub() -> u32 { match 0 { _ => todo!("later") } }\n' > "$TMP/src/stub.rs"
+printf 'int Foo() => throw new NotImplementedException();\n' > "$TMP/src/Stub.cs"
+git -C "$TMP" add . && git -C "$TMP" commit -qm 'test(red): throwing stubs'
+ok proof HEAD --stub src/stub.rs --stub src/Stub.cs
+
+ok coverage 95
+ok coverage 85
+bad coverage 79
+bad coverage 95 uncovered-critical
+
+git -C "$TMP" reset -q --hard "$proof"
+scan_base=$(git -C "$TMP" rev-parse HEAD~1)
+ok artifacts "$scan_base" HEAD
+mkdir -p "$TMP/src"
+printf 'console.log("debug")\n' > "$TMP/src/unit.js"
+git -C "$TMP" add . && git -C "$TMP" commit -qm debug
+bad artifacts "$scan_base" HEAD
+git -C "$TMP" revert -n HEAD
+git -C "$TMP" commit -qm 'remove debug'
+ok artifacts HEAD~1 HEAD
+
+printf 'All dev-check tests passed.\n'

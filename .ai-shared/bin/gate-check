@@ -5,21 +5,27 @@
 #
 # Valid transitions:
 #   design-feature  → planning
-#   review-feature  → planning|blocked-by-architecture (verdict READY; no status flip)
+#   review-feature  → planning (verdict READY; no status flip)
 #   (human approve) → approved (manual, or confirmed at ship-feature's plan-phase PAUSE)
 #   execute-feature → approved → in-progress → implemented
-#   execute-infra   → approved → in-progress → implemented
 #   review-code     → implemented → reviewed
-#   recap           → reviewed → recapped
-#   create-pr       → reviewed|recapped → archived
-#   fix-bug         → gated only when a plan is active (must be approved); else planless
+#   create-pr       → reviewed → archived
+#   fix-bug diagnose → read-only, plan optional
+#   fix-bug execute  → approved fix plan
 #
 # Each skill's entry gate is the prerequisite status.
-# Review-code additionally requires proof-commit sequencing for application
-# plan slices. Infrastructure plans use validation/runbook evidence instead.
+# Review-code additionally requires proof-commit sequencing for every plan slice.
+# Plan-only commits (every changed path under docs/plans/) are workflow
+# metadata and are exempt from sequencing — the skills deliberately commit
+# the pre-RED status transition and other plan evidence as dedicated docs
+# commits ahead of the proof commit.
 #
-# Approval is always a human decision: direct skill use records it manually,
-# while ship-feature records it only after its explicit "Approve plan?" pause.
+# Approval is a human decision recorded as `Status: approved`, set at the
+# spec-approval pause (see skills/dev/approval.md). The hook checks only that
+# the status is there before execution — it cannot tell who wrote it, and it
+# deliberately does not validate plan prose. Whether the ACs are right, whether
+# the TCs can admit a wrong implementation, and whether every step traces to a
+# TC are judgment calls owned by review-feature's self-check, not by a parser.
 #
 # Active plan resolution is session-pinned (see resolve_plan): an explicit
 # plan ref in the skill args pins the session; otherwise the existing pin is
@@ -42,7 +48,7 @@ fi
 
 HOOK_INPUT=$(cat)
 
-DEV_SKILL_SLUG_RE='create-issue|create-pr|design-feature|design-infra|design-system|execute-feature|execute-infra|explore|fix-bug|recap|review-code|review-feature|review-system|ship-feature|simplify-code|write-rca'
+DEV_SKILL_SLUG_RE='create-issue|create-pr|design-feature|design-system|execute-feature|explore|fix-bug|review-code|review-feature|review-system|ship-feature'
 
 is_dev_skill_slug() {
   [[ "$1" =~ ^($DEV_SKILL_SLUG_RE)$ ]]
@@ -95,7 +101,6 @@ RAW_SKILL=$(
 SKILL_SLUG=$(extract_skill_slug "$RAW_SKILL")
 [[ -n "$SKILL_SLUG" ]] || exit 0
 STATUS=""
-PLAN_LOCATOR=""
 ACTIVE_WORKTREE=""
 
 REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
@@ -175,7 +180,7 @@ find_token_plan() {
 count_active_plans() {
   local dir="docs/plans"
   [[ -d "$dir" ]] || { echo 0; return 0; }
-  local active='planning|approved|in-progress|implemented|reviewed|recapped|blocked-by-architecture'
+  local active='planning|approved|in-progress|implemented|reviewed'
   grep -Erl "^Status:[[:space:]]*($active)([[:space:]|]|$)" "$dir" 2>/dev/null | grep -c . || true
 }
 
@@ -183,7 +188,7 @@ count_active_plans() {
 lone_active_plan() {
   local dir="docs/plans"
   [[ -d "$dir" ]] || return 1
-  local active='planning|approved|in-progress|implemented|reviewed|recapped|blocked-by-architecture'
+  local active='planning|approved|in-progress|implemented|reviewed'
   local n
   n=$(grep -Erl "^Status:[[:space:]]*($active)([[:space:]|]|$)" "$dir" 2>/dev/null | grep -c . || true)
   [[ "$n" -eq 1 ]] || return 1
@@ -210,7 +215,7 @@ read_pin() {
 # where a stray word must NOT be treated as a plan reference.
 takes_plan_name() {
   case "$1" in
-    review-feature|execute-feature|execute-infra|review-code|recap|create-pr) return 0 ;;
+    review-feature|execute-feature|review-code|create-pr|fix-bug) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -246,7 +251,7 @@ plan_status() {
   ' "$1" 2>/dev/null
 }
 
-# Plan header Type — feature | fix | refactor | infra (lives on the Status line:
+# Plan header Type — feature | fix | refactor (lives on the Status line:
 # "Status: ... | Type: <type> | Issue:"). Distinct from PR Pattern's single/chain.
 plan_type() {
   awk '
@@ -300,25 +305,6 @@ has_issue() {
   [[ "$v" =~ ^\#[1-9][0-9]*$ ]]
 }
 
-plan_fingerprint() {
-  command -v sha256sum >/dev/null 2>&1 || return 2
-  sed -E 's/[[:space:]]*\|[[:space:]]*Main Plan Fingerprint:[^|]*//' "$1" | sha256sum | awk '{print $1}'
-}
-
-recorded_plan_fingerprint() {
-  awk '
-    /^Status:/ {
-      if (match($0, /Main Plan Fingerprint:[[:space:]]*[^|]+/)) {
-        t = substr($0, RSTART, RLENGTH)
-        sub(/^Main Plan Fingerprint:[[:space:]]*/, "", t)
-        gsub(/^[[:space:]]+|[[:space:]]+$/, "", t)
-        print t
-      }
-      exit
-    }
-  ' "$1" 2>/dev/null
-}
-
 is_registered_worktree() {
   local target="$1" line
   [[ "$target" != "$REPO_ROOT" ]] || return 1
@@ -364,6 +350,18 @@ open_questions_count() {
   ' "$1" 2>/dev/null
 }
 
+# fix-bug has exactly two documented modes: `diagnose <symptom>` (read-only) and
+# `execute <fix-plan>`. Read the mode from the leading argument token only — a
+# substring search would hand read-only status to any request that merely says
+# the word ("diagnose this and fix it"), reopening planless mutation. Anything
+# that is not one of the two modes is not read-only, and is gated as mutation.
+fix_bug_mode() {
+  local args first
+  args=$(printf '%s' "$1" | sed -E 's#^[[:space:]]*/?(dev[:-])?fix-bug([[:space:]]+|$)##')
+  read -r first _ <<<"$args" || true
+  printf '%s' "${first:-}"
+}
+
 resolve_base() {
   local remote_ref branch
   remote_ref=$(git -C "$GIT_TREE" symbolic-ref refs/remotes/origin/HEAD 2>/dev/null || true)
@@ -398,8 +396,24 @@ baseline_commit_count() {
   git -C "$GIT_TREE" log --format=%s "${base}..HEAD" 2>/dev/null | grep -Ec '^test:[[:space:]]*baseline' || true
 }
 
+# True when the commit touches only plan files (docs/plans/**). The skills
+# keep plan metadata in dedicated commits — the pre-RED status transition,
+# deviation/coverage/evidence logs — so these may legally appear anywhere in the
+# history, including before the first proof commit. Classified by content,
+# not subject, so a mislabeled "docs:" commit that smuggles implementation
+# still participates in sequencing. Empty/merge commits are NOT plan-only.
+plan_only_commit() {
+  local hash="$1" f found=0
+  while IFS= read -r f; do
+    [[ -n "$f" ]] || continue
+    found=1
+    [[ "$f" == docs/plans/* ]] || return 1
+  done < <(git -C "$GIT_TREE" diff-tree --no-commit-id --name-only -r "$hash" 2>/dev/null)
+  [[ "$found" -eq 1 ]]
+}
+
 proof_sequence_ok() {
-  local base="$1" mode="$2" expected="$3" proof_re=""
+  local base="$1" mode="$2" expected="$3" proof_re="" hash subject subjects=""
   # awk -v re-processes escape sequences, so backslashes must be doubled or
   # the parens in test\(red\): become a bare ERE group that never matches.
   case "$mode" in
@@ -408,7 +422,14 @@ proof_sequence_ok() {
     *) return 1 ;;
   esac
 
-  git -C "$GIT_TREE" log --format=%s --reverse "${base}..HEAD" 2>/dev/null | awk \
+  # Sequence only substantive commits — plan-only commits are invisible here.
+  while IFS=$'\t' read -r hash subject; do
+    [[ -n "$hash" ]] || continue
+    plan_only_commit "$hash" && continue
+    subjects+="$subject"$'\n'
+  done < <(git -C "$GIT_TREE" log --format='%H%x09%s' --reverse "${base}..HEAD" 2>/dev/null)
+
+  printf '%s' "$subjects" | awk \
     -v proof_re="$proof_re" \
     -v expected="$expected" '
       BEGIN { proofs=0; waiting_for_impl=0; seen_proof=0; bad=0 }
@@ -451,27 +472,28 @@ block() {
   exit 0
 }
 
-warn() {
-  local reason="$1"
-  printf 'WARNING: %s\n' "$reason" >&2
-}
-
 # ── gate dispatch ─────────────────────────────────────────────────────
 
 # Resolve (and possibly pin) the active plan only for skills that consume one.
-# Entry skills (design-*, explore, simplify-code, write-rca, create-issue) must
+# Entry skills (design-*, explore, create-issue) must
 # never write a pin — otherwise a lone plan would be pinned before design-feature
 # creates its successor, and the next gated skill would reuse the stale pin.
 case "$SKILL_SLUG" in
-  review-feature|execute-feature|execute-infra|review-code|recap|create-pr|fix-bug|ship-feature)
+  review-feature|execute-feature|review-code|create-pr|ship-feature)
     PLAN=$(resolve_plan "$SKILL_SLUG" 2>/dev/null || true) ;;
+  fix-bug)
+    FIX_BUG_MODE=$(fix_bug_mode "$HOOK_TEXT")
+    if [[ "$FIX_BUG_MODE" == "diagnose" ]]; then
+      PLAN=""
+    else
+      PLAN=$(resolve_plan "$SKILL_SLUG" 2>/dev/null || true)
+    fi ;;
   *)
     PLAN="" ;;
 esac
 # Worktree model: the main-tree plan is only the locator. When it records a
 # Worktree:, repoint at the live plan copy there and run git checks in it.
 if [[ -n "$PLAN" ]]; then
-  PLAN_LOCATOR="$PLAN"
   WT=$(plan_worktree "$PLAN")
   case "${WT,,}" in ""|none|n/a|"<"*">") WT="" ;; esac
   if [[ -n "$WT" ]]; then
@@ -509,16 +531,16 @@ require_worktree() {
 
 case "$SKILL_SLUG" in
 
-  # ── review-feature: plan must be planning | blocked-by-architecture ──
+  # ── review-feature: plan must be planning ──
   review-feature)
     require_plan
     if [[ -n "$PLAN" ]]; then
       case "$STATUS" in
-        planning|blocked-by-architecture) ;;
+        planning) ;;
         approved) block "Plan is already approved. Run execute-feature next." ;;
-        implemented|reviewed|recapped)    block "Plan status is '$STATUS' — too late for review-feature. Continue forward." ;;
+        implemented|reviewed)             block "Plan status is '$STATUS' — too late for review-feature. Continue forward." ;;
         archived)              block "Plan is shipped. Nothing to review." ;;
-        *)                                block "Plan status is '$STATUS' — expected 'planning' or 'blocked-by-architecture'. Run design-feature first." ;;
+        *)                                block "Plan status is '$STATUS' — expected 'planning'. Run design-feature first." ;;
       esac
       OQ=$(open_questions_count "$PLAN")
       if [[ "$OQ" -gt 0 ]]; then
@@ -527,19 +549,19 @@ case "$SKILL_SLUG" in
     fi
     ;;
 
-  # ── execute-feature / execute-infra: plan must be approved (or in-progress for resume) ──
-  execute-feature|execute-infra)
+  # ── execute-feature: plan must be approved (or in-progress for resume) ──
+  execute-feature)
     require_plan
     if [[ -n "$PLAN" ]]; then
       case "$STATUS" in
         approved|in-progress) ;;
-        planning|blocked-by-architecture) block "Plan status is '$STATUS' — not approved. Complete plan review, then record the human approval as 'Status: approved' (or approve at ship-feature's pause)." ;;
+        planning) block "Plan status is '$STATUS' — not approved. Run review-feature, then have the user approve the spec (see approval.md)." ;;
         implemented)                      block "Plan is already implemented. Run review-code next." ;;
-        reviewed|recapped)                block "Plan status is '$STATUS' — already past execution. Run review-code or create-pr." ;;
+        reviewed)                         block "Plan status is '$STATUS' — already past execution. Run review-code or create-pr." ;;
         archived)              block "Plan is shipped. Nothing to execute." ;;
         *)                                block "Plan status is '$STATUS' — expected 'approved' or 'in-progress'." ;;
       esac
-      # Every plan (feature/fix/refactor/infra) must be issue-backed before implementation.
+      # Every plan (feature/fix/refactor) must be issue-backed before implementation.
       if ! has_issue "$PLAN"; then
         block "Plan has no linked issue — the 'Issue:' field in the plan header is empty. Create one ('gh issue create' or design-feature's 'Create issue?' step), record it as 'Issue: #<n>', then re-run."
       fi
@@ -553,14 +575,13 @@ case "$SKILL_SLUG" in
     if [[ -n "$PLAN" ]]; then
       case "$STATUS" in
         implemented) ;;
-        planning|blocked-by-architecture|approved|in-progress)
+        planning|approved|in-progress)
           block "Plan status is '$STATUS' — not yet implemented. Run the appropriate execute skill first." ;;
-        reviewed)      block "Plan is already reviewed. Run recap next." ;;
-        recapped)      block "Plan is already recapped. Run create-pr next." ;;
+        reviewed)      block "Plan is already reviewed. Run create-pr next." ;;
         archived) block "Plan is shipped. Nothing to review." ;;
         *)             block "Plan status is '$STATUS' — expected 'implemented'." ;;
       esac
-      # Catches plans that entered implemented without the execute gate (planless fix-bug).
+      # Catches plans that entered implemented without the normal execution gate.
       if ! has_issue "$PLAN"; then
         block "Plan has no linked issue — the 'Issue:' field in the plan header is empty. Create one ('gh issue create'), record it as 'Issue: #<n>', then re-run."
       fi
@@ -569,9 +590,7 @@ case "$SKILL_SLUG" in
     SLICES=$(slice_count "$PLAN")
     [[ "$SLICES" -gt 0 ]] || SLICES=1
     PLAN_TYPE=$(plan_type "$PLAN")
-    if [[ "$PLAN_TYPE" == "infra" ]]; then
-      : # Infra review uses validation/runbook evidence; no RED/baseline proof.
-    elif [[ "$PLAN_TYPE" == "refactor" ]]; then
+    if [[ "$PLAN_TYPE" == "refactor" ]]; then
       BASELINES=$(baseline_commit_count "$BASE")
       if [[ "$BASELINES" -lt "$SLICES" ]]; then
         block "Found $BASELINES 'test: baseline' commit(s) between $BASE and HEAD; expected at least $SLICES for the plan slice count. Commit the passing baseline before refactor review."
@@ -590,47 +609,23 @@ case "$SKILL_SLUG" in
     fi
     ;;
 
-  # ── recap: plan must be reviewed ──
-  recap)
-    require_plan
-    require_worktree
-    if [[ -n "$PLAN" ]]; then
-      case "$STATUS" in
-        reviewed) ;;
-        implemented)               block "Plan is implemented but not reviewed. Run review-code first." ;;
-        recapped)                  block "Plan is already recapped. Run create-pr next." ;;
-        planning|approved|in-progress) block "Plan status is '$STATUS' — not yet implemented. Continue the workflow." ;;
-        archived)       block "Plan is shipped. Nothing to recap." ;;
-        *)                         block "Plan status is '$STATUS' — expected 'reviewed'." ;;
-      esac
-    fi
-    ;;
-
-  # ── create-pr: plan must be reviewed or recapped ──
+  # ── create-pr: plan must be reviewed ──
   create-pr)
     require_plan
     require_worktree
     if [[ -n "$PLAN" ]]; then
       case "$STATUS" in
-        recapped) ;;
-        reviewed)              warn "Plan status is 'reviewed'; recap is being skipped. Reusable insights may be lost." ;;
-        implemented)           block "Plan status is 'implemented' — run review-code then recap first." ;;
+        reviewed) ;;
+        implemented)           block "Plan status is 'implemented' — run review-code first." ;;
         planning|approved|in-progress) block "Plan status is '$STATUS' — not yet executed. Continue the workflow." ;;
         archived)   block "PR already exists for this plan." ;;
-        *)                     block "Plan status is '$STATUS' — expected 'reviewed' or 'recapped'." ;;
+        *)                     block "Plan status is '$STATUS' — expected 'reviewed'." ;;
       esac
       if ! has_final_pr_pattern "$PLAN"; then
         block "Plan PR Pattern is missing or still provisional. Run review-code to finalize it before create-pr."
       fi
       if ! has_issue "$PLAN"; then
         block "Plan has no linked issue — the 'Issue:' field must hold '#<n>' before a PR can reference it. Create one ('gh issue create'), record it, then re-run."
-      fi
-      EXPECTED_FINGERPRINT=$(recorded_plan_fingerprint "$PLAN")
-      ACTUAL_FINGERPRINT=$(plan_fingerprint "$PLAN_LOCATOR" 2>/dev/null || true)
-      if [[ -z "$EXPECTED_FINGERPRINT" || -z "$ACTUAL_FINGERPRINT" || "$EXPECTED_FINGERPRINT" != "$ACTUAL_FINGERPRINT" ]]; then
-        if [[ ! "$HOOK_TEXT" =~ (^|[[:space:]])overwrite-plan([[:space:]]|$) ]]; then
-          block "Main-tree plan changed or has no verifiable fingerprint. Inspect the locator plan, obtain explicit overwrite confirmation, then re-run create-pr with 'overwrite-plan'."
-        fi
       fi
     fi
     ;;
@@ -642,19 +637,25 @@ case "$SKILL_SLUG" in
     fi
     ;;
 
-  # ── fix-bug: planless by default; gated only when a plan is active ──
+  # ── fix-bug: planless diagnosis; mutation requires an approved fix plan ──
   fix-bug)
-    # fix-bug creates its own branch from base — no plan needed.
     git rev-parse --git-dir >/dev/null 2>&1 || block "Not in a git repository. fix-bug requires version control."
-    # When a session plan is active (named or pinned), the fix appends to it —
-    # but only while the plan is still pre-review. No active plan → planless.
-    if [[ -n "$PLAN" ]]; then
+    # Diagnosis is read-only and may run without a plan. Any invocation that can
+    # mutate code requires the normal reviewed + human-approved fix plan.
+    if [[ "$FIX_BUG_MODE" == "diagnose" ]]; then
+      :
+    elif [[ "$FIX_BUG_MODE" != "execute" ]]; then
+      block "fix-bug takes an explicit mode: 'fix-bug diagnose <symptom>' (read-only) or 'fix-bug execute <fix-plan>' (approved plan). A bare symptom is not a mutation authorization."
+    elif [[ -z "$PLAN" ]]; then
+      block "fix-bug execute requires an approved fix plan. Run 'fix-bug diagnose <symptom>', then design-feature/review-feature, then approve the plan."
+    else
       case "$STATUS" in
-        approved|in-progress|implemented) ;;
-        planning|blocked-by-architecture) block "Active plan '$PLAN' is '$STATUS' — not approved. Approve it manually (set 'Status: approved') before fix-bug appends a fix, or remove the stale plan to run planless." ;;
-        reviewed|recapped) block "Active plan '$PLAN' already passed review/recap. Do not append a fix without reopening the workflow; either run planless or use a different active plan." ;;
-        archived) block "Active plan '$PLAN' is already shipped. Run planless or name a different plan." ;;
-        *) block "Active plan status is '$STATUS' — approve the plan, continue its workflow, or remove it before fix-bug." ;;
+        approved|in-progress) ;;
+        planning) block "Active plan '$PLAN' is '$STATUS' — not approved. Run review-feature, then have the user approve the spec (see approval.md)." ;;
+        implemented) block "Active plan '$PLAN' is implemented. Do not append behavior after execution; return through design-feature/review-feature and renewed human approval." ;;
+        reviewed) block "Active plan '$PLAN' already passed review. Diagnose read-only or create and approve a separate fix plan." ;;
+        archived) block "Active plan '$PLAN' is already shipped. Diagnose read-only or create a separate fix plan." ;;
+        *) block "Active plan status is '$STATUS' — complete the normal fix-plan workflow before mutation." ;;
       esac
       if ! has_issue "$PLAN"; then
         block "Active plan '$PLAN' has no linked issue — the 'Issue:' field is empty. Create one ('gh issue create'), record it as 'Issue: #<n>', then re-run."
@@ -662,9 +663,13 @@ case "$SKILL_SLUG" in
     fi
     ;;
 
-  # ── design-feature, design-system, design-infra: no entry gate ──
-  design-feature|design-system|design-infra|explore|simplify-code|write-rca|create-issue)
-    # These are entry-point skills — no prerequisite checks needed.
+  # ── planning and read-only entry points: no entry gate ──
+  design-feature|design-system|review-system|explore|create-issue)
+    # Entry-point skills: read-only, or they produce a plan/issue/architecture
+    # doc rather than touching application code. Nothing that mutates
+    # application code reaches this branch — that is what makes CORE #10's
+    # "no planless mutation" true. The architecture lane (design-system,
+    # review-system) works on docs/architecture/ and has no plan state.
     ;;
 
   *) exit 0 ;;

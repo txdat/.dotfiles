@@ -1,8 +1,8 @@
 ---
 name: dev-create-pr
-description: "Create a pull request from an implemented or reviewed plan."
+description: "Publish reviewed plan work as draft or ready pull request(s), verify committed scope, archive the plan safely, and clean up its worktree."
 model: gpt-5.4-mini
-effort: low
+effort: medium
 ---
 
 Read `~/.dotfiles/.ai-shared/skills/dev/create-pr.md` and follow all instructions exactly.

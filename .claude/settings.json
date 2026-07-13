@@ -18,8 +18,21 @@
           }
         ]
       }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.dotfiles/.ai-shared/bin/handoff-write",
+            "timeout": 300
+          }
+        ]
+      }
     ]
   },
+  "enableArtifact": false,
   "enableWorkflows": false,
   "workflowKeywordTriggerEnabled": false,
   "enabledPlugins": {
@@ -30,6 +43,7 @@
     "mongodb@claude-plugins-official": true
   },
   "effortLevel": "medium",
+  "promptSuggestionEnabled": false,
   "awaySummaryEnabled": false,
   "tui": "fullscreen",
   "theme": "dark",

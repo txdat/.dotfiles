@@ -1,148 +1,89 @@
-# /design-feature — Feature/Fix/Refactor Planning
+# /design-feature — Plan a Feature, Fix, or Refactor
 
-Warn if active plan exists. Unfamiliar area → suggest the explore skill.
+Warn if another plan is active; unfamiliar area → suggest explore. Read project AI config. Scope that creates or changes a system boundary, communication pattern, service decomposition, or cross-system integration belongs to design-system first. A decomposed plan cites the approved architecture document and phase in Context, preserves the user Goal, and carries assigned contracts as sources, constraints, or invariants whose observable behavior is covered by ACs and TCs. No approval decisions, and no code — neither written to the repo nor embedded in the plan (see Planning Rules).
 
-Filename: `docs/plans/<basename>_<date>_<type>_<slug>.md`. Type: feature/fix/refactor.
+Write `docs/plans/<basename>_<date>_<type>_<slug>.md`, where type is feature/fix/refactor.
 
-Read project AI config files. Filling a `blocked-by-architecture` stub → also read its source `docs/architecture/` doc and honor its `Contracts:` boundary invariants; cite the doc in Design Decisions. No code.
+## Plan Schema
 
-## Mode
+Clarify scope, constraints, edge cases, and done in up to three rounds. Keep the plan as short as the change is small — a section with nothing to say is omitted, not padded. Application plans contain:
 
-After clarify, classify the change. `Mode: lite` only when ALL hold — else `full`:
-
-- ≤2 non-test files touched (predicted from Affected Components)
-- no new data structure (type, schema/table, collection, map, cache, index, queue, state container)
-- no API/contract change (breaking **or** additive) and no data/schema migration
-- no security surface (authz, input validation, secrets, data exposure)
-
-Record on the Status line. **Lite plan** keeps only: Requirement, Scope, Test Cases, Implementation Steps (1–3), PR Pattern (`Type: single` forced); Impact Analysis collapses to one line (`Impact: <files> — <why contained>`); Mechanism Invariants and Cross-dimension gates are auto-N/A (eligibility already excludes their triggers). The Open Questions gate and TDD gate apply unchanged — lite trims paperwork, never rigor.
-
-**Escalation (any phase, one-way):** the moment any lite condition proves false — a third file, a hidden contract change, a new structure — STOP, flip `Mode: full`, backfill the full sections, re-run review-feature. Never widen a lite plan in place.
-
-## Draft
-
-Clarify: scope, constraints, edge cases, done. Up to 3 rounds.
-
-```
+```text
 # Task: <name>
-Status: planning | Type: <type> | Mode: full|lite | Issue: | Worktree: | Main Plan Fingerprint:
-
-## Requirement
-<problem and why>
-
-## Context
-Current state: <what exists today / current behavior the change builds on>
-Dependencies: <external services, libs, feature flags, in-flight work — and ordering>
-
-## Scope
-In: <items>
-Out: <items>
-
+Status: planning | Type: feature|fix|refactor | Issue: | Worktree:
+## Goal                        # preserve the user's requested outcome; do not replace it with TCs
+## Requirement                 # problem, why, measurable done
+## Context                     # current behavior; dependencies and ordering
+## Scope                       # In / Out
 ## Assumptions & Open Questions
-Assumptions: <explicit assumptions the design relies on — challenged at review>
-Open Questions: <unresolved unknowns — MUST be empty before handoff to review-feature>
-
 ## Impact Analysis
-### Affected Components
-- `<file/module/service>`: <what changes>
-
-### API / Contract Changes
-- Breaking: <yes/no — details>
-- Additive: <yes/no — details>
-
-### Data / Schema
-- Migration needed: <yes/no — details>
-- Rollback plan: <yes/no — details>
-
-### Non-functional
-- Performance: <impact / budget>
-- Security: <authz, data exposure>
-- Observability: <logs / metrics / alerts>
-
-## Design Decisions
-| Decision | Options | Chosen | Reason |
-
-## Mechanism Invariants
-<only when the change introduces a new data structure — type, schema/table, collection, map, cache, index, queue, state container>
-- `<structure>`: <invariant that must hold across every operation on it — ordering, uniqueness, referential integrity, bounds/capacity, lifecycle (init/cleanup/eviction), concurrency/visibility>
-  - Maintained by: <the design mechanism that preserves it — name the initialization/identity guard (how a key/slot is first created vs. matched on revisit) and its boundary behavior>
-  - Verifies: TC-N
-
-## Risk Flags
-- [ ] <risk>: <mitigation>
-
-## Test Cases
-- [ ] TC-1 `<test_fn_name>`: <scenario>
-  - Given: <preconditions / inputs>
-  - When: <action under test>
-  - Then: <expected output / behavior>
-  - Verifies: <invariant from Requirement>
-
-## Affected Existing Tests
-- [ ] `<test_file>::<test_fn>`: <why this change could affect it — symbol/contract it exercises>
-  - Expected: still passes (behavior preserved) | needs update (<what & why>)
-
-## Implementation Steps
-- [ ] Step 1: <what> — satisfies TC-1[, TC-2]
-
-## Out of Scope
-- <item>: <why>
-
-## PR Pattern (provisional)
-Type: single | chain
-| # | Branch | Steps | Summary |
-|---|--------|-------|---------|
-| 1 | <type>/<slug> | 1–N | <summary> |
+### Affected Components        # file/module/service and change
+### API / Contract Changes     # breaking/additive, with details
+### Data / Schema              # migration and rollback
+### Non-functional             # performance budget, security, observability
+## Design Decisions            # decision / options / chosen / reason
+## Mechanism Invariants        # conditional; structure / invariant / guard / boundary TC
+## Risk Flags                  # risk / mitigation
+## Acceptance Criteria         # AC-N observable outcome + Source / Success / Failure
+## Test Cases                  # TC-N scenario + Proves / Given / When / Then
+## Affected Existing Tests     # test + reachability reason + still passes/needs update
+## Implementation Steps        # Step N + action + explicit satisfying TC IDs
+## Out of Scope                # item + reason
+## PR Pattern (provisional)    # type plus branch / steps / summary table
 ```
 
-Rules: 5–10 Implementation Steps (lite: 1–3), dependency-ordered. Every Impl refs ≥1 TC-N; every TC referenced by ≥1 Impl. >10 → propose split. Symbols cited in Impl steps must be verified members of their target type/module before the step is written — see EXECUTION_CORE `Verify symbol membership`.
+Item shape:
 
-**Impact Analysis:** populate Affected Components from explore Key Files/Entry Points/Data Flow if available; scan only if no explore output exists. Affected Components ≥1 entry; API/Contract Changes, Data/Schema, and Non-functional must each be answered. Each Non-functional commitment that requires code maps to an Implementation Step (mark `ops-only` if it needs none) — else execute never builds it.
+```text
+AC-1 — <one observable outcome>
+  Source: <user goal quote, contract, domain rule, or specification>
+  Success: <observable result>
+  Failure: <result that violates this AC>
 
-**Affected Existing Tests:** derive from Affected Components — for each changed file/module/symbol, find the existing tests exercising it via explore output → LSP find-references/call-hierarchy → `rg -l '<symbol>' <test-dirs>` (semantic first, textual fallback). Each row: *why* the change reaches it + a predicted outcome — `still passes` (behavior preserved — regression guard) or `needs update` (contract intentionally changed; note how, and an Implementation Step must update it). Predictions only, no runs; execute-feature runs them and root-causes any failure. Empty only when the change is isolated new code no existing test touches; else ≥1 entry.
+TC-1 — <one scenario>
+  Proves: AC-1
+  Given: <setup>
+  When: <action>
+  Then: <observable result>
+```
 
-**Open Questions gate** (blocking): `## Assumptions & Open Questions` → Open Questions MUST be empty before handoff. Any unresolved → resolve inline within the clarify rounds, or ask the user; the draft may still be saved, but never hand off to review-feature while any remain. Settled answers move to Assumptions or fold into the relevant section.
+Design-feature proposes behavior; it never approves it. `approval.md` (single source) owns that decision.
 
-**TDD gate** (blocking):
-- Feature/fix: ≥1 TC; every TC has all four fields (Given/When/Then/Verifies); TCs describe new behavior that will initially fail.
-- Refactor: TCs pin existing behavior to preserve (must pass before and after); Given/When/Then describe current behavior, Verifies cites the invariant kept intact.
-- Bidirectional refs: every Impl → ≥1 TC-N; every TC → ≥1 Impl.
+## Goal → AC Derivation
 
-**Mechanism Invariants gate** (blocking, conditional): triggers whenever Impact Analysis introduces a new data structure (Data/Schema migration, or an Affected Component adding a type/collection/map/cache/index/queue/state container). For each, `## Mechanism Invariants` MUST hold ≥1 entry — a structural property the mechanism silently depends on *beyond* the Requirement's stated behavior. Each entry names its init/identity guard and cites a TC-N obeying the TDD gate. Canonical TC: drive the structure to its boundary state (exhausted / zero / full / evicted), then operate again on the *same* key, asserting it does NOT reset, re-init, or corrupt. Empty only when no new data structure is introduced.
+1. Preserve the user's original outcome in `## Goal`; separate later interpretation under Requirement/Assumptions.
+2. Decompose the Goal into atomic actors, triggers, observable outcomes, constraints, prohibited outcomes, failure behavior, and measurable non-functional results.
+3. Convert each atomic outcome into one implementation-independent AC. Unsupported expected behavior is an Open Question, never an invented AC.
+4. Cite the source for every AC. Replace subjective terms (`fast`, `safe`, `correct`) with observable measures or ask the user.
+5. Derive TCs only after the AC set is complete. Each TC has exactly one `Proves: AC-N`; an AC may own multiple positive, negative, boundary, failure, concurrency, or security scenarios.
+6. Attempt the counterexample: "Can an implementation pass all proposed TCs while violating this AC or the Goal?" If yes, refine ACs/TCs before handoff.
 
-**Cross-dimension coverage gate** (blocking): when the plan spans N orthogonal axes (e.g. role × resource-type, limit-reached × fallback-path), the combination matrix MUST be covered — ≥1 TC per non-trivial cross-product, or the combo listed in `## Out of Scope` with a reason. Uncovered, unjustified combination → gate not met.
+## Planning Rules
 
-Save. Show: name, type, requirement, counts, path.
+- **A plan carries design, not implementation — everything in it is language-neutral design notation.** Contract *declarations* — a signature, an endpoint shape, a schema change, an event payload — are design: state them exactly, but as notation (`apply(tx) → receipt | reject(reason)`), never in target-language syntax. Implementation *bodies* never appear: no function bodies, no procedural code, nothing the executor would paste instead of write. Pseudo-code is allowed only when the structure is itself the decision (an algorithm, a state machine, a protocol). Quoting existing source as evidence is citation, not implementation. Target-language text in a plan anchors the executor and hides behavior gaps behind premature detail.
+- Open Questions must be empty before handoff; move settled answers into assumptions or their owning section.
+- Use dependency-ordered steps, as few as the change needs; >10 → split. Verify symbols named by steps against their target type/module.
+- Goal → AC ↔ TC ↔ Step traceability is complete: every AC has ≥1 TC, every TC names exactly one AC and appears by ID in ≥1 step, and every step names ≥1 TC. Enumerate IDs; never write ranges such as `TC-1 through TC-4`.
+- Feature/fix TCs describe initially failing observable behavior; refactor TCs pin behavior that passes before and after. Tests must not mirror the proposed implementation.
+- Derive Affected Components from exploration or direct inspection. Answer every impact category; map code-requiring Non-functional commitments to steps or mark `ops-only`.
+- Find Affected Existing Tests semantically, then by targeted search. Predict `still passes` or `needs update` with reason; empty only for isolated new code.
+- A new structure requires its operational invariant, initialization/identity guard, and boundary TC using the same key after zero/full/exhausted/evicted state.
+- For orthogonal behavior axes, cover each non-trivial combination with a TC or justify it under Out of Scope.
 
-Ask: "Changes?" then "Create issue?" → if yes, `gh issue create`, update `Issue:` field. Every plan (feature/fix/refactor) MUST be issue-backed: an empty `Issue:` blocks execute-feature (gate-check), so a "no" here defers issue creation, it doesn't waive it.
+## PR Pattern
 
-**PR Pattern (final step).** After the issue decision, draft the provisional `## PR Pattern` — it records slicing intent and is finalized at review-code time (scope may shift during implementation).
+Draft after the issue decision. One deployable unit → single branch `<type>/<slug>`. Otherwise chain independently mergeable slices, ordered by dependencies; migrations isolate first, shared architecture precedes behavior, and service slices include all their layers. The table partitions every step exactly once and keeps every TC wholly within one slice.
 
-**Single vs. chain:** each slice must be independently mergeable without breaking the app. One deployable unit → `Type: single` (branch `<type>/<slug>`). Otherwise → `Type: chain` (branches `<type>/<slug>-k`, k = 1…N).
+Show name, type, requirement, AC/TC/step counts, and path. Ask for design changes, then offer issue creation; declining defers but does not waive the execution gate. Never ask for spec approval here — that pause belongs to `approval.md`, after review-feature returns READY.
 
-**Service boundary:** N independent services → one slice per service, all its layers included. Shared infrastructure → extract as a leading `arch` slice.
+## Self-Check (BLOCKING)
 
-**Split axes** (natural boundaries):
-- **migration** — DB migration scripts; always isolated (deployment-order sensitive)
-- **arch** — structural code, no behaviour: DTOs, interfaces, base types, config
-- **feat** — behaviour on top of arch: repositories, services, controllers
-- **l10n** — string/translation-only changes
-- **test** — test-only additions or refactors
-- **chore** — config, deps, tooling
+- [ ] **Schema and questions:** every section that applies is filled; Open Questions empty; `Status: planning`.
+- [ ] **Goal and ACs:** Goal is preserved; each AC is atomic, observable, sourced, measurable, and implementation-independent; counterexample attempt found no known way to pass while violating the Goal.
+- [ ] **Approach/impact:** requirement and scope are measurable; components/contracts/data/non-functional effects and decisions are concrete.
+- [ ] **BDD/TDD:** every TC has Proves/Given/When/Then, one owning AC, and correct fail/pass intent; Goal → AC ↔ TC ↔ Step mapping is complete; affected existing tests are reasoned.
+- [ ] **Conditional rigor:** each new structure has guard/invariant/boundary TC; behavior-axis combinations are covered or excluded with reason.
+- [ ] **Execution shape:** steps are dependency-ordered, each names the TC it satisfies, and are ≤10 (else split); provisional PR Pattern partitions steps and does not split a TC.
+- [ ] **Altitude:** the plan is language-neutral design notation throughout — contracts declared as notation, never in target-language syntax; no function bodies or procedural code; pseudo-code marks structural decisions only.
 
-Enumerate every slice upfront — branch + `Steps` + one-line summary each — so the full chain is known before any PR exists. Slice order respects `## Context` Dependencies (external/in-flight work, deployment order). Each Implementation Step belongs to exactly one slice (the `Steps` columns partition all steps), AND no TC spans slices — every step satisfying a given TC sits in the same slice, so each slice's TCs pass within that slice alone. execute-feature runs each slice's RED→GREEN over those steps' TCs. Save.
-
-## Self-Check (BLOCKING — do NOT emit completion until every item is ✅)
-
-Run this audit before the final output. If ANY item is unchecked → STOP, fix the plan, re-check. Lite plans (`Mode: lite`): only the **Mode**, **Open Questions**, both **TDD**, and **PR Pattern** items apply.
-
-- [ ] **Mode** (`## Mode`): all four lite conditions re-verified against the drafted plan — any false → `Mode: full` with full sections. Mode: __.
-- [ ] **Open Questions** (`Open Questions gate`): `Open Questions:` empty. Count: __.
-- [ ] **TDD — Test Cases** (`TDD gate`): ≥1 TC, each with all four fields filled.
-- [ ] **TDD — Bidirectional refs** (`TDD gate`): every Impl → ≥1 TC; every TC → ≥1 Impl. Orphan TCs: __ / Impls: __.
-- [ ] **Mechanism Invariants** (`Mechanism Invariants gate`, conditional): new data structure → ≥1 entry per structure, init/identity guard + boundary TC. N/A if none.
-- [ ] **Cross-dimension coverage** (`Cross-dimension coverage gate`): every non-trivial combo of orthogonal axes has ≥1 TC or sits in `## Out of Scope`. Uncovered: __.
-- [ ] **PR Pattern** (`PR Pattern (final step)`): `## PR Pattern (provisional)` present; Impl Steps partitioned across slices; no TC spans slices.
-- [ ] **Non-functional mapping** (`Impact Analysis`): each code-requiring Non-functional item maps to an Impl Step (or `ops-only`). Unmapped: __.
-
-If ALL checked → emit "Plan drafted. Run the review-feature skill."
+All checked → emit: `Plan drafted. Run the review-feature skill.`

@@ -1,89 +1,59 @@
 # /design-system — Architecture Design
 
-Cross-cutting changes: polling→events, sync→async, monolith→services, new integrations.
+Use only when work creates or changes a system boundary, communication pattern, service decomposition, or cross-system integration; feature-local design belongs to design-feature. No code. Write `docs/architecture/<date>_<slug>.md` after reading project AI config. Heavy analysis may be delegated to `architecture-strategist`; the main agent owns the document and the later human decision.
 
-Feature-level → use the design-feature skill. No code.
+Architecture is not proved by up-front BDD/TDD. Its falsifiable chain is **goal and constraints → options → recommendation → boundary contracts → reversible phases → measured outcome**. Feature plans then prove observable behavior through Goal → AC → TC → RED → GREEN → BLUE.
 
-Filename: `docs/architecture/<date>_<slug>.md`. Read project AI config files.
+## Design Schema
 
-## Phase 1 — Problem Framing
+### 1. Frame
 
-Clarify: pain, constraints, scale, team capacity. Up to 3 rounds.
+Clarify the user outcome, current pain, constraints, scale, team capacity, affected boundaries, current integration, and measurable success. Up to three rounds.
 
-```
+```text
 # Architecture: <name>
 Status: draft | Date: <date>
-Current: <how it works>
-Pain: <issue> → <impact>
-Constraints: <what> — <why non-negotiable>
-Contexts: <bounded contexts affected> — <current integration style between them>
-Success: <metric> <target> (baseline: <current>)
+Current: <flow> | Pain: <issue → impact>
+Constraints: <constraint — why>
+Contexts: <affected boundaries and integration>
+Success: <metric target> | Baseline: <current measurement, or unavailable — first measurement phase>
 ```
 
-## Phase 2 — Options Analysis
+Success must be measurable after the final phase. If no baseline exists, the first phase establishes it; subjective goals such as “cleaner” or “more scalable” need an observable measure.
 
-Generate 2-4 options:
+### 2. Compare viable options
 
-```
-## Option <N>: <name>
-<description>
+Compare 2–3 viable options when they exist. If hard constraints leave one, show which alternatives they eliminate instead of inventing decorative choices. For each viable option, cover complexity, migration, operations, team fit, rollback, coupling, dependencies, and critical failure → detection → recovery paths. For the recommendation, attempt the counterexample: *could a simpler option meet the same goal and constraints?*
 
-| Dimension        | L/M/H | Notes |
-|------------------|-------|-------|
-| Complexity       |       |       |
-| Migration        |       |       |
-| Ops cost         |       |       |
-| Team fit         |       |       |
-| Rollback         |       |       |
-| Context coupling |       |       |
+### 3. Recommend
 
-Failure modes: <failure> → <detection> → <recovery>
-Dependencies: <system>: <change>
-```
+Recommend one option with rationale tied to the goal, constraints, and evidence. State trade-offs and rejection reasons. Define each changed boundary contract as `<producer> → <consumer>: <event/call> — invariant`; include ownership, compatibility/versioning, timeout or delivery semantics, and failure handling when relevant. Record `no boundary changes` when true. Do not ask for approval here: review-system independently challenges the draft before the human decides.
 
-## Phase 3 — Decision
+### 4. Migrate safely
 
-Ask: "Agree with recommendation?"
+Define dependency-ordered, independently deployable phases. Each phase is a falsifiable gate:
 
-```
-Chosen: Option <N> — <1-2 sentence rationale>
-Trade-offs accepted: <trade-off> — <why>
-Rejected: <Option X> — <reason>
-Contracts:
-  <context-a> → <context-b>: <event or call> — invariant: <what must hold across the boundary>
-  no boundary changes
+```text
+Phase <n>: <deliverable> (~duration)
+Change:   <what becomes true>
+Verify:   <objective pass/fail check — metric, query, probe, or test>
+Rollback: <concrete restoration steps, or not applicable — reason>
 ```
 
-## Phase 4 — Migration Strategy
+State dual-run/synchronization, cutover trigger, and reconciliation when applicable. A destructive or irreversible step requires explicit containment and recovery; never label it rollbackable when it is not.
 
-```
-## Migration
-Phases:
-  1. <name> (<duration>) — deliverable: <what>, rollback: <how>, gate: <metric>
-  2. ...
-Dual-run: <N weeks>, sync: <mechanism>, cutover: <trigger>
-Rollback: trigger: <condition>, steps: <high-level>, data: <reconciliation>
-```
+### 5. Decompose
 
-## Phase 5 — Decomposition
+List feature plans by name, owning phase, dependencies, delivered outcome, and assigned contracts. No cycles; at least one plan must be initially actionable. Do not create plan files here: design-feature creates each plan when its dependencies permit.
 
-```
-| Order | Plan   | Scope   | Depends on |
-|-------|--------|---------|------------|
-| 1     | <slug> | <scope> | —          |
-| 2     | <slug> | <scope> | 1          |
-```
+**BDD handoff:** every changed contract is assigned to a plan and cited there as a source, constraint, or invariant. Its observable behavior must be covered by an AC and TC; internal topology is not itself an AC. Each plan preserves its user Goal and cites this document and phase in Context. A contract no plan owns is unimplemented; a plan no phase needs is scope creep. After the final phase ships, measure Success against the baseline and record the result.
 
-Ask: "Create plan files?" → stubs with `Status: blocked-by-architecture`.
+## Self-Check (BLOCKING)
 
-## Self-Check (BLOCKING — do NOT emit completion until every item is ✅)
+- [ ] **Outcome:** goal, pain, success, baseline or measurement phase, constraints, and boundaries are concrete.
+- [ ] **Options:** viable choices or constraint-based eliminations are honest; trade-offs and critical failures are covered; the simpler-option counterexample was attempted.
+- [ ] **Recommendation/contracts:** rationale follows evidence; costs are explicit; relevant ownership, compatibility, delivery, and failure semantics are defined.
+- [ ] **Migration:** phases are ordered and independently deployable; each has Change/Verify/Rollback; destructive steps, cutover, synchronization, and reconciliation are handled where relevant.
+- [ ] **Handoff:** decomposition is acyclic and actionable; every contract has a plan, every plan has a phase, and observable contract behavior is assigned to AC/TC proof without replacing the plan Goal.
 
-Run this audit before the final output. If ANY item is unchecked → STOP, fix, re-check.
-
-- [ ] **Problem framing** (Phase 1): pain quantified, constraints justified, success measurable, `Contexts` filled.
-- [ ] **Options** (Phase 2): ≥2 viable, trade-offs honest per dimension, failure modes (detection + recovery) per option, dependencies identified.
-- [ ] **Decision** (Phase 3): rationale traces to trade-offs, rejected options have reasons, `Contracts:` invariants per boundary (or "no boundary changes").
-- [ ] **Migration** (Phase 4): phases independently deployable, each with rollback, realistic dual-run, objective cutover.
-- [ ] **Decomposition** (Phase 5): dependency-ordered, no cycles, first plan unblocked. Plan count: __.
-
-If ALL checked → save, emit "Run the review-system skill."
+All checked → save and emit: `Run the review-system skill.`

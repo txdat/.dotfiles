@@ -1,114 +1,44 @@
-# /create-pr — Create Pull Request
+# /create-pr — Publish Reviewed Work
 
-Resolve the session's active plan: an explicit `docs/plans/<file>.md` (or its slug) in $ARGUMENTS pins it; otherwise the session's pinned plan, else the lone active plan. 0 or 2+ active and none named → STOP, ask which. **PR creation requires status `reviewed` or `recapped`** and a valid `Issue: #<number>` (empty/invalid → STOP and create/link the issue first): if no plan is resolved, STOP and run `design-feature` or `fix-bug` first. If the plan is `implemented`, run `review-code`. If status is `reviewed`, continue but print: `⚠️ Recap skipped — reusable insights may be lost. Run recap first if this produced patterns worth preserving.` Read plan + project AI config files.
+Resolve the active plan per CORE. Entry status is `reviewed`; `gate-check` also requires issue, worktree, and finalized PR Pattern. Read the plan and project AI config, then run everything in `<worktree>`.
 
-Resolve `<base>` and `<worktree>` per CORE — PR bases come from `<base>` and the chain order, not the current branch: execute-feature/fix-bug create the slice branches inside `<worktree>` and commit there before this skill runs. Branch names and order come from the plan's finalized `## PR Pattern`. All commands in `## Procedure` run inside `<worktree>` (`cd <worktree>`).
+Default is draft; `$ARGUMENTS` may include `ready`.
 
-## Archive Safety Preflight
+## Preflight
 
-Before the first `gh pr create`, recompute the main-tree locator plan's fingerprint with the `Main Plan Fingerprint:` field removed from its `Status:` line and compare it with the value recorded in the worktree plan. Missing/mismatch → STOP before creating any PR and show the changed locator plan. After the user explicitly approves overwriting it, re-run with `overwrite-plan`; gate-check recognizes that token as the recorded override for this invocation. `overwrite-plan` authorizes only the final plan copy, never other destructive actions.
+1. Resolve `<base>` and branches from finalized `## PR Pattern`; never infer parents from the current checkout. Single parent is `<base>`; chain slice 1 uses `<base>`, later slices use the preceding branch.
+2. Require an empty `git status --porcelain` before switching branches. Dirty state returns to execution/review; create-pr never commits it.
+3. For each branch, require it exists and has commits above its parent; empty slice → absorb or drop it, then return through review-code.
+4. Run `dev-check artifacts <parent> <branch>`.
 
-## PR Pattern
+## Publish
 
-Read `## PR Pattern` from the active plan:
-- **Finalized** (no `(provisional)` marker) → use it: `single` or `chain`, with the listed branch names and summaries.
-- **Provisional** (unexpected once `reviewed` — review-code finalizes before flipping status) → STOP; run `/dev:review-code` to finalize against the actual diff.
-- **Absent** → STOP; review-code/fix-bug must finalize a PR Pattern before create-pr.
+For each PR in PR-Pattern order, check out its branch and create a body from the plan plus `git diff <parent>..<branch>`:
 
-## Procedure
+- title `<type>(<scope>): <summary>` under 72 characters;
+- WHAT: 3–6 behavior bullets;
+- HOW: approach, decisions, correctness, out of scope;
+- Testing: automated evidence and manual steps;
+- project checklist, or default checklist;
+- `Closes #N` from the plan.
 
-`<branch-k>` = branch name in row k of the plan's PR Pattern table (single PR: the sole row, `<type>/<slug>`; chain: `<type>/<slug>-k`).
+For a chain, every PR body includes the complete ordered branch table, with the current row marked and known PR numbers filled. Create with:
 
-Define `<parent>` per context:
-- Single PR: `<parent>` = `<base>`
-- Chain PR k: `<parent>` = `<branch-(k-1)>` for k > 1, else `<base>`
-
----
-
-For each PR (single = N of 1; chain = repeat for k = 1…N):
-
-**1. Branch** — `<branch-k>` must already exist (execute-feature/fix-bug created it from the correct parent) — absent → STOP `❌ <branch-k> missing — run execute-feature/fix-bug first`. Then switch onto it:
-```bash
-git rev-parse --verify <branch-k> >/dev/null || { echo "<branch-k> missing"; exit 1; }
-git checkout <branch-k>
-```
-
-**2. Commit (if uncommitted changes exist for this slice):**
-```bash
-git diff --cached --quiet && git diff --quiet || \
-  git add <slice-files> && git commit -m "<type>(<scope>): <summary>"
-```
-Skip silently if the working tree is already clean (commits already in place).
-
-**3. Guard — abort if branch has no new commits above `<parent>`:**
-```bash
-git log <parent>..HEAD --oneline
-```
-If empty: absorb this slice into the previous PR or drop it. Do not create an empty PR.
-
-**4. Pre-flight:**
-```bash
-git diff <parent>..HEAD | rg -n "System\.out|console\.log|print\(|// DEBUG"
-git diff <parent>..HEAD | rg -n "^[<>]{7}|^={7}"
-```
-
-**5. PR description** from plan + `git diff <parent>..HEAD`:
-- **Title**: `<type>(<scope>): <under 72 chars>`
-- **WHAT**: 3–6 bullets of behaviour changes
-- **HOW**: approach, decisions, correctness, out of scope
-- **Testing**: tests, invariants, manual steps
-- **Checklist**: from project config or default
-- **Closes**: `Closes #N` if plan has `Issue:` set
-- **Chain index** (chain PRs only — include in every PR of the chain):
-
-```
-## Chain
-| # | Branch | PR | Summary |
-|---|--------|----|---------|
-| **1** | **feat/foo-1** | **#NNN** | **arch changes** ← current |
-| 2 | feat/foo-2 | — | feature logic |
-| 3 | feat/foo-3 | — | l10n strings |
-```
-
-All N rows are present from PR-1 onward (branches known from the plan's PR Pattern). Bold the current row. Use `—` for links not yet created.
-
-**6. Create:**
 ```bash
 gh pr create --title "..." --body "..." --base <parent> --draft
 ```
 
-**7. Back-fill PR-1 (chain, k > 1 only):** after each PR-k is created, update PR-1's body — replace the `—` in `<branch-k>`'s row with `#<pr-k-number>`. Anchor on the exact branch cell `| <branch-k> |` (with pipe boundaries) so prefix-sharing branches don't collide (e.g. `…-1` must not match `…-10`):
-```bash
-body=$(gh pr view <pr-1-number> --json body -q .body)
-gh pr edit <pr-1-number> --body "$(printf '%s' "$body" | sed "\\#| <branch-k> |# s|—|#<pr-k-number>|")"
-```
+Omit `--draft` when `ready` is requested. After creating each later chain PR, update PR 1's exact branch row with its PR number; never substring-match branch names.
 
-Default `--draft`. Pass `ready` to open directly. Pass `overwrite-plan` only after the Archive Safety Preflight stopped and the user explicitly approved replacing the changed locator plan.
+## Archive and Cleanup
 
-**8. Return home & cleanup (once, after all PRs are created):** the Archive Safety Preflight has already proved the locator unchanged or recorded explicit overwrite approval. Recheck immediately before copying to catch edits made while PRs were being created; mismatch without `overwrite-plan` → STOP. Then copy the final plan back to `$MAIN_ROOT`, mark that copy `archived`, and clear its `Worktree:` and `Main Plan Fingerprint:` fields (this is the user's local record; it does not ride the PRs), then remove the now-idle worktree from *outside* it (branches stay in the repo's refs; only the linked working directory and its dependency symlinks go):
-```bash
-MAIN_ROOT=$(git worktree list | head -1 | awk '{print $1}')
-expected=$(sed -n 's/^Main Plan Fingerprint: //p' "<worktree>/docs/plans/<file>.md")
-actual=$(sed -E 's/[[:space:]]*\|[[:space:]]*Main Plan Fingerprint:[^|]*//' "$MAIN_ROOT/docs/plans/<file>.md" | sha256sum | awk '{print $1}')
-[ -n "$expected" ] && [ "$expected" = "$actual" ] || { echo "main-tree plan changed; confirmation required"; exit 1; }
-cp "<worktree>/docs/plans/<file>.md" "$MAIN_ROOT/docs/plans/<file>.md"   # then set Status: archived, clear Worktree + Main Plan Fingerprint in the $MAIN_ROOT copy
-cd "$MAIN_ROOT"
-git worktree remove <worktree>
-```
-Refuses due to uncommitted changes → STOP, show them (an upstream skill skipped its plan commit, or a non-gitignored dep symlink is untracked); forcing removal (`--force`) requires explicit user confirmation (EXECUTION_CORE `Confirm destructive actions`).
+Immediately before archival, require the worktree is still clean. Copy the final worktree plan to `$MAIN_ROOT`, set its status to `archived`, and clear `Worktree:`. From `$MAIN_ROOT`, remove the worktree normally. Refusal due to uncommitted/untracked state → STOP and show it; `--force` requires explicit destructive-action confirmation.
 
-## Self-Check (BLOCKING — do NOT emit completion until every item is ✅)
+## Self-Check (BLOCKING)
 
-Run this audit before creating the PR. If ANY item is unchecked → STOP, fix, re-check.
+- [ ] **Committed scope:** every branch has reviewed commits above its correct parent; worktree remained clean; artifact scan passed.
+- [ ] **Description:** title, WHAT, HOW, Testing, checklist, and issue closure are accurate to the actual diff.
+- [ ] **Chain, if used:** all rows/parents/order match the finalized pattern; each created number is linked from PR 1.
+- [ ] **Archive safety:** the reviewed worktree plan was copied back; no uncommitted work or forced teardown.
 
-- [ ] **Plan status** (top): status `reviewed` or `recapped`. Current: __. If `reviewed`, warning printed: yes/no.
-- [ ] **Worktree resolved** (top): plan's `Worktree:` field present, matches `git worktree list`. Missing: __.
-- [ ] **PR Pattern** (`## PR Pattern`): finalized (no `(provisional)`); provisional/absent → STOP per that section.
-- [ ] **Branches exist** (Procedure 1): each `<branch-k>` exists (`git rev-parse --verify`). Missing: __.
-- [ ] **Commits above parent** (Procedure 3): `git log <parent>..HEAD` non-empty per slice. Empty: __.
-- [ ] **Pre-flight clean** (Procedure 4): no `System.out`/`console.log`/`print(`/`// DEBUG`, no conflict markers in diff. Issues: __.
-- [ ] **PR description** (Procedure 5): title <72 chars; WHAT/HOW/Testing/Checklist present; `Closes #N` if `Issue:` set.
-- [ ] **Issue linked** (top): `Issue:` contains a valid `#<number>`. Value: __.
-- [ ] **Archive protection** (`## Archive Safety Preflight` + Procedure 8): checked before the first PR and again before copy; fingerprint matches, or explicit confirmation + `overwrite-plan` was recorded. Result: __.
-
-If ALL checked → create PR(s), then run Procedure step 8 (return the plan to `$MAIN_ROOT`, mark it `archived`, clear `Worktree:`, remove the worktree). Print PR URL + "Feature shipped."
+The first two checks gate publication. After PR creation, complete the chain and archive checks before copying or teardown. Then archive safely, remove the worktree, and print PR URL(s) plus `Feature shipped.`

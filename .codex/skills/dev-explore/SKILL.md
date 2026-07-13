@@ -1,6 +1,6 @@
 ---
 name: dev-explore
-description: "Explore a codebase area and report entry points, flow, patterns, and gotchas."
+description: "Read-only exploration of a codebase area to identify entry points, key files, data flow, established patterns, gotchas, and planning questions."
 model: gpt-5.4-mini
 effort: medium
 ---

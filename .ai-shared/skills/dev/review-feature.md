@@ -1,82 +1,52 @@
-# /review-feature — Review Feature Plan
+# /review-feature — Review a Feature Plan
 
-Do NOT write code.
+No code and no approval decisions. Design remains open: independently challenge the WHAT and HOW rather than ratifying fields. Resolve the active plan per CORE; entry status is `planning`. `gate-check` blocks entry on unresolved Open Questions; the Goal/AC/TC/Step graph is yours to verify, not a parser's.
 
-**Owns:** the WHAT and HOW. Design is still OPEN here — this is the last gate to change direction. Step back to the system level; do not just validate the document's fields.
+## Independent Semantic Review
 
-Resolve the session's active plan: an explicit `docs/plans/<file>.md` (or its slug) in $ARGUMENTS pins it; otherwise the session's pinned plan, else the lone active plan. Never auto-pick among multiple active plans — 0 or 2+ and none named → STOP, ask which. Expects status `planning`/`blocked-by-architecture`. If unfamiliar areas, suggest the explore skill. If the active plan is already `approved`, STOP and run execute-feature.
+Avoid anchoring on the proposed tests:
 
-Read plan + project AI config files.
+1. Read `## Goal`, relevant user/domain sources, and existing contracts first.
+2. Before inspecting proposed TCs, independently list the observable outcomes and failure conditions required by the Goal.
+3. Compare that list with the proposed ACs. Identify missing, invented, ambiguous, mechanism-coupled, or conflicting criteria.
+4. Only then inspect TCs and search adversarially for counterexamples.
 
-## Precondition (blocking)
+Challenge every AC/TC graph with:
 
-`## Assumptions & Open Questions` → Open Questions MUST be empty. Any unresolved → STOP, verdict NEEDS CHANGES, route back to design-feature. Never review an under-specified plan.
+- Can every TC pass while its AC fails?
+- Can every AC pass while the original Goal fails?
+- What invalid implementation could satisfy the proposed Then assertions?
+- What valid implementation would the tests incorrectly reject?
+- Is each expected result sourced, or merely repeated from the planner's assumption?
+- Are relevant negative, boundary, failure, retry, concurrency, security, and partial-result cases represented?
+- Does any test assert a proposed mechanism instead of observable behavior?
 
-## Lite Path
+Undefined or unsupported expected behavior is blocking and becomes an Open Question for the user. Use concrete competing examples when asking; never silently choose a product/domain outcome.
 
-`Mode: lite` on the Status line → first re-verify the four lite conditions (design-feature `## Mode`) against the plan yourself — any violated → `❌` NEEDS CHANGES, require `Mode: full` with backfilled sections. Conditions hold → run only the Precondition, Structural Review, and TDD gates below; skip Systemic Review; Mechanism Invariants and Cross-dimension are auto-N/A. Self-check: only the items marked `[lite]` apply.
+## System and Execution Review
 
-## Systemic Review
+- **Approach:** simplest correct solution; alternatives and assumptions challenged.
+- **System fit:** components, contracts, boundaries, compatibility, blast radius, rollback, and dependency/deployment order inspected.
+- **Completeness:** error/failure modes, concurrency, scale, security, observability, edge cases, and Non-functional mappings.
+- **Traceability:** every Goal outcome has an AC; every AC has ≥1 TC; every TC has exactly one `Proves: AC-N` and an explicit step reference; every step names ≥1 TC. Nothing mechanical checks this — read it.
+- **Execution:** ordered steps; PR slices partition steps, follow dependencies, are independently mergeable, and never split a TC.
+- **Altitude:** the plan is language-neutral design notation throughout — contracts (signatures, endpoint shapes, schemas) declared as notation, never in target-language syntax; no function bodies or procedural code; pseudo-code only where the structure is itself the decision; quoted existing source is citation, not a violation. Target-language text or embedded implementation is blocking: it anchors the executor and substitutes detail for behavior.
+- **TDD:** feature/fix scenarios fail first for absent/wrong behavior; refactor scenarios pin passing behavior; assertions do not mirror implementation.
+- **Conditional rigor:** new structures have invariants, guards, and boundary TCs; non-trivial behavior-axis combinations are covered or excluded with reason.
 
-Step back from the document to the system:
+## Readiness
 
-- **Approach**: is this the simplest correct solution? Are the Design Decisions' alternatives credible, or does a better one exist? Challenge the choice — don't ratify it.
-- **System fit**: read the plan's `## Context` and Affected Components to ground this — interactions with existing components, shared contracts, and boundaries; backward compatibility; cross-service deployment & migration ordering (PR Pattern must honor `## Context` Dependencies); blast radius; rollback. If `blocked-by-architecture`, read its source `docs/architecture/` doc and verify the plan honors that doc's `Contracts:` — violation → `❌`.
-- **Completeness**: missing error modes, concurrency, scale, security, observability, edge cases.
-- **Assumptions**: challenge each in `## Assumptions & Open Questions`; an unsound assumption → `❌`.
+`READY` means the behavior is ready for the human's decision, not approved. Leave `Status: planning` — review never approves. The spec pause in `approval.md` follows, driven by ship-feature or by the user directly.
 
-## Structural Review
+## Self-Check (BLOCKING)
 
-- **Requirement**: clear, measurable done
-- **Scope**: in/out explicit
-- **Non-functional**: `### Non-functional` answered; each code-requiring item maps to an Implementation Step (or marked `ops-only`). Unmapped → `❌`
-- **Risks**: actionable mitigations
-- **Steps**: 5–10 Implementation Steps, dependency-ordered. >10 → `❌` propose split
-- **PR Pattern**: present; `Steps` partitions all Implementation Steps (each step in exactly one slice) AND no TC spans slices (every step satisfying a TC is in the same slice → each slice independently green). Gap, overlap, or TC-spanning slice → `❌` (breaks chain execution)
+- [ ] **Mode/questions:** eligibility or full schema verified; no Open Questions surfaced. Issues: __.
+- [ ] **Independent outcomes:** expected outcomes were derived from Goal/sources before TC inspection; missing/invented ACs resolved. Issues: __.
+- [ ] **Adversarial behavior:** every AC/TC faced counterexample, invalid-pass, and valid-rejection challenges; failure/edge axes are sufficient. Gaps: __.
+- [ ] **Approach/system fit:** alternatives, boundaries, compatibility, order, blast radius, rollback, and Non-functional effects are sound. Issues: __.
+- [ ] **Traceability/TDD:** Goal → AC ↔ TC ↔ Step graph, fail/pass intent, meaningful observable assertions, and affected tests hold. Gaps: __.
+- [ ] **Execution shape:** steps are dependency-ordered, ≤10, and each names its TC; the PR partition is independently mergeable and splits no TC; the plan stays at design altitude — language-neutral notation only, no target-language syntax or implementation bodies. Issues: __.
 
-**Split accepted**: new files per sub-plan. If `Issue:` set, ask: "Create sub-issues?"
+Report summary, independently derived outcomes, blocking findings, counterexamples attempted, suggestions, and `READY` or `NEEDS CHANGES`.
 
-Flag undefined terms inline. One follow-up max.
-
-**TDD (blocking)**:
-- Test Cases non-empty and listed before Implementation Steps.
-- Each TC has all four fields (Given/When/Then/Verifies) filled.
-- Bidirectional refs: every Impl → ≥1 TC-N; every TC → ≥1 Impl. Orphan TC or unreferenced Impl → `❌`.
-- Feature/fix: TCs describe new behavior (will fail until implemented).
-- Refactor: TCs pin existing behavior (must pass before and after).
-
-**Mechanism Invariants (blocking, conditional)**: if Impact Analysis introduces a new data structure (Data/Schema migration, or an Affected Component adds a type/collection/map/cache/index/queue/state container), `## Mechanism Invariants` MUST exist with ≥1 entry per new structure. Each entry names the init/identity guard and cites a boundary TC (drive to boundary — exhausted/zero/full/evicted — then operate on the same key, asserting no reset/re-init/corruption). Missing section, missing structure, unnamed guard, or no boundary TC → `❌`. Don't just confirm the fields are filled — judge whether the stated invariant is the *right* one and whether the TC actually violates-then-preserves it.
-
-**Cross-dimension coverage (blocking)**: when the plan spans N orthogonal axes (e.g. role × resource-type, limit-reached × fallback-path), the combination matrix must be covered — ≥1 TC per non-trivial cross-product, or the combo listed in `## Out of Scope` with a reason. Uncovered, unjustified combination → `❌`.
-
-## Self-Check (BLOCKING — do NOT emit verdict until every item is ✅)
-
-Run this audit before the final output. If ANY blocking item is unchecked → verdict is NEEDS CHANGES.
-
-- [ ] **Open Questions gate** `[lite]` (`## Precondition`): Open Questions empty. Count: __.
-- [ ] **Lite eligibility** `[lite]` (`## Lite Path`): lite plan → all four conditions re-verified; violated → NEEDS CHANGES. Mode: __.
-- [ ] **Approach** (Systemic Review): simplest correct solution? alternatives credible? Better one: yes/no (__).
-- [ ] **System fit** (Systemic Review): components/contracts/boundaries; deployment & migration order vs `## Context` Dependencies; `blocked-by-architecture` → honors doc `Contracts:`. Issues: __.
-- [ ] **Completeness** (Systemic Review): error modes, concurrency, scale, security, observability, edge cases; each assumption in `## Assumptions` challenged. Gaps/unsound: __.
-- [ ] **Non-functional mapping** (Structural Review): each code-requiring item maps to an Impl Step (or `ops-only`). Unmapped: __.
-- [ ] **TDD** `[lite]` (TDD): TCs non-empty, before Impl Steps, all four fields filled; bidirectional refs (every Impl → ≥1 TC, every TC → ≥1 Impl); correct mode (feature/fix fail-first; refactor pass before + after). Orphan TCs: __ / Impls: __.
-- [ ] **Conditional gates** (Mechanism Invariants + Cross-dimension): new structure → ≥1 entry each, init/identity guard + boundary TC, invariant judged *right*; orthogonal axes → each non-trivial combo has a TC or an `## Out of Scope` reason. Missing/uncovered: __.
-- [ ] **Structure** `[lite]` (Structural Review): PR Pattern present, partitions all Impl Steps, no TC spans slices; steps 5–10 (lite: 1–3), >10 → split proposed. Gaps/overlaps/count: __.
-
-If ANY ❌ → verdict NEEDS CHANGES. If all ✅ → verdict READY.
-
-## Output
-
-```
-## Plan Review Report
-### Summary
-(2–3 sentences: approach soundness, system risk, verdict rationale)
-### ❌ Blocking (N)
-- <section> — issue — why it breaks
-### ⚠️ Suggestions (N)
-- <section> — improvement
-### Verdict: READY | NEEDS CHANGES — `<path>`
-```
-
-- **NEEDS CHANGES** (any ❌): offer to apply blocking fixes to the plan (wait for approval); design-level rethink → route back to design-feature. Status unchanged until cleared.
-- **READY**: ask "Apply suggestions?"; on apply or skip → **leave the status unchanged** (`planning`/`blocked-by-architecture`). Do NOT set `approved` — approval is the human's action, always: manually (set `Status: approved`), or by answering "Approve plan?" at ship-feature's plan-phase PAUSE (ship-feature flips the status only after that confirmation). Print: "Plan READY — approve it manually (set `Status: approved` in the plan), then run the execute-feature skill."
+`NEEDS CHANGES`: offer plan fixes and wait; design rethink routes to design-feature. `READY`: leave the status unchanged and print: `Plan READY. Run approval.md's spec pause — approval is the user's, not mine.`

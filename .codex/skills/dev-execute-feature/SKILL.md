@@ -1,7 +1,7 @@
 ---
 name: dev-execute-feature
-description: "Execute an approved plan with strict TDD sequencing and scope control."
-model: gpt-5.4
+description: "Execute an approved feature/fix/refactor plan in its worktree with per-slice RED→GREEN→BLUE commits, coverage, dependent checks, and locked-scope controls."
+model: gpt-5.6-luna
 effort: high
 ---
 

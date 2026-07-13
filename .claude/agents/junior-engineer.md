@@ -1,7 +1,7 @@
 ---
 name: junior-engineer
 description: "Fast executor. STRICTLY follows plans and existing patterns. NO reinventing, NO design decisions. Pure implementation."
-model: claude-haiku-4-5
+model: haiku
 color: cyan
 memory: user
 ---

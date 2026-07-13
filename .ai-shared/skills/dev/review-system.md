@@ -1,59 +1,24 @@
 # /review-system — Architecture Review
 
-Find doc from $ARGUMENTS or latest `docs/architecture/`. Read doc + project AI config files.
+Resolve the `draft` document from `$ARGUMENTS` or latest `docs/architecture/`; read it, relevant source, and project AI config. Independently challenge the decision, not field presence. Review the chain: goal and constraints → options → recommendation → contracts → reversible phases → measured outcome.
 
-## Review Checklist
+## Review
 
-**Problem**: pain quantified, constraints justified, success measurable, `Contexts` field filled (affected bounded contexts + integration style)
+- **Outcome:** the user goal is preserved; pain, constraints, boundaries, target, and baseline or measurement phase are credible.
+- **Options:** viable alternatives were compared, or hard constraints genuinely eliminate them; trade-offs, dependencies, coupling, and critical failure handling are credible. Re-attempt the simpler-option counterexample.
+- **Recommendation:** evidence supports the choice; alternatives are represented fairly; contracts cover the relevant ownership, compatibility, delivery, and failure semantics without prescribing unnecessary internals.
+- **Migration:** phases are dependency-ordered and independently deployable; every Change/Verify/Rollback gate is workable; destructive steps, synchronization, reconciliation, and cutover are handled honestly.
+- **Handoff:** decomposition is acyclic and initially actionable; every contract has an owning plan and phase; observable contract behavior reaches AC/TC proof while feature Goals remain user outcomes.
 
-**Options**: ≥2 viable, trade-offs honest, failure modes specific, dependencies identified, context coupling rated
+Blocking examples: lost user goal, unmeasurable success, no baseline or measurement phase, decorative alternatives, ignored simpler option, undefined or ownerless contract, missing critical failure handling, unverifiable phase, dishonest rollback, unowned contract, or dependency cycle. Warnings: oversized phase without a checkpoint, unfamiliar technology, or operational burden without an owner.
 
-**Decision**: rationale traces to trade-offs, rejected options have reasons, `Contracts` block specifies invariants per affected boundary (or "no boundary changes")
+## Self-Check (BLOCKING)
 
-**Migration**: phases deployable independently, each has rollback, dual-run realistic, cutover trigger objective
+- [ ] **Outcome/options:** goal and measurable outcome hold; alternatives or eliminations were independently challenged. Issues: __.
+- [ ] **Contracts/failures:** boundaries and required semantics are sufficient; critical failures have detection and recovery. Missing: __.
+- [ ] **Migration:** Change/Verify/Rollback gates are credible; destructive steps and applicable cutover/reconciliation hold. Issues: __.
+- [ ] **Handoff:** plan graph is actionable; contract↔plan↔phase ownership is complete; AC/TC mapping preserves feature Goals. Issues: __.
 
-**Decomposition**: ordered by dependency, no cycles, first plan unblocked
+Report verdict, blocking findings with required revisions, warnings, strengths, and author questions.
 
-## Flags
-
-**Blocking:** missing failure mode for critical path, no rollback for destructive phase, circular dependency, unmeasurable success, undefined contracts on a changed boundary
-
-**Warning:** single option, phase >2 weeks without checkpoint, team unfamiliar with key components
-
-## Self-Check (BLOCKING — do NOT emit verdict until every item is ✅)
-
-Run this audit before the final output. If ANY blocking item is unchecked → verdict is NEEDS REVISION.
-
-- [ ] **Problem quantified** (Checklist Problem): measurable pain, justified constraints, success target + baseline.
-- [ ] **Options sufficient** (Checklist Options): ≥2 viable, honest trade-offs, specific failure modes, dependencies, context coupling rated.
-- [ ] **Contracts** (Checklist Decision): invariants per affected boundary (or "no boundary changes"). Missing: __.
-- [ ] **Migration viable** (Checklist Migration): independently deployable phases, each rollback, realistic dual-run, objective cutover.
-- [ ] **Decomposition sound** (Checklist Decomposition): dependency-ordered, no cycles, first plan unblocked.
-- [ ] **Blocking checks** (`## Flags`): no missing critical-path failure mode, no destructive phase without rollback, no circular dependency, measurable success.
-
-If ALL ✅ → verdict APPROVED, update status to `approved`. Print: "Architecture approved. Create plans with the design-feature skill."
-If ANY ❌ → verdict NEEDS REVISION. List specific sections to revise.
-
-## Output
-
-```
-## Architecture Review: <name>
-
-### Verdict: APPROVED | NEEDS REVISION
-
-### ❌ Blocking
-- <issue>: <why blocking> → <suggested fix>
-
-### ⚠️ Warnings
-- <issue>: <risk>
-
-### ✅ Strengths
-- <what's good>
-
-### Questions for Author
-- <clarification needed>
-```
-
-If APPROVED: the Self-Check already authorized status `approved`. Print: "Architecture approved. Create plans with the design-feature skill."
-
-If NEEDS REVISION: list specific sections to revise.
+Any blocking finding → `NEEDS REVISION`; leave `Status: draft` and name the required revisions. Otherwise report `READY`, show the recommendation, decisive trade-offs, phases, and plan decomposition, then ask: **`Approve this architecture? Reply "approve", or name what to revise.`** Pause. Only explicit approval sets `Status: approved`; revisions return through design-system and review-system. Any later semantic change returns the document to `draft` and requires fresh review and approval.

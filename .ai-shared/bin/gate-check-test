@@ -20,11 +20,11 @@ new_repo() {
 }
 
 write_plan() {
-  local path="$1" status="$2" type="$3" issue="$4" worktree="$5" pattern="$6" fingerprint="${7:-}"
+  local path="$1" status="$2" type="$3" issue="$4" worktree="$5" pattern="$6"
   {
     printf '# Task: gate test\n'
-    printf 'Status: %s | Type: %s | Issue: %s | Worktree: %s | Main Plan Fingerprint: %s\n\n' \
-      "$status" "$type" "$issue" "$worktree" "$fingerprint"
+    printf 'Status: %s | Type: %s | Issue: %s | Worktree: %s\n\n' \
+      "$status" "$type" "$issue" "$worktree"
     printf '%s\n' "$pattern"
     printf 'Type: single\n'
     printf '| # | Branch | Steps | Summary |\n'
@@ -66,18 +66,17 @@ make_registered_plan() {
   local worktree="$repo-worktree"
   git -C "$repo" worktree add -q -b "$type/gate-test" "$worktree" main
   write_plan "$repo/docs/plans/gate.md" planning "$type" "$issue" "$worktree" "$pattern"
-  local fingerprint
-  fingerprint=$(sed -E 's/[[:space:]]*\|[[:space:]]*Main Plan Fingerprint:[^|]*//' "$repo/docs/plans/gate.md" | sha256sum | awk '{print $1}')
-  write_plan "$repo/docs/plans/gate.md" planning "$type" "$issue" "$worktree" "$pattern" "$fingerprint"
   mkdir -p "$worktree/docs/plans"
-  write_plan "$worktree/docs/plans/gate.md" "$status" "$type" "$issue" "$worktree" "$pattern" "$fingerprint"
+  write_plan "$worktree/docs/plans/gate.md" "$status" "$type" "$issue" "$worktree" "$pattern"
   printf '%s\n' "$worktree"
 }
 
+# The infra lane is gone. A stale plan still carrying Type: infra must not
+# inherit the old proof exemption — it falls through to the RED-proof gate.
 repo=$(new_repo)
 make_registered_plan "$repo" infra implemented '#12' '## PR Pattern (provisional)' >/dev/null
 output=$(run_gate "$repo" dev-review-code 'docs/plans/gate.md')
-assert_pass "$output" 'infra review does not require RED proof'
+assert_block "$output" 'Found 0 test(red)' 'retired infra type no longer exempts a plan from RED proof'
 
 repo=$(new_repo)
 make_registered_plan "$repo" feature implemented '#12' '## PR Pattern (provisional)' >/dev/null
@@ -97,16 +96,73 @@ write_plan "$fake_worktree/docs/plans/gate.md" implemented feature '#12' "$fake_
 output=$(run_gate "$repo" dev-review-code 'docs/plans/gate.md')
 assert_block "$output" 'not a registered non-main Git worktree' 'unregistered worktree is rejected'
 
+# Commit helper for proof-sequencing fixtures: writes files, commits with the
+# given subject inside the plan's worktree.
+wt_commit() {
+  local worktree="$1" subject="$2"; shift 2
+  local f
+  for f in "$@"; do
+    mkdir -p "$worktree/$(dirname "$f")"
+    printf 'x\n' >> "$worktree/$f"
+  done
+  git -C "$worktree" add -A
+  git -C "$worktree" commit -qm "$subject"
+}
+
+# New-flow feature history: plan-only docs commit precedes test(red).
+repo=$(new_repo)
+worktree=$(make_registered_plan "$repo" feature implemented '#12' '## PR Pattern (provisional)')
+wt_commit "$worktree" 'docs(gate): start plan execution' docs/plans/gate.md
+wt_commit "$worktree" 'test(red): gate' tests/gate_test.py
+wt_commit "$worktree" 'feat(gate): implement' src/gate.py
+wt_commit "$worktree" 'docs(gate): mark plan implemented' docs/plans/gate.md
+output=$(run_gate "$repo" dev-review-code 'docs/plans/gate.md')
+assert_pass "$output" 'plan-only docs commit before test(red) is exempt from sequencing'
+
+# Mislabeled docs commit smuggling implementation before RED must still block.
+repo=$(new_repo)
+worktree=$(make_registered_plan "$repo" feature implemented '#12' '## PR Pattern (provisional)')
+wt_commit "$worktree" 'docs(gate): start plan execution' docs/plans/gate.md src/gate.py
+wt_commit "$worktree" 'test(red): gate' tests/gate_test.py
+wt_commit "$worktree" 'feat(gate): implement' src/gate.py
+output=$(run_gate "$repo" dev-review-code 'docs/plans/gate.md')
+assert_block "$output" 'out of sequence' 'docs-labeled commit touching src before RED still blocks'
+
+# Refactor variant: plan-only docs commit precedes test: baseline.
+repo=$(new_repo)
+worktree=$(make_registered_plan "$repo" refactor implemented '#12' '## PR Pattern (provisional)')
+wt_commit "$worktree" 'docs(gate): start plan execution' docs/plans/gate.md
+wt_commit "$worktree" 'test: baseline gate' tests/gate_test.py
+wt_commit "$worktree" 'refactor(gate): simplify' src/gate.py
+output=$(run_gate "$repo" dev-review-code 'docs/plans/gate.md')
+assert_pass "$output" 'plan-only docs commit before baseline is exempt for refactor plans'
+
 repo=$(new_repo)
 make_registered_plan "$repo" feature reviewed '#12' '## PR Pattern' >/dev/null
 output=$(run_gate "$repo" dev-create-pr 'docs/plans/gate.md')
-assert_pass "$output" 'matching plan fingerprint permits create-pr'
+assert_pass "$output" 'reviewed plan permits create-pr'
 
-printf '\nuser edit\n' >> "$repo/docs/plans/gate.md"
+repo=$(new_repo)
+output=$(run_gate "$repo" dev-fix-bug 'broken behavior')
+assert_block "$output" 'explicit mode' 'planless fix mutation cannot use request as approval'
+output=$(run_gate "$repo" dev-fix-bug 'diagnose broken behavior')
+assert_pass "$output" 'planless diagnose mode remains read-only and allowed'
+output=$(run_gate "$repo" dev-fix-bug 'please diagnose and then fix the crash')
+assert_block "$output" 'explicit mode' 'the word diagnose inside a symptom does not grant read-only mode'
+output=$(run_gate "$repo" dev-fix-bug 'execute')
+assert_block "$output" 'approved fix plan' 'execute mode without a plan is blocked'
+
+repo=$(new_repo)
+fake_worktree=$(mktemp -d "$TMP_ROOT/diagnose-stale.XXXXXX")
+write_plan "$repo/docs/plans/gate.md" approved fix '#12' "$fake_worktree" '## PR Pattern (provisional)'
+output=$(run_gate "$repo" dev-fix-bug 'diagnose broken behavior')
+assert_pass "$output" 'diagnose ignores stale active execution state'
+
+# 'reviewed' is the sole entry status for create-pr; an unreviewed plan must
+# not reach a PR.
+repo=$(new_repo)
+make_registered_plan "$repo" feature implemented '#12' '## PR Pattern' >/dev/null
 output=$(run_gate "$repo" dev-create-pr 'docs/plans/gate.md')
-assert_block "$output" 'Main-tree plan changed' 'fingerprint mismatch blocks before create-pr'
-
-output=$(run_gate "$repo" dev-create-pr 'docs/plans/gate.md overwrite-plan')
-assert_pass "$output" 'explicit overwrite-plan token permits confirmed overwrite'
+assert_block "$output" 'run review-code first' 'implemented plan cannot skip review-code and open a PR'
 
 printf 'All gate-check tests passed. Temporary fixtures: %s\n' "$TMP_ROOT"

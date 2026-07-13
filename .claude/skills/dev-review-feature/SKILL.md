@@ -1,6 +1,6 @@
 ---
 name: dev-review-feature
-description: "Review a feature plan for completeness, correctness, and edge cases. Triggers: 'review this plan', 'check the design doc', 'is this spec solid', 'critique the approach'."
+description: "Review a planning-stage feature/fix/refactor plan for approach, system fit, test completeness, impact, scope, and independently mergeable PR slices before human approval."
 model: claude-opus-4-6
 effort: medium
 ---

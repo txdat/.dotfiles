@@ -1,0 +1,22 @@
+#!/bin/bash
+# PreCompact hook (type: command) — write the session handoff before
+# compaction. PreCompact does not support agent-type hooks, so this
+# script invokes headless `claude -p` to summarize the transcript per
+# handoff.md. Must always exit 0: a non-zero exit blocks compaction.
+set -uo pipefail
+
+input=$(cat)
+transcript=$(jq -r '.transcript_path // empty' <<<"$input")
+cwd=$(jq -r '.cwd // empty' <<<"$input")
+focus=$(jq -r '.custom_instructions // empty' <<<"$input")
+[[ -n "$transcript" && -f "$transcript" ]] || exit 0
+
+prompt="Read ~/.dotfiles/.ai-shared/handoff.md and follow it exactly — it owns the file path rule and the format; do not improvise either. Read the session transcript at $transcript (a JSONL file; if it is large, work from the most recent entries backward), extract the five sections (Goal, Current State, Current Plan, Blockers, Remaining Work), derive the path from the working directory $cwd per handoff.md's Path rule, and overwrite that file."
+[[ -n "$focus" ]] && prompt+=" The user's compaction focus, weight it accordingly: $focus"
+
+mkdir -p /tmp/ai-handoff
+cd "$cwd" 2>/dev/null || true
+claude -p "$prompt" \
+  --allowedTools 'Read,Glob,Grep,Write,Bash(git rev-parse:*),Bash(basename:*),Bash(ls:*),Bash(mkdir:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(jq:*)' \
+  >/tmp/ai-handoff/.last-hook.log 2>&1 || true
+exit 0

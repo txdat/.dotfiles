@@ -1,6 +1,6 @@
 ---
 name: dev-execute-feature
-description: "Implement a feature following TDD RED→GREEN→BLUE from a design plan. Triggers: 'implement this feature', 'execute the plan', 'build it'."
+description: "Execute an approved feature/fix/refactor plan in its worktree with per-slice RED→GREEN→BLUE commits, coverage, dependent checks, and locked-scope controls."
 model: claude-sonnet-4-6
 effort: high
 ---

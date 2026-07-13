@@ -1,6 +1,6 @@
 name = "senior-engineer"
 description = "Accurate executor for complex and critical tasks — including concurrency, security-sensitive, data-integrity and performance-critical work. Follows plans strictly, copies patterns, reasons from invariants and failure modes on critical steps. Use for: complex features, critical logic, edge-case-heavy work."
-model = "gpt-5.4"
+model = "gpt-5.6-luna"
 model_reasoning_effort = "high"
 
 developer_instructions = """

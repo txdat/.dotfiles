@@ -1,40 +1,33 @@
-# /ship-feature — Full Feature Cycle
+# /ship-feature — Gated Delivery Router
 
-**explore → design-feature → review-feature → execute → review-code → recap → pr**
+Flow: explore → design-feature → review-feature → spec approval → execute-feature → review-code → create-pr. Read project AI config. `$ARGUMENTS`: `<requirement> [from <phase>]`.
 
-`$ARGUMENTS`: `<requirement>` — append `from <step>` to resume.
+## Route
 
-Read project AI config files before starting.
+Use an explicit `from` phase or the active plan's live state:
 
-## Entry Point
+| Status | Next |
+|---|---|
+| no plan | explore, then design-feature |
+| `planning` | review-feature after Open Questions are empty |
+| `planning`, review returned READY | `approval.md` spec pause |
+| `approved` / `in-progress` | execute-feature |
+| `implemented` | review-code |
+| `reviewed` | create-pr |
+| `archived` | STOP — already shipped |
 
-Determine starting phase from `from <step>` or auto-detect from the active plan in `docs/plans/`:
+Once a plan exists, pass its explicit path to every downstream phase. A phase is complete only when its owner passes its self-check.
 
-| Plan status | Start from |
-|-------------|------------|
-| none / not found | explore |
-| planning / blocked-by-architecture | plan |
-| approved / in-progress | execute |
-| implemented | review-code |
-| reviewed | recap |
-| recapped | pr |
-| archived | **STOP** — already shipped |
+## Approval
 
-## Flow Control
+Read and follow `approval.md` (single source). ship-feature runs its pause; it never adds an exception to it.
 
-PAUSE after each phase — ask the user to confirm before proceeding.
+## Rework
 
-## Phase Gate (BLOCKING)
+A contradiction or blocking plan defect found during execution or review returns the plan to `planning`, through review-feature, and back to the approval pause. Cosmetic observations do not.
 
-Each phase's own skill owns its `## Self-Check` — do NOT re-audit it here. A phase is complete only when its skill emitted its completion line (explore: `## Exploration` report; design-feature: "Plan drafted…"; review-feature: verdict; execute-feature: "Implementation complete…"; review-code: verdict; recap: status `recapped`; create-pr: PR URL + status `archived`). No completion line, or the skill stopped on a gate → do NOT proceed; fix that phase first.
+## Self-Check (BLOCKING)
 
-## Phases
-
-Once the plan file exists, pass its explicit `docs/plans/<file>.md` path to every sub-skill invocation (design-feature, review-feature, execute-feature, review-code, recap, create-pr) so each gates the same plan — never rely on implicit resolution.
-
-1. **explore** → explore skill
-2. **plan** → no plan file → design-feature skill (draft), then review-feature skill only if `Open Questions:` is empty / design-feature emitted "Plan drafted. Run the review-feature skill."; plan with status `planning`/`blocked-by-architecture` → review-feature skill only if `Open Questions:` is empty. **Approval:** once review-feature returns verdict READY, use the phase PAUSE — print the verdict + a plan summary (requirement, mode, slices, TC/step counts, deviational risks) and ask **"Approve plan? (sets `Status: approved`)"**. Only on the user's confirmation does ship-feature flip `Status: approved` (it remains the only skill that flips it; standalone review-feature never does). Declined → treat as NEEDS CHANGES feedback, route back. Must reach `approved` before execute.
-3. **execute** → **entry gate (BLOCKING):** plan `Status:` must be `approved`/`in-progress`, else STOP (covers `from execute` on an un-approved plan). Then execute-feature skill (RED→GREEN→BLUE).
-4. **review-code** → review-code skill — if rework needed, fix inline and re-review
-5. **recap** → recap skill
-6. **pr** → create-pr skill — print PR URL, finish
+- [ ] **Route:** live status and the explicit plan path select the correct next phase.
+- [ ] **Approval:** `Status: approved` came from an explicit human answer at `approval.md`'s pause, never from me; re-planning got fresh review and a fresh pause.
+- [ ] **Completion:** each owning phase completed before advancing; shipping ends only with PR URL(s) and `archived` status.
