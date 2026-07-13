@@ -1,8 +1,12 @@
 # /create-pr — Create Pull Request
 
-Resolve the session's active plan: an explicit `docs/plans/<file>.md` (or its slug) in $ARGUMENTS pins it; otherwise the session's pinned plan, else the lone active plan. 0 or 2+ active and none named → STOP, ask which. **PR creation requires status `reviewed` or `recapped`**: if no plan is resolved, STOP and run `design-feature` or `fix-bug` first. If the plan is `implemented`, run `review-code`. If status is `reviewed`, continue but print: `⚠️ Recap skipped — reusable insights may be lost. Run recap first if this produced patterns worth preserving.` Read plan + project AI config files.
+Resolve the session's active plan: an explicit `docs/plans/<file>.md` (or its slug) in $ARGUMENTS pins it; otherwise the session's pinned plan, else the lone active plan. 0 or 2+ active and none named → STOP, ask which. **PR creation requires status `reviewed` or `recapped`** and a valid `Issue: #<number>` (empty/invalid → STOP and create/link the issue first): if no plan is resolved, STOP and run `design-feature` or `fix-bug` first. If the plan is `implemented`, run `review-code`. If status is `reviewed`, continue but print: `⚠️ Recap skipped — reusable insights may be lost. Run recap first if this produced patterns worth preserving.` Read plan + project AI config files.
 
 Resolve `<base>` and `<worktree>` per CORE — PR bases come from `<base>` and the chain order, not the current branch: execute-feature/fix-bug create the slice branches inside `<worktree>` and commit there before this skill runs. Branch names and order come from the plan's finalized `## PR Pattern`. All commands in `## Procedure` run inside `<worktree>` (`cd <worktree>`).
+
+## Archive Safety Preflight
+
+Before the first `gh pr create`, recompute the main-tree locator plan's fingerprint with the `Main Plan Fingerprint:` field removed from its `Status:` line and compare it with the value recorded in the worktree plan. Missing/mismatch → STOP before creating any PR and show the changed locator plan. After the user explicitly approves overwriting it, re-run with `overwrite-plan`; gate-check recognizes that token as the recorded override for this invocation. `overwrite-plan` authorizes only the final plan copy, never other destructive actions.
 
 ## PR Pattern
 
@@ -79,12 +83,15 @@ body=$(gh pr view <pr-1-number> --json body -q .body)
 gh pr edit <pr-1-number> --body "$(printf '%s' "$body" | sed "\\#| <branch-k> |# s|—|#<pr-k-number>|")"
 ```
 
-Default `--draft`. Pass `ready` to open directly.
+Default `--draft`. Pass `ready` to open directly. Pass `overwrite-plan` only after the Archive Safety Preflight stopped and the user explicitly approved replacing the changed locator plan.
 
-**8. Return home & cleanup (once, after all PRs are created):** the worktree holds the up-to-date plan and — because every upstream skill committed its plan edits — is clean. Copy the final plan back to `$MAIN_ROOT`, mark that copy `archived` and clear its `Worktree:` field (this is the user's local record; it does not ride the PRs), then remove the now-idle worktree from *outside* it (branches stay in the repo's refs; only the linked working directory and its dependency symlinks go):
+**8. Return home & cleanup (once, after all PRs are created):** the Archive Safety Preflight has already proved the locator unchanged or recorded explicit overwrite approval. Recheck immediately before copying to catch edits made while PRs were being created; mismatch without `overwrite-plan` → STOP. Then copy the final plan back to `$MAIN_ROOT`, mark that copy `archived`, and clear its `Worktree:` and `Main Plan Fingerprint:` fields (this is the user's local record; it does not ride the PRs), then remove the now-idle worktree from *outside* it (branches stay in the repo's refs; only the linked working directory and its dependency symlinks go):
 ```bash
 MAIN_ROOT=$(git worktree list | head -1 | awk '{print $1}')
-cp "<worktree>/docs/plans/<file>.md" "$MAIN_ROOT/docs/plans/<file>.md"   # then set Status: archived, clear Worktree: in the $MAIN_ROOT copy
+expected=$(sed -n 's/^Main Plan Fingerprint: //p' "<worktree>/docs/plans/<file>.md")
+actual=$(sed -E 's/[[:space:]]*\|[[:space:]]*Main Plan Fingerprint:[^|]*//' "$MAIN_ROOT/docs/plans/<file>.md" | sha256sum | awk '{print $1}')
+[ -n "$expected" ] && [ "$expected" = "$actual" ] || { echo "main-tree plan changed; confirmation required"; exit 1; }
+cp "<worktree>/docs/plans/<file>.md" "$MAIN_ROOT/docs/plans/<file>.md"   # then set Status: archived, clear Worktree + Main Plan Fingerprint in the $MAIN_ROOT copy
 cd "$MAIN_ROOT"
 git worktree remove <worktree>
 ```
@@ -101,5 +108,7 @@ Run this audit before creating the PR. If ANY item is unchecked → STOP, fix, r
 - [ ] **Commits above parent** (Procedure 3): `git log <parent>..HEAD` non-empty per slice. Empty: __.
 - [ ] **Pre-flight clean** (Procedure 4): no `System.out`/`console.log`/`print(`/`// DEBUG`, no conflict markers in diff. Issues: __.
 - [ ] **PR description** (Procedure 5): title <72 chars; WHAT/HOW/Testing/Checklist present; `Closes #N` if `Issue:` set.
+- [ ] **Issue linked** (top): `Issue:` contains a valid `#<number>`. Value: __.
+- [ ] **Archive protection** (`## Archive Safety Preflight` + Procedure 8): checked before the first PR and again before copy; fingerprint matches, or explicit confirmation + `overwrite-plan` was recorded. Result: __.
 
 If ALL checked → create PR(s), then run Procedure step 8 (return the plan to `$MAIN_ROOT`, mark it `archived`, clear `Worktree:`, remove the worktree). Print PR URL + "Feature shipped."

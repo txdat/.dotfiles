@@ -2,7 +2,7 @@
 
 Resolve the session's active plan: an explicit `docs/plans/<file>.md` (or its slug) in $ARGUMENTS pins it; otherwise the session's pinned plan, else the lone active plan. 0 or 2+ active and none named → STOP, ask which.
 
-**Approval Gate (BLOCKING):** the plan's `Status:` MUST be `approved` (or `in-progress` on resume). `planning`/`blocked-by-architecture` → STOP; ask the user to approve it manually (set `Status: approved`). Never self-approve — only ship-feature flips the status, and only after the user confirms at its plan-phase PAUSE. Then set `in-progress`. Read project AI config files.
+**Approval + Issue Gates (BLOCKING):** the plan's `Status:` MUST be `approved` (or `in-progress` on resume), and `Issue:` MUST contain a valid `#<number>`. `planning`/`blocked-by-architecture` → STOP; ask the user to approve it manually (set `Status: approved`) or through ship-feature's explicit `Approve plan?` pause. Empty/invalid `Issue:` → STOP and create/link the issue first. Never self-approve. Then set `in-progress`. Read project AI config files.
 Partial: `<name> from <N>` → start at N; `<name> <N>` → run only N. No `// TODO` — if blocked, say so.
 
 ## Execution Strategy
@@ -14,7 +14,7 @@ Assign each GREEN step two axes from the plan:
 
 Route:
 - Work that is sequential or small (`≤3` steps) → inline on the main agent (it is already full-capability; spawning buys nothing). Inline critical steps still follow senior's **Critical steps** rule (state invariants + failure modes before writing).
-- Independent steps (`>3`) → fan out in **tier-homogeneous batches** — one batch per tier, never mix tiers in a batch.
+- Independent steps (`>3`) → fan out in **tier-homogeneous batches** — one batch per tier, never mix tiers in a batch. Before dispatch, the main agent assigns each worker an exclusive list of source/test files; any overlap, plan-file edit, or shared generated output makes those steps sequential.
 
 ## TDD Execution
 
@@ -35,14 +35,14 @@ Phases in order: RED 🔴 → GREEN 🟢 → BLUE 🔵.
 
 Implementation must be correct for all valid inputs. Never special-case test inputs (`if input == test_value: return expected`, hardcoded lookup tables). Violation → STOP immediately, report the fake impl to the user, wait for explicit guidance.
 
-When a step's tests pass, stage and commit the implementation separately from RED: `git add <impl-files> [docs/plans/<file>.md if changed] && git commit -m "<type>(<scope>): <summary>"`. Keeps the `test(red)` commit as a standalone, verifiable artifact preceding the implementation.
+After a step or independent batch's tests pass, the **main agent only** stages and commits the implementation separately from RED: `git add <impl-files> [docs/plans/<file>.md if changed] && git commit -m "<type>(<scope>): <summary>"`. Each worker runs only its assigned target tests for feedback. For a concurrent batch, after every worker reports, the main agent verifies the changed-file set (`git status --porcelain` — it lists untracked new files, which `git diff` misses) is exactly the union of assigned files (plus the plan file, if the main agent itself edited it), runs the union of every worker's target tests and coverage as the final evidence, then makes one implementation commit. Keeps the `test(red)` commit as a standalone, verifiable artifact preceding the implementation.
 
 Delegating per Execution Strategy (an independent batch) → write `/tmp/ai-ctx/<slug>.md`:
 ```
 Plan: <path> | Stack: <detected>
 Constraints: ONLY assigned steps. No TODO. Run ONLY assigned tests. Scope creep → STOP. Plan divergence → STOP and report.
 ```
-Spawn each batch on its tier's agent: "Read /tmp/ai-ctx/<slug>.md. Steps: N,M. Critical: <step numbers | none>. Files: <list>. Off-limits: <others>. TCs: TC-N,TC-M. Report: completed, TCs passing, coverage%, blockers." → `🟢 Step N: <done> (TC-N,TC-M ✅, coverage: X%)`
+Spawn each batch on its tier's agent: "Read /tmp/ai-ctx/<slug>.md. Steps: N,M. Critical: <step numbers | none>. Files: <exclusive list>. Off-limits: <all others, especially docs/plans/**>. Do not run any Git command or edit plans. Run only your assigned target tests. TCs: TC-N,TC-M. Report: changed files, target-test result, blockers." Once all workers return, the main agent validates scope and runs the union of their target tests plus coverage before reporting `🟢 Step N: <done> (TC-N,TC-M ✅, coverage: X%)`.
 
 **Coverage**: score each GREEN/BLUE step against **CORE gate #6** (thresholds, no-gaming, reason-governs-downward). Run per changed file on that step only; log every ⚠️/❌ in `## Coverage Gaps`; STOP-ask on ❌. Before the first scoring, read **`~/.dotfiles/.ai-shared/skills/dev/coverage.md`** (single source — CORE #6 points there): measurement mechanics (branch-vs-line, denominator curation, mock caveat — each with its fallback), the per-stack command table, patch (diff-cover) granularity, and the `Closing a gap` protocol (behavior-first — a ⚠️/❌ is answered by naming behaviors, never by writing tests at red lines; new tests enter through TCs only).
 
@@ -81,7 +81,9 @@ All implementation items checked → lint + build + targeted tests — including
 Run this audit before marking the plan `implemented`. If ANY item is unchecked → STOP, fix, re-check.
 
 - [ ] **Build + tests** (`## Completion`): lint + build pass; targeted tests + the plan's `## Affected Existing Tests` set green — each failure root-caused (regression fixed / stale test finished / intended change in `## Deviations`), none force-greened. Failing: __.
+- [ ] **Issue linked** (top): `Issue:` contains a valid `#<number>` before implementation began. Value: __.
 - [ ] **Git state** (`## TDD Execution`): per slice the proof commit — `test(red)` feature/fix, `test: baseline` refactor — precedes that slice's impl commit(s) (proof commits: __ / slices: __); `<worktree>` matches the plan's `Worktree:` field; `git -C <worktree> status --porcelain` shows no uncommitted plan-file changes.
+- [ ] **Worker ownership + verification** (`## Execution Strategy`): each concurrent worker had exclusive files, made no Git or plan-file changes, and ran only its assigned target tests; after all workers returned, the main agent validated the batch changed-file set (`git status --porcelain`) and ran the union of assigned target tests plus coverage before its commit. Violations: __.
 - [ ] **Symbol membership** (EXECUTION_CORE `Verify symbol membership`): ran on every new call, field access, import. Unresolved: __.
 - [ ] **No fake implementations** (EXECUTION_CORE `No fake implementations`): re-read the impl — no test-input special-casing, no lookup tables. Offenders: __.
 - [ ] **GREEN coverage** (CORE gate #6): every changed file ✅ / ⚠️ logged in `## Coverage Gaps` / ❌ resolved. Gaps: __.

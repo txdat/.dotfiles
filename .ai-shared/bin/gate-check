@@ -15,16 +15,23 @@
 #   fix-bug         → gated only when a plan is active (must be approved); else planless
 #
 # Each skill's entry gate is the prerequisite status.
-# Review-code additionally requires proof-commit sequencing for the plan slices.
+# Review-code additionally requires proof-commit sequencing for application
+# plan slices. Infrastructure plans use validation/runbook evidence instead.
 #
-# Approval is NEVER set by review-feature — the human approves manually
-# (set "Status: approved") or confirms "Approve plan?" at ship-feature's PAUSE —
-# ship-feature is the only skill that flips the status, never without that answer.
+# Approval is always a human decision: direct skill use records it manually,
+# while ship-feature records it only after its explicit "Approve plan?" pause.
 #
 # Active plan resolution is session-pinned (see resolve_plan): an explicit
 # plan ref in the skill args pins the session; otherwise the existing pin is
 # reused; otherwise the lone active plan is adopted. 0 or 2+ active and none
 # named → no plan (require_plan skills block).
+#
+# Worktree model (skills/dev/worktree.md): the main-tree plan is only the
+# locator — its Status goes stale once execution starts. When its header
+# records "Worktree:", live Status/Issue/PR-Pattern are read from the
+# worktree's plan copy, and proof-commit checks run against the worktree's
+# HEAD (the slice branch); the main tree stays parked on its own branch for
+# the whole lifecycle, so checks against it would always fail.
 
 set -euo pipefail
 
@@ -88,9 +95,14 @@ RAW_SKILL=$(
 SKILL_SLUG=$(extract_skill_slug "$RAW_SKILL")
 [[ -n "$SKILL_SLUG" ]] || exit 0
 STATUS=""
+PLAN_LOCATOR=""
+ACTIVE_WORKTREE=""
 
 REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
 cd "$REPO_ROOT"
+# Tree that git history checks run against — repointed to the plan's worktree
+# when one is recorded (see "Worktree model" above).
+GIT_TREE="$REPO_ROOT"
 
 HOOK_TEXT=$(
   jq -r '
@@ -265,15 +277,55 @@ plan_issue() {
   ' "$1" 2>/dev/null
 }
 
-# True when the Issue field holds a real reference (not empty/none/placeholder).
+# Plan header Worktree path (same Status line: "... | Worktree: <path> | ...").
+plan_worktree() {
+  awk '
+    /^Status:/ {
+      if (match($0, /Worktree:[[:space:]]*[^|]+/)) {
+        t = substr($0, RSTART, RLENGTH)
+        sub(/^Worktree:[[:space:]]*/, "", t)
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", t)
+        print t
+      }
+      exit
+    }
+  ' "$1" 2>/dev/null
+}
+
+# True when the Issue field holds a real issue reference — the skills require
+# "#<number>", so anything without one (empty, none, TBD, placeholder) fails.
 has_issue() {
   local v
   v=$(plan_issue "$1")
-  v="${v,,}"
-  case "$v" in
-    ""|none|n/a|"<"*">") return 1 ;;
-    *) return 0 ;;
-  esac
+  [[ "$v" =~ ^\#[1-9][0-9]*$ ]]
+}
+
+plan_fingerprint() {
+  command -v sha256sum >/dev/null 2>&1 || return 2
+  sed -E 's/[[:space:]]*\|[[:space:]]*Main Plan Fingerprint:[^|]*//' "$1" | sha256sum | awk '{print $1}'
+}
+
+recorded_plan_fingerprint() {
+  awk '
+    /^Status:/ {
+      if (match($0, /Main Plan Fingerprint:[[:space:]]*[^|]+/)) {
+        t = substr($0, RSTART, RLENGTH)
+        sub(/^Main Plan Fingerprint:[[:space:]]*/, "", t)
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", t)
+        print t
+      }
+      exit
+    }
+  ' "$1" 2>/dev/null
+}
+
+is_registered_worktree() {
+  local target="$1" line
+  [[ "$target" != "$REPO_ROOT" ]] || return 1
+  while IFS= read -r line; do
+    [[ "$line" == "worktree $target" ]] && return 0
+  done < <(git -C "$REPO_ROOT" worktree list --porcelain 2>/dev/null)
+  return 1
 }
 
 open_questions_count() {
@@ -314,10 +366,10 @@ open_questions_count() {
 
 resolve_base() {
   local remote_ref branch
-  remote_ref=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null || true)
+  remote_ref=$(git -C "$GIT_TREE" symbolic-ref refs/remotes/origin/HEAD 2>/dev/null || true)
   if [[ -n "$remote_ref" ]]; then
     branch="${remote_ref#refs/remotes/origin/}"
-    if git rev-parse --verify --quiet "$branch" >/dev/null; then
+    if git -C "$GIT_TREE" rev-parse --verify --quiet "$branch" >/dev/null; then
       echo "$branch"
     else
       echo "origin/$branch"
@@ -325,9 +377,9 @@ resolve_base() {
     return 0
   fi
 
-  if git rev-parse --verify --quiet main >/dev/null; then
+  if git -C "$GIT_TREE" rev-parse --verify --quiet main >/dev/null; then
     echo "main"
-  elif git rev-parse --verify --quiet master >/dev/null; then
+  elif git -C "$GIT_TREE" rev-parse --verify --quiet master >/dev/null; then
     echo "master"
   else
     echo "HEAD"
@@ -336,25 +388,27 @@ resolve_base() {
 
 red_commit_count() {
   local base="$1"
-  git log --format=%s "${base}..HEAD" 2>/dev/null | grep -Ec '^test\(red\):' || true
+  git -C "$GIT_TREE" log --format=%s "${base}..HEAD" 2>/dev/null | grep -Ec '^test\(red\):' || true
 }
 
 # Refactor slices prove TDD with a passing "test: baseline <scope>" commit
 # instead of a failing test(red): commit.
 baseline_commit_count() {
   local base="$1"
-  git log --format=%s "${base}..HEAD" 2>/dev/null | grep -Ec '^test:[[:space:]]*baseline' || true
+  git -C "$GIT_TREE" log --format=%s "${base}..HEAD" 2>/dev/null | grep -Ec '^test:[[:space:]]*baseline' || true
 }
 
 proof_sequence_ok() {
   local base="$1" mode="$2" expected="$3" proof_re=""
+  # awk -v re-processes escape sequences, so backslashes must be doubled or
+  # the parens in test\(red\): become a bare ERE group that never matches.
   case "$mode" in
-    red) proof_re='^test\(red\):' ;;
+    red) proof_re='^test\\(red\\):' ;;
     baseline) proof_re='^test:[[:space:]]*baseline' ;;
     *) return 1 ;;
   esac
 
-  git log --format=%s --reverse "${base}..HEAD" 2>/dev/null | awk \
+  git -C "$GIT_TREE" log --format=%s --reverse "${base}..HEAD" 2>/dev/null | awk \
     -v proof_re="$proof_re" \
     -v expected="$expected" '
       BEGIN { proofs=0; waiting_for_impl=0; seen_proof=0; bad=0 }
@@ -387,7 +441,7 @@ slice_count() {
 
 has_final_pr_pattern() {
   local plan="$1"
-  grep -q '^## PR Pattern' "$plan" 2>/dev/null && ! grep -q '^## PR Pattern (provisional)' "$plan" 2>/dev/null
+  grep -q '^## PR Pattern$' "$plan" 2>/dev/null && ! grep -q '^## PR Pattern (provisional)$' "$plan" 2>/dev/null
 }
 
 block() {
@@ -414,7 +468,26 @@ case "$SKILL_SLUG" in
   *)
     PLAN="" ;;
 esac
-[[ -n "$PLAN" ]] && STATUS=$(plan_status "$PLAN")
+# Worktree model: the main-tree plan is only the locator. When it records a
+# Worktree:, repoint at the live plan copy there and run git checks in it.
+if [[ -n "$PLAN" ]]; then
+  PLAN_LOCATOR="$PLAN"
+  WT=$(plan_worktree "$PLAN")
+  case "${WT,,}" in ""|none|n/a|"<"*">") WT="" ;; esac
+  if [[ -n "$WT" ]]; then
+    WT_COPY="$WT/docs/plans/$(basename "$PLAN")"
+    if ! is_registered_worktree "$WT"; then
+      block "Plan records 'Worktree: $WT', but that path is not a registered non-main Git worktree. Recreate it per skills/dev/worktree.md or clear the stale field."
+    elif [[ -d "$WT" && -f "$WT_COPY" ]]; then
+      PLAN="$WT_COPY"
+      GIT_TREE="$WT"
+      ACTIVE_WORKTREE="$WT"
+    else
+      block "Plan records 'Worktree: $WT' but the worktree or its plan copy is missing. Recreate it per skills/dev/worktree.md resume, or clear the plan's Worktree: field to start over."
+    fi
+  fi
+  STATUS=$(plan_status "$PLAN")
+fi
 
 require_plan() {
   [[ -n "$PLAN" ]] && return 0
@@ -427,6 +500,11 @@ require_plan() {
     block "Multiple active plans in docs/plans — name one explicitly for ${SKILL_SLUG}, e.g. docs/plans/<file>.md (or its slug)."
   fi
   block "No active plan in this session for ${SKILL_SLUG} — name it explicitly with docs/plans/<file>.md (or its slug), or run design-feature first."
+}
+
+require_worktree() {
+  [[ -n "$ACTIVE_WORKTREE" ]] && return 0
+  block "Plan has no active registered Worktree. Run the appropriate execute skill to create it before ${SKILL_SLUG}."
 }
 
 case "$SKILL_SLUG" in
@@ -455,7 +533,7 @@ case "$SKILL_SLUG" in
     if [[ -n "$PLAN" ]]; then
       case "$STATUS" in
         approved|in-progress) ;;
-        planning|blocked-by-architecture) block "Plan status is '$STATUS' — not approved. Approve manually (set 'Status: approved') if review-feature returned READY, else run review-feature first. Approval is never automatic outside ship-feature." ;;
+        planning|blocked-by-architecture) block "Plan status is '$STATUS' — not approved. Complete plan review, then record the human approval as 'Status: approved' (or approve at ship-feature's pause)." ;;
         implemented)                      block "Plan is already implemented. Run review-code next." ;;
         reviewed|recapped)                block "Plan status is '$STATUS' — already past execution. Run review-code or create-pr." ;;
         archived)              block "Plan is shipped. Nothing to execute." ;;
@@ -471,11 +549,12 @@ case "$SKILL_SLUG" in
   # ── review-code: plan must be implemented + RED commit must exist ──
   review-code)
     require_plan
+    require_worktree
     if [[ -n "$PLAN" ]]; then
       case "$STATUS" in
         implemented) ;;
         planning|blocked-by-architecture|approved|in-progress)
-          block "Plan status is '$STATUS' — not yet implemented. Run execute-feature first." ;;
+          block "Plan status is '$STATUS' — not yet implemented. Run the appropriate execute skill first." ;;
         reviewed)      block "Plan is already reviewed. Run recap next." ;;
         recapped)      block "Plan is already recapped. Run create-pr next." ;;
         archived) block "Plan is shipped. Nothing to review." ;;
@@ -489,7 +568,10 @@ case "$SKILL_SLUG" in
     BASE=$(resolve_base)
     SLICES=$(slice_count "$PLAN")
     [[ "$SLICES" -gt 0 ]] || SLICES=1
-    if [[ "$(plan_type "$PLAN")" == "refactor" ]]; then
+    PLAN_TYPE=$(plan_type "$PLAN")
+    if [[ "$PLAN_TYPE" == "infra" ]]; then
+      : # Infra review uses validation/runbook evidence; no RED/baseline proof.
+    elif [[ "$PLAN_TYPE" == "refactor" ]]; then
       BASELINES=$(baseline_commit_count "$BASE")
       if [[ "$BASELINES" -lt "$SLICES" ]]; then
         block "Found $BASELINES 'test: baseline' commit(s) between $BASE and HEAD; expected at least $SLICES for the plan slice count. Commit the passing baseline before refactor review."
@@ -511,6 +593,7 @@ case "$SKILL_SLUG" in
   # ── recap: plan must be reviewed ──
   recap)
     require_plan
+    require_worktree
     if [[ -n "$PLAN" ]]; then
       case "$STATUS" in
         reviewed) ;;
@@ -526,6 +609,7 @@ case "$SKILL_SLUG" in
   # ── create-pr: plan must be reviewed or recapped ──
   create-pr)
     require_plan
+    require_worktree
     if [[ -n "$PLAN" ]]; then
       case "$STATUS" in
         recapped) ;;
@@ -537,6 +621,16 @@ case "$SKILL_SLUG" in
       esac
       if ! has_final_pr_pattern "$PLAN"; then
         block "Plan PR Pattern is missing or still provisional. Run review-code to finalize it before create-pr."
+      fi
+      if ! has_issue "$PLAN"; then
+        block "Plan has no linked issue — the 'Issue:' field must hold '#<n>' before a PR can reference it. Create one ('gh issue create'), record it, then re-run."
+      fi
+      EXPECTED_FINGERPRINT=$(recorded_plan_fingerprint "$PLAN")
+      ACTUAL_FINGERPRINT=$(plan_fingerprint "$PLAN_LOCATOR" 2>/dev/null || true)
+      if [[ -z "$EXPECTED_FINGERPRINT" || -z "$ACTUAL_FINGERPRINT" || "$EXPECTED_FINGERPRINT" != "$ACTUAL_FINGERPRINT" ]]; then
+        if [[ ! "$HOOK_TEXT" =~ (^|[[:space:]])overwrite-plan([[:space:]]|$) ]]; then
+          block "Main-tree plan changed or has no verifiable fingerprint. Inspect the locator plan, obtain explicit overwrite confirmation, then re-run create-pr with 'overwrite-plan'."
+        fi
       fi
     fi
     ;;

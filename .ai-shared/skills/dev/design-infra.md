@@ -12,7 +12,7 @@ Clarify: scope, environments, dependencies, re-run safety, rollback, downtime. U
 
 ```
 # Task: <name>
-Status: planning | Type: infra | Env: <dev|staging|prod|all> | Issue:
+Status: planning | Type: infra | Env: <dev|staging|prod|all> | Issue: | Worktree: | Main Plan Fingerprint:
 
 ## Requirement
 <change and why>
@@ -33,6 +33,12 @@ Out: <items>
 ## Implementation Steps
 - [ ] Step 1: <action> — `<cmd>`
 
+## PR Pattern (provisional)
+Type: single
+| # | Branch | Steps | Summary |
+|---|--------|-------|---------|
+| 1 | infra/<slug> | 1–N | <summary> |
+
 ## Verification Steps
 - [ ] Verify 1: `<cmd>` — expected: <result>
 
@@ -44,7 +50,7 @@ Trigger: <condition>
 - <item>: <why>
 ```
 
-Rules: 5–15 Implementation Steps, dependency-ordered. >15 → split. Destructive → dry-run inline.
+Rules: 5–15 Implementation Steps, dependency-ordered. >15 → split. Destructive → dry-run inline. `Issue:` is required before execution; create or link one before handoff. Infrastructure plans contain infrastructure config and their runbook only; application-code changes require a separate design-feature plan. Infrastructure plans use one reviewable PR unless the plan is split into independent plans.
 
 **Gate**: pre-flight non-empty, each impl has verify, rollback has step.
 
@@ -60,8 +66,10 @@ Run this audit before the final output. If ANY item is unchecked → STOP, fix, 
 - [ ] **Destructive gates** (Rules): every destructive step has dry-run + rollback. Destructive: __.
 - [ ] **Drift sync** (`**Drift detection**`): live vs config compared; drift → sync step first.
 - [ ] **Design Decisions** (`## Design Decisions`): alternatives considered.
+- [ ] **Issue** (Rules): `Issue:` contains a valid `#<number>`. Value: __.
+- [ ] **PR Pattern** (`## PR Pattern`): provisional pattern is present, Type is `single`, and all Implementation Steps are assigned. Missing: __.
 
-If ALL checked → save, show counts, ask "Changes?" then "Create issue?"
+After drafting, ask "Changes?" then create/link the required issue **before** running the Self-Check. If ALL checked → save, show counts, and hand off for review.
 
 ## Review
 
@@ -69,4 +77,4 @@ Checks: requirement measurable, scope explicit, alternatives considered, risks a
 
 **Gate**: destructive → dry-run, rollback → trigger. Flag: undefined env, missing rollback, no drift sync.
 
-Show: Verdict, Blocking N, Suggestions N. Ask: "Apply?" → set `approved`, print path.
+Show: Verdict, Blocking N, Suggestions N. Apply approved plan corrections if requested. On READY, leave `Status: planning` and print: "Plan READY — approve it manually (set `Status: approved`), then run the execute-infra skill." Never set `approved` without the direct human approval record required by README.

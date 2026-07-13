@@ -25,7 +25,7 @@ Clarify: scope, constraints, edge cases, done. Up to 3 rounds.
 
 ```
 # Task: <name>
-Status: planning | Type: <type> | Mode: full|lite | Issue: | Worktree:
+Status: planning | Type: <type> | Mode: full|lite | Issue: | Worktree: | Main Plan Fingerprint:
 
 ## Requirement
 <problem and why>

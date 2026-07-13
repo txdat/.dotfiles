@@ -15,6 +15,8 @@ Universal rules for every agent that reads or writes code. Loaded by every subag
 
 **Confirm destructive actions.** No exceptions.
 
+**Git ownership.** Only the main agent may run Git commands, mutate Git state, or edit `docs/plans/**`. Coding workers edit only their explicitly assigned source/test files, run only their assigned target tests, and report their changed-file list plus validation results. They never invoke Git, edit plan files, or claim a commit or test result they did not produce.
+
 **Never run the full test suite — by reflex.** Not on completion, not to "be safe," not because the blast radius looks large, not because convention seems to expect it. Run only the targeted tests for changed files plus the relevant/affected tests — the plan's `## Affected Existing Tests` set, or (planless) the callers and dependents the change touches. Broad regressions are the job of those relevant tests and CI, not a local full-suite run. **Two exceptions:** the project config documents the suite as fast (e.g. `Full suite: ~40s`), or the user explicitly asks. An undocumented suite is presumed slow — never run it to find out.
 
 ## Discipline (non-negotiable)

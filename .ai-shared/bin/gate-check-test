@@ -1,0 +1,112 @@
+#!/bin/bash
+set -euo pipefail
+
+ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+GATE="$ROOT/bin/gate-check"
+TMP_ROOT=$(mktemp -d /tmp/gate-check-test.XXXXXX)
+TEST_NO=0
+
+new_repo() {
+  local repo
+  repo=$(mktemp -d "$TMP_ROOT/repo.XXXXXX")
+  git -C "$repo" init -q -b main
+  git -C "$repo" config user.email gate-check@example.test
+  git -C "$repo" config user.name gate-check-test
+  mkdir -p "$repo/docs/plans"
+  printf 'seed\n' > "$repo/README.md"
+  git -C "$repo" add README.md
+  git -C "$repo" commit -qm seed
+  printf '%s\n' "$repo"
+}
+
+write_plan() {
+  local path="$1" status="$2" type="$3" issue="$4" worktree="$5" pattern="$6" fingerprint="${7:-}"
+  {
+    printf '# Task: gate test\n'
+    printf 'Status: %s | Type: %s | Issue: %s | Worktree: %s | Main Plan Fingerprint: %s\n\n' \
+      "$status" "$type" "$issue" "$worktree" "$fingerprint"
+    printf '%s\n' "$pattern"
+    printf 'Type: single\n'
+    printf '| # | Branch | Steps | Summary |\n'
+    printf '|---|--------|-------|---------|\n'
+    printf '| 1 | %s/gate-test | 1 | test |\n' "$type"
+  } > "$path"
+}
+
+run_gate() {
+  local repo="$1" skill="$2" args="$3" session
+  TEST_NO=$((TEST_NO + 1))
+  session="gate-check-test-$$-$TEST_NO"
+  jq -cn --arg session "$session" --arg skill "$skill" --arg args "$args" \
+    '{session_id:$session,tool_input:{skill:$skill,arguments:$args}}' |
+    (cd "$repo" && "$GATE")
+}
+
+assert_pass() {
+  local output="$1" label="$2"
+  if [[ -n "$output" ]]; then
+    printf 'FAIL: %s\n%s\n' "$label" "$output" >&2
+    exit 1
+  fi
+  printf 'PASS: %s\n' "$label"
+}
+
+assert_block() {
+  local output="$1" expected="$2" label="$3"
+  if ! jq -e --arg expected "$expected" \
+    '.decision == "block" and (.reason | contains($expected))' <<<"$output" >/dev/null; then
+    printf 'FAIL: %s\n%s\n' "$label" "$output" >&2
+    exit 1
+  fi
+  printf 'PASS: %s\n' "$label"
+}
+
+make_registered_plan() {
+  local repo="$1" type="$2" status="$3" issue="$4" pattern="$5"
+  local worktree="$repo-worktree"
+  git -C "$repo" worktree add -q -b "$type/gate-test" "$worktree" main
+  write_plan "$repo/docs/plans/gate.md" planning "$type" "$issue" "$worktree" "$pattern"
+  local fingerprint
+  fingerprint=$(sed -E 's/[[:space:]]*\|[[:space:]]*Main Plan Fingerprint:[^|]*//' "$repo/docs/plans/gate.md" | sha256sum | awk '{print $1}')
+  write_plan "$repo/docs/plans/gate.md" planning "$type" "$issue" "$worktree" "$pattern" "$fingerprint"
+  mkdir -p "$worktree/docs/plans"
+  write_plan "$worktree/docs/plans/gate.md" "$status" "$type" "$issue" "$worktree" "$pattern" "$fingerprint"
+  printf '%s\n' "$worktree"
+}
+
+repo=$(new_repo)
+make_registered_plan "$repo" infra implemented '#12' '## PR Pattern (provisional)' >/dev/null
+output=$(run_gate "$repo" dev-review-code 'docs/plans/gate.md')
+assert_pass "$output" 'infra review does not require RED proof'
+
+repo=$(new_repo)
+make_registered_plan "$repo" feature implemented '#12' '## PR Pattern (provisional)' >/dev/null
+output=$(run_gate "$repo" dev-review-code 'docs/plans/gate.md')
+assert_block "$output" 'Found 0 test(red)' 'application review still requires RED proof'
+
+repo=$(new_repo)
+write_plan "$repo/docs/plans/gate.md" approved feature '#12abc' '' '## PR Pattern (provisional)'
+output=$(run_gate "$repo" dev-execute-feature 'docs/plans/gate.md')
+assert_block "$output" 'no linked issue' 'issue reference must be exactly #<positive-number>'
+
+repo=$(new_repo)
+fake_worktree=$(mktemp -d "$TMP_ROOT/unregistered.XXXXXX")
+mkdir -p "$fake_worktree/docs/plans"
+write_plan "$repo/docs/plans/gate.md" implemented feature '#12' "$fake_worktree" '## PR Pattern (provisional)'
+write_plan "$fake_worktree/docs/plans/gate.md" implemented feature '#12' "$fake_worktree" '## PR Pattern (provisional)'
+output=$(run_gate "$repo" dev-review-code 'docs/plans/gate.md')
+assert_block "$output" 'not a registered non-main Git worktree' 'unregistered worktree is rejected'
+
+repo=$(new_repo)
+make_registered_plan "$repo" feature reviewed '#12' '## PR Pattern' >/dev/null
+output=$(run_gate "$repo" dev-create-pr 'docs/plans/gate.md')
+assert_pass "$output" 'matching plan fingerprint permits create-pr'
+
+printf '\nuser edit\n' >> "$repo/docs/plans/gate.md"
+output=$(run_gate "$repo" dev-create-pr 'docs/plans/gate.md')
+assert_block "$output" 'Main-tree plan changed' 'fingerprint mismatch blocks before create-pr'
+
+output=$(run_gate "$repo" dev-create-pr 'docs/plans/gate.md overwrite-plan')
+assert_pass "$output" 'explicit overwrite-plan token permits confirmed overwrite'
+
+printf 'All gate-check tests passed. Temporary fixtures: %s\n' "$TMP_ROOT"
