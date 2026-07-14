@@ -4,16 +4,22 @@ Behavior is locked to the approved Goal/AC/TC spec. Review fidelity plus indepen
 
 Resolve the active plan per CORE; entry status is `implemented`, and `gate-check` owns plan, issue, worktree, and proof-order gates. Read plan/config and inspect `<base>..HEAD` diff, stat, and log inside `<worktree>`.
 
+## Cost Boundary
+
+Run the entire review in the main session. **Do not spawn or delegate to any subagent, including `code-quality-auditor`.** Size, risk, file count, and independent concerns are not exceptions. For a large diff, process dependency-ordered file or PR-slice batches in the same session.
+
+Load only the approved plan, project config, diff, changed files/tests, and definitions or callers needed to verify behavior or a suspected finding. Inventory once; do not reread the repository once per review category. Batch independent read-only commands when practical.
+
 ## Review
 
-Review sequentially and cite blocking findings as `file:line — issue — impact — required fix`.
+Start with diff name/status, stat, log, and the plan's Goal/AC/TC set. Create one row per TC (`TC | AC | test | implementation evidence | result`) and fill it during one integrated changed-file pass. Roll TC evidence up to an `AC-N: PASS|FAIL — evidence` conclusion; never infer an AC pass only from green tests. Evaluate behavior, architecture/data, and scope together instead of rereading the diff by category. Cite findings as `file:line — issue — impact — required fix`.
 
 ### A. Goal and acceptance evidence
 
 - read the original Goal before using tests as an oracle; independently describe the delivered observable outcome;
 - verify each AC one by one against its Source, Success, and Failure fields; report `AC-N: PASS|FAIL — <evidence>`;
 - attempt at least one counterexample where all planned TCs pass but the AC or Goal fails; a known counterexample is blocking;
-- then verify every TC has a test with matching name, owning `Proves: AC-N`, and Given/When/Then behavior; extra behavioral tests require `## Discovered Scope`;
+- then verify every TC has an identifiable test (TC ID or explicit plan mapping), the correct `Proves: AC-N`, and matching Given/When/Then behavior; extra behavioral tests require `## Discovered Scope`;
 - each test would fail when its named behavior breaks—assert-nothing, trivial assertions, mock-call-only checks, and implementation-mirroring expectations are blocking;
 - independently rerun TC tests plus `## Affected Existing Tests`;
 - verify new calls/fields/imports resolve to their target type/module;
@@ -23,7 +29,7 @@ Passing all TCs is insufficient when any AC or the Goal fails. Implementation fa
 
 ### B. Architecture and data
 
-Check layering and context boundaries, parameterized queries, transactions/concurrency, backward compatibility, and every plan Non-functional commitment (security/data exposure, observability, performance budget).
+Check every plan Non-functional commitment. For changed paths, check applicable concerns: boundaries, query safety, transactions/concurrency, compatibility, security/data exposure, observability, and performance. Treat the rest as not applicable without reporting them; do not expand into a repository-wide audit.
 
 ### C. Scope and hygiene
 
@@ -37,13 +43,13 @@ Verdict: any blocking finding → `REWORK REQUIRED`; none plus Should Fix → `P
 
 - [ ] **Goal/behavior:** every AC has independent PASS evidence against the Goal; adversarial counterexample attempted; every TC maps to its AC and test; edge/failure paths and meaningful assertions verified. Gaps: __.
 - [ ] **Proof and symbols:** proof contents independently checked; app symbols resolve. Issues: __.
-- [ ] **Architecture/data:** boundaries, security, transactions/concurrency, compatibility, and Non-functional commitments checked. Issues: __.
+- [ ] **Architecture/data:** every Non-functional commitment and each concern applicable to changed paths were checked; no repository-wide audit was substituted. Issues: __.
 - [ ] **Scope/hygiene:** deviations complete; no unplanned change, secret, TODO, or debug/conflict artifact. Issues: __.
 - [ ] **PR Pattern:** actual diff remains independently mergeable under the provisional slices; every step is owned and no TC spans slices. Issues: __.
 
 ## Output and Actions
 
-Report Summary, Goal outcome, per-AC evidence, per-TC evidence, counterexample attempted, What's Good, Blocking, Non-blocking (Should Fix/Skip), out-of-band Plan Defects, and verdict.
+Report verdict and Goal outcome first, then AC conclusions, the TC evidence table, counterexample, test commands/results, Blocking, Should Fix, relevant Skip decisions, and Plan Defects. Omit empty sections, repeated evidence, and generic praise.
 
 - `REWORK REQUIRED`: offer fixes; wait for approval before editing.
 - `PASS WITH NOTES`: ask which Should Fix items to apply/skip; wait. Continue only after all are resolved.

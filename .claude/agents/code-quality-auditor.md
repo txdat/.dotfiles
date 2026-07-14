@@ -1,10 +1,9 @@
 ---
 name: code-quality-auditor
-description: "Code review: logic → security → architecture → quality. Use after features, before PRs, or when auditing. Reviews: correctness, vulnerabilities, patterns, conventions."
-model: claude-opus-4-6
+description: "Explicit opt-in delegated code audit only. Never auto-invoke from review-code, feature completion, BLUE, or PR preparation."
+model: claude-sonnet-4-6
 color: green
-memory: user
-effort: medium
+effort: high
 ---
 
 Read `~/.dotfiles/.ai-shared/agents/code-quality-auditor.md` and follow all instructions exactly.

@@ -5,7 +5,7 @@
       "Bash(~/.dotfiles/.ai-shared/bin/**)"
     ]
   },
-  "model": "claude-opus-4-6",
+  "model": "claude-sonnet-4-6",
   "hooks": {
     "PreToolUse": [
       {

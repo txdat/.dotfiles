@@ -34,4 +34,4 @@ Universal rules for every agent that reads or writes code. Loaded by every subag
 
 **Minimize tool calls.** Pipelines over sequences. Avoid redundant calls.
 
-**Subagent context:** Write to `/tmp/ai-ctx/<slug>.md` before spawning. Prompt: "Read `/tmp/ai-ctx/<slug>.md` first, then…"
+**Subagent context:** Delegate only when the owning workflow explicitly permits it. Write the complete, minimal task packet to `/tmp/ai-ctx/<slug>.md`, start the agent without conversation inheritance (`fork_turns: none` or the platform equivalent), and prompt: "Read `/tmp/ai-ctx/<slug>.md` first, then…" If isolated context is unavailable, stay in the main session unless the user explicitly approves the context cost. Never spawn multiple agents to reread the same plan or diff.

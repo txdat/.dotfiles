@@ -24,7 +24,7 @@ Before each GREEN:
 2. Run `dev-check proof <commit> [--test <in-source-test-path>] [--stub <throwing-stub-path>]`.
 3. Commit implementation separately after its targeted tests pass. Any test-input special case or hardcoded expected-value table is a fake implementation → STOP and report.
 
-After all GREEN work, perform BLUE as defined in `tdd.md`: inspect for worthwhile simplification and refactor only when beneficial. If BLUE changed any file, rerun its targeted tests and coverage and have `code-quality-auditor` verify behavior is unchanged; "no refactor needed" is a valid outcome and needs no dispatch.
+After all GREEN work, perform BLUE as defined in `tdd.md`: inspect for worthwhile simplification and refactor only when beneficial. If BLUE changed a file, the main session verifies behavior preservation and reruns its targeted tests and coverage. "No refactor needed" is valid. Do not dispatch `code-quality-auditor` unless the user explicitly requests a delegated audit.
 
 ## Verification
 
