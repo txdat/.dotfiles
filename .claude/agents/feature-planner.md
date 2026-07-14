@@ -3,7 +3,6 @@ name: feature-planner
 description: "Business features and regular development: breakdown, API design, implementation strategies, refactoring. NOT for architecture changes (use architecture-strategist)."
 model: claude-opus-4-6
 color: pink
-memory: user
 effort: medium
 ---
 

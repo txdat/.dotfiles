@@ -79,7 +79,7 @@ Show name, type, requirement, AC/TC/step counts, and path. Ask for design change
 ## Self-Check (BLOCKING)
 
 - [ ] **Schema and questions:** every section that applies is filled; Open Questions empty; `Status: planning`.
-- [ ] **Goal and ACs:** Goal is preserved; each AC is atomic, observable, sourced, measurable, and implementation-independent; counterexample attempt found no known way to pass while violating the Goal.
+- [ ] **Goal and ACs:** Goal is preserved; each AC is atomic, observable, sourced, pass/fail decidable, and implementation-independent; counterexample attempt found no known way to pass while violating the Goal.
 - [ ] **Approach/impact:** requirement and scope are measurable; components/contracts/data/non-functional effects and decisions are concrete.
 - [ ] **BDD/TDD:** every TC has Proves/Given/When/Then, one owning AC, and correct fail/pass intent; Goal → AC ↔ TC ↔ Step mapping is complete; affected existing tests are reasoned.
 - [ ] **Conditional rigor:** each new structure has guard/invariant/boundary TC; behavior-axis combinations are covered or excluded with reason.
