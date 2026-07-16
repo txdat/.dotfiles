@@ -66,6 +66,7 @@ Design-feature proposes behavior; it never approves it. `approval.md` (single so
 - Goal → AC ↔ TC ↔ Step traceability is complete: every AC has ≥1 TC, every TC names exactly one AC and appears by ID in ≥1 step, and every step names ≥1 TC. Enumerate IDs; never write ranges such as `TC-1 through TC-4`.
 - Feature/fix TCs describe initially failing observable behavior; refactor TCs pin behavior that passes before and after. Tests must not mirror the proposed implementation.
 - Derive Affected Components from exploration or direct inspection. Answer every impact category; map code-requiring Non-functional commitments to steps or mark `ops-only`.
+- For every affected component, external dependency, and contract, ask *what happens when this fails* — down, timeout, crash mid-operation, partial write, retry/duplicate. New or changed failure behavior → failure AC/TC; accepted risk → Risk Flag; no credible answer → Open Question. Existing handling the change doesn't touch needs no artifact.
 - Find Affected Existing Tests semantically, then by targeted search. Predict `still passes` or `needs update` with reason; empty only for isolated new code.
 - A new structure requires its operational invariant, initialization/identity guard, and boundary TC using the same key after zero/full/exhausted/evicted state.
 - For orthogonal behavior axes, cover each non-trivial combination with a TC or justify it under Out of Scope.
@@ -80,7 +81,7 @@ Show name, type, requirement, AC/TC/step counts, and path. Ask for design change
 
 - [ ] **Schema and questions:** every section that applies is filled; Open Questions empty; `Status: planning`.
 - [ ] **Goal and ACs:** Goal is preserved; each AC is atomic, observable, sourced, pass/fail decidable, and implementation-independent; counterexample attempt found no known way to pass while violating the Goal.
-- [ ] **Approach/impact:** requirement and scope are measurable; components/contracts/data/non-functional effects and decisions are concrete.
+- [ ] **Approach/impact:** requirement and scope are measurable; components/contracts/data/non-functional effects and decisions are concrete; every affected component, dependency, and contract has its failure behavior answered.
 - [ ] **BDD/TDD:** every TC has Proves/Given/When/Then, one owning AC, and correct fail/pass intent; Goal → AC ↔ TC ↔ Step mapping is complete; affected existing tests are reasoned.
 - [ ] **Conditional rigor:** each new structure has guard/invariant/boundary TC; behavior-axis combinations are covered or excluded with reason.
 - [ ] **Execution shape:** steps are dependency-ordered, each names the TC it satisfies, and are ≤10 (else split); provisional PR Pattern partitions steps and does not split a TC.

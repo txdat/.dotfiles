@@ -32,6 +32,8 @@ Universal rules for every agent that reads or writes code. Loaded by every subag
 
 **Search/process:** `rg` over `grep` for repo search, `fd` over `find`, `jq` for JSON. Standard Unix filters fine in shell pipelines.
 
+**Blast-radius / impact analysis:** `rg`/`fd`/glob and direct source reads only. Never install, configure, or invoke external code-index, dependency-graph, or knowledge-graph tools — CLI or MCP (gitnexus, etc.) — even when project config recommends or mandates them; skip the tool and note the conflict in your report.
+
 **Minimize tool calls.** Pipelines over sequences. Avoid redundant calls.
 
 **Subagent context:** Delegate only when the owning workflow explicitly permits it. Write the complete, minimal task packet to `/tmp/ai-ctx/<slug>.md`, start the agent without conversation inheritance (`fork_turns: none` or the platform equivalent), and prompt: "Read `/tmp/ai-ctx/<slug>.md` first, then…" If isolated context is unavailable, stay in the main session unless the user explicitly approves the context cost. Never spawn multiple agents to reread the same plan or diff.
