@@ -1,7 +1,7 @@
 ---
 name: dev-design-feature
 description: "Design an issue-backed feature, fix, or refactor plan before implementation, including scope, test cases, impact, ordered steps, and provisional PR slicing."
-model: claude-opus-4-6
+model: claude-opus-4-8
 effort: medium
 ---
 

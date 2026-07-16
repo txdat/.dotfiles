@@ -1,7 +1,7 @@
 ---
 name: architecture-strategist
 description: "Use ONLY when features CREATE or CHANGE system architecture. For: new layers, communication patterns, tech stack, cross-service integrations, scalability. NOT for regular features."
-model: claude-opus-4-6
+model: claude-opus-4-8
 color: red
 effort: high
 ---
