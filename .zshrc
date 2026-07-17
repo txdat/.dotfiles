@@ -100,12 +100,14 @@ export PATH="$HOME/.cargo/env:$HOME/.rustup/toolchains/stable-x86_64-unknown-lin
 # go
 export PATH="$HOME/go/bin:$PATH"
 
-# javascript
-FNM_PATH="$HOME/.local/share/fnm"
-if [ -d "$FNM_PATH" ]; then
-  export PATH="$FNM_PATH:$PATH"
-  eval "`fnm env`"
-fi
+# flutter
+export PATH="$HOME/fvm/bin:$HOME/fvm/default/bin:$PATH"
+
+# nodejs
+export PATH="$HOME/.local/share/fnm:$PATH"
+eval "`fnm env`"
+
+export CHROME_EXECUTABLE=/usr/bin/google-chrome
 
 # gcloud
 export PATH="$HOME/.google-cloud-sdk/bin:$PATH"
@@ -177,6 +179,3 @@ update_zsh () {
 #   flatpak update
 # }
 
-
-# Added by Antigravity CLI installer
-export PATH="/home/txdat/.local/bin:$PATH"
