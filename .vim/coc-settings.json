@@ -151,6 +151,25 @@
           }
         }
       }
+    },
+    "dartls": {
+      "command": "dart",
+      "args": ["language-server", "--protocol=lsp"],
+      "filetypes": ["dart"],
+      "rootPatterns": ["pubspec.yaml"],
+      "init_options": {
+        "onlyAnalyzeProjectsWithOpenFiles": true,
+        "suggestFromUnimportedLibraries": true,
+        "closingLabels": true,
+        "outline": true,
+        "flutterOutline": true
+      },
+      "settings": {
+        "dart": {
+          "completeFunctionCalls": true,
+          "showTodos": true
+        }
+      }
     }
   }
 }
