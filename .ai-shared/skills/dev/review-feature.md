@@ -2,6 +2,10 @@
 
 No code and no approval decisions. Design remains open: independently challenge the WHAT and HOW rather than ratifying fields. Resolve the active plan per CORE; entry status is `planning`. `gate-check` blocks entry on unresolved Open Questions; the Goal/AC/TC/Step graph is yours to verify, not a parser's.
 
+## Independence
+
+If this session drafted the plan, do not review it here: delegate to one fresh agent with no conversation inheritance (EXECUTION_CORE `Subagent context`). The packet names only the plan path, project AI config, and this skill file — never drafting rationale, exploration notes, or a conversation summary. The reviewer reports findings, counterexamples, and READY/NEEDS CHANGES; the main agent relays them verbatim, and plan edits or status changes stay with the main agent. A session that did not draft the plan reviews directly. Isolation unavailable → review in-session, treating memory of the drafting as untrusted: re-derive every judgment from the plan file and source reads.
+
 ## Independent Semantic Review
 
 Avoid anchoring on the proposed tests:
@@ -40,6 +44,7 @@ Undefined or unsupported expected behavior is blocking and becomes an Open Quest
 
 ## Self-Check (BLOCKING)
 
+- [ ] **Independence:** the review ran in a context without drafting memory (fresh agent, or a session that did not draft); fallback in-session review re-derived every judgment from the plan file and source. Context: __.
 - [ ] **Mode/questions:** eligibility or full schema verified; no Open Questions surfaced. Issues: __.
 - [ ] **Independent outcomes:** expected outcomes were derived from Goal/sources before TC inspection; missing/invented ACs resolved. Issues: __.
 - [ ] **Adversarial behavior:** every AC/TC faced counterexample, invalid-pass, and valid-rejection challenges; failure/edge axes are sufficient. Gaps: __.

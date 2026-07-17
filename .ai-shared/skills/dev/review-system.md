@@ -2,6 +2,10 @@
 
 Resolve the `draft` document from `$ARGUMENTS` or latest `docs/architecture/`; read it, relevant source, and project AI config. Independently challenge the decision, not field presence. Review the chain: goal and constraints → options → recommendation → contracts → reversible phases → measured outcome.
 
+## Independence
+
+If this session drafted the document, delegate the review to one fresh agent with no conversation inheritance (EXECUTION_CORE `Subagent context`): the packet names only the document path, project AI config, and this skill file — never drafting rationale or a conversation summary. The reviewer returns verdict, findings, and author questions; the approval prompt, its pause, and any `Status` change stay with the main agent. A session that did not draft reviews directly. Isolation unavailable → treat drafting memory as untrusted and re-derive every judgment from the document and source.
+
 ## Review
 
 - **Outcome:** the user goal is preserved; pain, constraints, boundaries, target, and baseline or measurement phase are credible.
@@ -14,6 +18,7 @@ Blocking examples: lost user goal, unmeasurable success, no baseline or measurem
 
 ## Self-Check (BLOCKING)
 
+- [ ] **Independence:** the review ran in a context without drafting memory (fresh agent, or a session that did not draft); fallback in-session review re-derived every judgment from the document and source. Context: __.
 - [ ] **Outcome/options:** goal and measurable outcome hold; alternatives or eliminations were independently challenged. Issues: __.
 - [ ] **Contracts/failures:** boundaries and required semantics are sufficient; critical failures have detection and recovery. Missing: __.
 - [ ] **Migration:** Change/Verify/Rollback gates are credible; destructive steps and applicable cutover/reconciliation hold. Issues: __.
