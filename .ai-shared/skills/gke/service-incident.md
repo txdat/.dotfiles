@@ -1,6 +1,6 @@
 ---
 name: gke-service-incident
-description: "Use this skill to investigate GKE service incidents: pod restart cascades, 503/504 errors, service unavailability, CrashLoopBackOff, pods stuck Pending/unschedulable, node autoscaling failures, cloud-provider capacity stockouts, and network/VPC problems. Triggers: 'pods keep restarting', '503/504 errors', 'service is down', 'crash loop', 'pods stuck pending', 'nodes not scaling', 'ZONE_RESOURCE_POOL_EXHAUSTED', 'VPC/network/firewall issue', 'what caused the incident at <time>'. Inputs (8): GCP project, cluster, region, namespace, affected services, incident start time, duration, timezone — each defaults automatically (project/cluster/region/namespace/services from $GCP_PROJECT_ID/$GKE_CLUSTER/$GKE_REGION/$GKE_NAMESPACE/$GKE_SERVICES; start time & duration default to now; timezone to UTC+7), so it can run with no input when those env vars are set. All cluster queries are read-only — only `gcloud container clusters get-credentials` mutates local kubeconfig and requires confirmation. Never mutate cluster state."
+description: "Use this skill to investigate GKE service incidents: pod restart cascades, 503/504 errors, service unavailability, CrashLoopBackOff, pods stuck Pending/unschedulable, node autoscaling failures, cloud-provider capacity stockouts, network/VPC problems, and billing/project-suspension events that reclaim nodes. Triggers: 'pods keep restarting', '503/504 errors', 'service is down', 'crash loop', 'pods stuck pending', 'nodes not scaling', 'all nodes disappeared', 'whole node pool gone', 'BILLING_DISABLED', 'REPAIR_CLUSTER', 'ZONE_RESOURCE_POOL_EXHAUSTED', 'VPC/network/firewall issue', 'what caused the incident at <time>'. Inputs (8): GCP project, cluster, region, namespace, affected services, incident start time, duration, timezone — each defaults automatically (project/cluster/region/namespace/services from $GCP_PROJECT_ID/$GKE_CLUSTER/$GKE_REGION/$GKE_NAMESPACE/$GKE_SERVICES; start time & duration default to now; timezone to UTC+7), so it can run with no input when those env vars are set. All cluster queries are read-only — only `gcloud container clusters get-credentials` mutates local kubeconfig and requires confirmation. Never mutate cluster state."
 ---
 
 # GKE Incident Investigator
@@ -24,56 +24,25 @@ Resolve each input from the user's message. **If an input is absent, apply its d
 | 7 | `T_DURATION` | How long the issue lasted (widens window if >30m) | **now** (incident ongoing → window ends at the present) |
 | 8 | `T_TZ` | Timezone | `Asia/Ho_Chi_Minh` (UTC+7) |
 
-Resolve inputs and derive the query window:
+All input resolution, SERVICES/SVC_RE expansion, and window-tier derivation below is performed
+internally by `scripts/gke-collect.sh` — export the env vars and run it once (see "Phase 1 — Broad
+Sweep" below). It prints the resolved values (`PROJECT`, `CLUSTER`, ..., `T_START`, `T_END`,
+`T_START_MINUS_2H`, `T_START_CRITICAL`, thresholds) under `===== Pre-Flight — Resolved Inputs =====`
+so you can sanity-check them before interpreting the rest of the output.
 
 ```bash
-# --- Apply env-var defaults for any input the user didn't supply ---
-PROJECT="${PROJECT:-$GCP_PROJECT_ID}"
-CLUSTER="${CLUSTER:-$GKE_CLUSTER}"
-REGION="${REGION:-$GKE_REGION}"
-NAMESPACE="${NAMESPACE:-$GKE_NAMESPACE}"
-SERVICES="${SERVICES:-$GKE_SERVICES}"        # comma-separated; trailing '*' = prefix match
-T_DURATION="${T_DURATION:-now}"              # 'now' = ongoing, window runs to the present
-T_TZ="${T_TZ:-Asia/Ho_Chi_Minh}"            # UTC+7
-
-# Fail fast if a required value is still empty (env var unset and nothing provided) → ask the user
-for v in PROJECT CLUSTER REGION NAMESPACE SERVICES; do
-  [ -z "${!v}" ] && echo "MISSING: $v — provide it or export its \$GCP_*/\$GKE_* default"
-done
-
-# --- Expand SERVICES into a pod-name regex (SVC_RE) and pick a primary SERVICE/DEPLOYMENT ---
-# Exact name 'foo'  -> pods matching '^foo-'      (foo's own ReplicaSet pods)
-# Wildcard  'foo*'  -> pods matching '^foo'       (foo and every service sharing the prefix)
-SVC_RE=$(printf '%s\n' "${SERVICES//,/$'\n'}" | while read -r s; do
-  s="${s//[[:space:]]/}"; [ -z "$s" ] && continue
-  case "$s" in
-    *\*) printf '^%s|' "${s%\*}" ;;   # prefix wildcard
-    *)   printf '^%s-|' "$s" ;;       # exact service
-  esac
-done | sed 's/|$//')
-SERVICE="${SERVICE:-$(printf '%s' "${SERVICES%%,*}" | tr -d ' *')}"   # primary service (single-service cmds)
-DEPLOYMENT="${DEPLOYMENT:-$SERVICE}"                                   # deployment defaults to the primary service
-echo "Resolved: PROJECT=$PROJECT CLUSTER=$CLUSTER REGION=$REGION NAMESPACE=$NAMESPACE"
-echo "Services: $SERVICES  |  pod-name regex SVC_RE=$SVC_RE  |  primary=$SERVICE"
-
-# --- Derive the query window ---
-# Incident reference time: use the supplied start time, else anchor on now.
-if [ -n "$T_USER" ]; then
-  T_UTC=$(TZ=UTC date -d "TZ=\"$T_TZ\" $T_USER" +%Y-%m-%dT%H:%M:%SZ)
-else
-  T_UTC=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-fi
-T_START=$(date -u -d "$T_UTC - 30 minutes" +%Y-%m-%dT%H:%M:%SZ)
-
-# T_END: default 'now' → current time (ongoing). Otherwise T_UTC + duration + 10m buffer.
-if [ -z "$T_DURATION" ] || [ "$T_DURATION" = "now" ]; then
-  T_END=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-else
-  T_END=$(date -u -d "$T_UTC + $T_DURATION + 10 minutes" +%Y-%m-%dT%H:%M:%SZ)
-fi
-
-T_START_MINUS_2H=$(date -u -d "$T_UTC - 2 hours" +%Y-%m-%dT%H:%M:%SZ)   # deploy lookback
+export GCP_PROJECT_ID=... GKE_CLUSTER=... GKE_REGION=... GKE_NAMESPACE=... GKE_SERVICES=...
+# optional: T_USER, T_DURATION, T_TZ, T_CRITICAL_LOOKBACK, NODE_DELETE_BURST, NOTREADY_MAX, AGE_RESET_FRAC
 ```
+
+**Query-window tiers:** queries deliberately use different lookbacks by hypothesis class — a symptom is point-in-time, but a slow root cause can predate it by hours:
+
+| Tier | Variable | Span | Used by |
+|------|----------|------|---------|
+| Symptom | `T_START` | **T−30m → T_END** | H1, H2, H3, H4, H5, H6, H9, H10, H11, H14, H15, H16 + events/endpoints/LB |
+| Change lookback | `T_START_MINUS_2H` | **T−2h → T_END** | H7 (deploy), H12 (network), GKE upgrade / node-pool resize |
+| Critical root-cause | `T_START_CRITICAL` | **T−6h → T_END** (`$T_CRITICAL_LOOKBACK`) | **B1** (billing disable→reclaim propagation), **H13** (long-running repair/upgrade ops), **H8** (credential change → token-expiry delay) |
+| Baseline | `T_BASELINE_*` | **T−7d (±window)** | LB traffic baseline only |
 
 **Multi-service note:** app-log queries filter on `pod_name=~"'$SVC_RE'"` (the regex expanded from `SERVICES` in Pre-Flight), so they cover every affected service at once. Endpoint, NEG, and single-target `kubectl` commands use the primary `$SERVICE`/`$DEPLOYMENT` — repeat them per service when `SERVICES` lists more than one. If an exact (non-wildcard) service name is itself a prefix of a sibling (e.g. `api` vs `api-order`), verify ownership via the label selector in 1b rather than the pod-name regex.
 
@@ -83,34 +52,61 @@ T_START_MINUS_2H=$(date -u -d "$T_UTC - 2 hours" +%Y-%m-%dT%H:%M:%SZ)   # deploy
 
 `gcloud container clusters get-credentials` mutates local kubeconfig only. Ask for confirmation before running it unless the current context already targets the requested cluster.
 
-```bash
-gcloud auth list --filter="status:ACTIVE" --format="value(account)"
-gcloud config get-value project
-gcloud container clusters get-credentials $CLUSTER --region $REGION --project $PROJECT
-kubectl config current-context   # must contain cluster name
-kubectl cluster-info --request-timeout=5s
-```
+`scripts/gke-collect.sh` runs the read-only auth checks (`gcloud auth list`, `gcloud config
+get-value project`, `kubectl config current-context`, `kubectl cluster-info`) under
+`===== Phase 0 — Auth Validation =====` on every invocation. It does **not** run
+`get-credentials` unless invoked with `--get-credentials` — pass that flag only after confirming
+with the user, or run `gcloud container clusters get-credentials $CLUSTER --region $REGION
+--project $PROJECT` manually.
 
 ---
 
 ## Phase 1 — Broad Sweep (Run All)
 
-### 1a — K8s Warning Events
+Run the collector once — it covers every query in 1a-1i below (and the auto-discoverable Phase 3
+deep-dive queries) in a single read-only pass:
 
 ```bash
-gcloud logging read \
-  'resource.type="k8s_cluster"
-   log_name="projects/'$PROJECT'/logs/events"
-   severity>=WARNING
-   resource.labels.cluster_name="'$CLUSTER'"
-   resource.labels.namespace_name="'$NAMESPACE'"
-   timestamp>="'$T_START'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT \
-  --order=asc \
-  --format="table(timestamp,jsonPayload.involvedObject.name,jsonPayload.reason,jsonPayload.message)" \
-  --limit=300
+bash skills/gke/scripts/gke-collect.sh          # read-only; add --get-credentials only after confirming with the user
 ```
+
+The collector writes **all** evidence to a report file and prints only its path to the terminal
+(e.g. `gke-collect: report complete → /tmp/gke-incident-<cluster>-<ts>.txt`; override with
+`$REPORT`). **Read that report file**, then interpret its `===== ... =====` sections against the
+tables and prose below — no further commands are needed for 1a-1i or for the Phase 3 sections that
+reference this same run.
+
+**Fast per-hypothesis retrieval.** Every section header is tagged with the hypotheses it feeds,
+e.g. `===== 1f.2 — Node Auto-repair / MIG Recreation =====  {HYP: H13 H14}`. To pull *only* one
+hypothesis's evidence without re-reading the whole file, slice by its tag:
+
+```bash
+awk -v h=H14 '/^===== /{f=($0 ~ ("[{ ]" h "[ }]"))} f' "$REPORT"   # all H14 blocks, bodies included
+grep -nE '\{HYP:[^}]*[{ ]H14[ }]' "$REPORT"                        # just the start line of each
+```
+
+Read the whole file once for the overall picture; use the tag slice when drilling into a single
+hypothesis. The tag matcher is word-safe (`H1` never matches `H14`).
+
+**Verdicts & confidence — avoiding false negatives and false positives.** Each detector emits a
+one-line `[VERDICT: …]` (grep `-F '[VERDICT:'` for all of them at once). There are **five** states,
+and the distinction is the whole point:
+
+| State | Meaning | How to treat it |
+|-------|---------|-----------------|
+| `FIRES-CRITICAL` / `FIRES-WARNING` | The condition held on readable data | A **candidate signal**, not a conclusion — still needs corroboration (see below) |
+| `CLEAR` | Source was readable **and** the condition did not hold | A real negative — safe to rule out |
+| `UNKNOWN` | The data source was **unreadable** (auth/IAM/kubectl-context/log gap) | **Never treat as CLEAR.** The detector could not run; the hypothesis stays open |
+| `INFO` | The condition held but a **planned op / recovered state** explains it | Benign unless it correlates with symptom onset — do not report as the cause by itself |
+
+- **`Phase 0b — Capability Preflight`** reports which sources are readable (`CAP_LOGGING`, `CAP_K8S`, `CAP_OPS`, `CAP_COMPUTE`, `CAP_BILLING`). If a capability is 0, every detector that depends on it is `UNKNOWN` — an empty query under a missing permission is **not** an all-clear. Fix the capability (grant `roles/logging.viewer`, run `--get-credentials`, etc.) and re-run before concluding "nothing found."
+- **False positives** are caught by the `INFO` downgrade: H13 checks the maintenance window, H14/H15 check for an overlapping planned `SET_NODE_POOL_SIZE`/`UPGRADE`/`REPAIR_CLUSTER` op, B1 checks whether billing is currently enabled. A fire with a matching guard is `INFO`, not a WARNING/CRITICAL.
+- **The RCA gate is unchanged and final:** a `FIRES-*` becomes a *cause* only with **≥2 independent signals that correlate in time with symptom onset** (see the evidence-scoring rules). A single auto-fire, a near-threshold miss, or a live-snapshot reading is never a conclusion on its own.
+
+### 1a — K8s Warning Events
+
+See `===== 1a — K8s Warning Events (namespaced) =====` and `===== 1a — K8s Warning Events
+(node-scoped) =====` in the script output.
 
 **Event → Hypothesis mapping:**
 | Reason | H |
@@ -124,40 +120,10 @@ gcloud logging read \
 | `FailedMount`, `FailedAttachVolume`, `CreateContainerConfigError` | H7 |
 | `FailedCreatePodSandBox`, `NetworkNotReady`, `FailedCreatePodContainer` | H12 (CNI/network) |
 
-Node-scoped events (not namespaced):
-
-```bash
-gcloud logging read \
-  'resource.type="k8s_cluster"
-   log_name="projects/'$PROJECT'/logs/events"
-   resource.labels.cluster_name="'$CLUSTER'"
-   jsonPayload.reason=~"NodeNotReady|NodeHasInsufficientMemory|NodeHasDiskPressure|NodeHasPIDPressure|EvictionThreshold"
-   timestamp>="'$T_START'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT \
-  --order=asc \
-  --format="table(timestamp,jsonPayload.involvedObject.name,jsonPayload.reason,jsonPayload.message)" \
-  --limit=100
-```
-
 ### 1b — Pod Restart Fingerprint
 
-```bash
-# Verify actual label selector before assuming app=$SERVICE
-kubectl get deployment $DEPLOYMENT -n $NAMESPACE \
-  -o jsonpath='{.spec.selector.matchLabels}' && echo
-# Use the selector output to set POD_SELECTOR (e.g., "app=my-service" or "app.kubernetes.io/name=my-service")
-
-# Pod restart details — handles multi-container pods cleanly
-kubectl get pods -n $NAMESPACE -l $POD_SELECTOR -o json | jq -r '
-  .items[] | .metadata.name as $pod |
-  .status.containerStatuses[]? |
-  [$pod, .name, .ready, .restartCount,
-   .lastState.terminated.reason // "-",
-   .lastState.terminated.exitCode // "-",
-   .lastState.terminated.finishedAt // "-"] | @tsv' | \
-  column -t -s $'\t' -N POD,CONTAINER,READY,RESTARTS,REASON,EXIT,FINISHED
-```
+See `===== 1b — Pod Restart Fingerprint =====` in the script output (also prints the resolved
+`POD_SELECTOR` under `===== Auto-discovery =====`).
 
 **Exit codes:**
 | Code | Signal | Hypothesis |
@@ -172,23 +138,7 @@ Liveness kill: SIGTERM → grace period → SIGKILL. Exit 0/143 = responded. Exi
 
 ### 1c — Endpoint Availability
 
-```bash
-kubectl get endpoints -n $NAMESPACE
-
-kubectl describe endpoints -n $NAMESPACE | \
-  grep -A5 -E "^Name:|Addresses:|NotReadyAddresses:"
-
-# Endpoint mutations in audit log
-gcloud logging read \
-  'resource.type="k8s_cluster"
-   protoPayload.resourceName=~"namespaces/'$NAMESPACE'/endpoints"
-   timestamp>="'$T_START'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT \
-  --order=asc \
-  --format="table(timestamp,protoPayload.methodName,protoPayload.resourceName,protoPayload.response.status)" \
-  --limit=50
-```
+See `===== 1c — Endpoint Availability =====` in the script output.
 
 `notReadyAddresses` spike + `addresses` drop = 503s explained. Find why pods went NotReady.
 
@@ -198,147 +148,60 @@ Determines traffic-driven vs pod-driven causality.
 
 **Step 1 — Identify LB_NAME**
 
-```bash
-gcloud compute forwarding-rules list --project=$PROJECT \
-  --format="table(name,IPAddress,target,region,loadBalancingScheme)"
-gcloud compute backend-services list --project=$PROJECT \
-  --format="table(name,protocol,loadBalancingScheme,backends[].group)"
-kubectl get ingress -n $NAMESPACE \
-  -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.loadBalancer.ingress[*].ip}{"\n"}{end}'
-# Set LB_NAME = forwarding rule matching Ingress IP
-# Set LB_BACKEND_NAME = backend service name
-
-# NEG mode check
-kubectl get service $SERVICE -n $NAMESPACE \
-  -o jsonpath='{.metadata.annotations.cloud\.google\.com/neg}' && echo
-gcloud compute network-endpoint-groups list --project=$PROJECT \
-  --format="table(name,zone,size)" 2>/dev/null | grep -i $SERVICE || true
-
-# Verify LB logging enabled (if False, skip steps 2-7)
-gcloud compute backend-services describe $LB_BACKEND_NAME \
-  --global --project=$PROJECT --format="value(logConfig.enable,logConfig.sampleRate)"
-```
+See `===== 1d.1 — LB Identification =====` in the script output (auto-discovers `LB_NAME` /
+`LB_BACKEND_NAME` from the Ingress IP where possible; check `logConfig.enable` — if `False`,
+steps 2-7 are skipped by the script and must be run manually once logging is enabled).
 
 **Step 2 — Request rate (per minute)**
 
-```bash
-gcloud logging read \
-  'resource.type="http_load_balancer"
-   resource.labels.forwarding_rule_name="'$LB_NAME'"
-   timestamp>="'$T_START'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT \
-  --order=asc \
-  --format="value(timestamp)" \
-  --limit=5000 | \
-  awk '{print substr($1,1,16)}' | sort | uniq -c
-```
+See `===== 1d.2 — LB Request Rate (per minute) =====` in the script output.
 
 **Step 3 — 5xx breakdown**
 
-```bash
-gcloud logging read \
-  'resource.type="http_load_balancer"
-   resource.labels.forwarding_rule_name="'$LB_NAME'"
-   httpRequest.status>=500
-   timestamp>="'$T_START'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT \
-  --order=asc \
-  --format="table(timestamp,httpRequest.status,httpRequest.latency,jsonPayload.statusDetails,httpRequest.requestUrl)" \
-  --limit=1000
-```
+See `===== 1d.3 — LB 5xx Breakdown =====` in the script output.
 
-**Status codes:** 502 = pod crashed mid-request (H1/H3). 503 = no healthy/reachable backend (H1/H2/H3/H7/H8/H9/H12). 504 = timeout (H4/H5/H6/H10).
+**Status codes:** 502 = pod crashed mid-request (H1/H3). 503 = no healthy/reachable backend (H1/H2/H3/H7/H8/H9/H11/H12/B1+H15). 504 = timeout (H4/H5/H6/H10).
 
 **Step 4 — Latency distribution**
 
-```bash
-gcloud logging read \
-  'resource.type="http_load_balancer"
-   resource.labels.forwarding_rule_name="'$LB_NAME'"
-   timestamp>="'$T_START'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT \
-  --format="value(httpRequest.latency)" \
-  --limit=5000 | \
-  sed 's/s$//' | awk '
-    {v=$1+0}
-    v<0.1  {fast++}
-    v>=0.1 && v<0.5  {mid++}
-    v>=0.5 && v<2.0  {slow++}
-    v>=2.0 {veryslow++}
-    END {print "< 100ms:", fast; print "100-500ms:", mid; print "500ms-2s:", slow; print "> 2s:", veryslow}
-  '
-```
+See `===== 1d.4 — LB Latency Distribution =====` in the script output.
 
 Rising slow bucket before errors = saturation (H4/H5/H6). Latency flat + errors = endpoints dropped (H1/H2/H3/H7).
 
 **Step 5 — statusDetails**
 
-```bash
-gcloud logging read \
-  'resource.type="http_load_balancer"
-   resource.labels.forwarding_rule_name="'$LB_NAME'"
-   httpRequest.status>=500
-   timestamp>="'$T_START'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT \
-  --format="value(jsonPayload.statusDetails)" \
-  --limit=1000 | sort | uniq -c | sort -rn
-```
+See `===== 1d.5 — LB statusDetails =====` in the script output.
 
 **statusDetails mapping:**
 | Value | Hypothesis |
 |-------|------------|
 | `backend_connection_closed_*` | H1/H3 (pod killed mid-request) |
-| `failed_to_connect_to_backend` | H1/H2/H3/H7/H8/H9/H12 (no reachable backend) |
+| `failed_to_connect_to_backend` | H1/H2/H3/H7/H8/H9/H11/H12/B1+H15 (no reachable backend) |
 | `backend_timeout` | H4/H5/H6 (overload/dep) |
 | `backend_early_response` | H2/H5/H6 (app rejection) |
 | `handled_by_identity_aware_proxy` or `forbidden` | H8 (IAM/auth rejection) |
 
 **Step 6 — Baseline (T-7d)**
 
-```bash
-T_BASELINE_START=$(date -u -d "$T_START - 7 days" +%Y-%m-%dT%H:%M:%SZ)
-T_BASELINE_END=$(date -u -d "$T_END - 7 days" +%Y-%m-%dT%H:%M:%SZ)
-gcloud logging read \
-  'resource.type="http_load_balancer"
-   resource.labels.forwarding_rule_name="'$LB_NAME'"
-   timestamp>="'$T_BASELINE_START'"
-   timestamp<="'$T_BASELINE_END'"' \
-  --project=$PROJECT \
-  --format="value(timestamp)" \
-  --limit=5000 | \
-  awk '{print substr($1,1,16)}' | sort | uniq -c
-```
+See `===== 1d.6 — LB Baseline (T-7d) =====` in the script output.
 
 Spike vs baseline: >2x = traffic-driven, flat = pod-driven.
 
 **Step 7 — Client IP distribution**
 
-```bash
-gcloud logging read \
-  'resource.type="http_load_balancer"
-   resource.labels.forwarding_rule_name="'$LB_NAME'"
-   timestamp>="'$T_START'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT \
-  --format="value(httpRequest.remoteIp)" \
-  --limit=5000 | sort | uniq -c | sort -rn | head -20
-```
+See `===== 1d.7 — LB Client IP Distribution =====` in the script output.
 
 Skewed = single client/DDoS (H4). Uniform = organic or pod-side.
 
 **LB Decision Matrix:**
 | Pattern | Hypothesis |
 |---------|------------|
-| Spike + 503s | H1/H4 (overload) |
+| Spike + 503s | H1/H4/H11 (overload — scale blocked by HPA/quota or capacity stockout) |
 | Spike + 504s | H4/H5/H6/H10 (saturated or throttled) |
-| No spike + 503s | H1/H2/H3/H7/H8/H9 (pod failure) |
+| No spike + 503s | H1/H2/H3/H7/H8/H9/H11/H12/B1+H15 (backend unavailable — pod, capacity, network, or billing/reclamation) |
 | No spike + 504s | H5/H6/H10 (dep degraded or CPU throttle) |
 | Errors before spike | Retry storm (primary is one of H1/H2/H3/H5/H6/H7/H8/H9/H10) |
-| `failed_to_connect_to_backend` | H1/H2/H3/H7/H8/H9/H12 |
+| `failed_to_connect_to_backend` | H1/H2/H3/H7/H8/H9/H11/H12/B1+H15 |
 | `backend_timeout` | H4/H5/H6/H10 |
 | `forbidden` / `handled_by_identity_aware_proxy` | H8 |
 | Mixed 503/504 across **multiple services** | H9 (DNS) / H12 (network infra) |
@@ -346,19 +209,7 @@ Skewed = single client/DDoS (H4). Uniform = organic or pod-side.
 
 ### 1e — Deploy Gate (H7)
 
-```bash
-gcloud logging read \
-  'resource.type="k8s_cluster"
-   protoPayload.resourceName=~"namespaces/'$NAMESPACE'/deployments/"
-   protoPayload.methodName=~"\.deployments\.(create|update|patch|replace)"
-   resource.labels.cluster_name="'$CLUSTER'"
-   timestamp>="'$T_START_MINUS_2H'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT \
-  --order=asc \
-  --format="table(timestamp,protoPayload.authenticationInfo.principalEmail,protoPayload.methodName,protoPayload.resourceName)" \
-  --limit=50
-```
+See `===== 1e — Deploy Gate (H7) =====` in the script output.
 
 No results = H7 ruled out. Results = check system vs manual (1f), set `DEPLOY_TIME` to earliest matching event.
 
@@ -366,96 +217,19 @@ No results = H7 ruled out. Results = check system vs manual (1f), set `DEPLOY_TI
 
 System changes affect multiple pods with low visibility — they score higher than manual changes (+4 vs +2) and should be investigated first when present.
 
-```bash
-# 1. Cluster autoscaler
-gcloud logging read \
-  'resource.type="k8s_cluster"
-   log_name=~"cluster-autoscaler"
-   (textPayload=~"Scale-down|ScaleDown|removing node|evicting pod"
-    OR jsonPayload.message=~"Scale-down|ScaleDown|removing node")
-   timestamp>="'$T_START'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT \
-  --order=asc \
-  --format="table(timestamp,textPayload)" \
-  --limit=50
+Each numbered sub-query below maps to a script section, in order: `===== 1f.1 — Cluster
+Autoscaler =====`, `===== 1f.2 — Node Auto-repair / MIG Recreation =====`, `===== 1f.3 — GKE
+Automatic Upgrades =====`, `===== 1f.4 — Preemptible/Spot VM Preemption =====`, `===== 1f.5 — Node
+Pool Resize =====`, `===== 1f.6 — HPA Scale Events =====`, `===== 1f.7 — Maintenance Window =====`,
+`===== 1f.8 — IAM / Workload Identity Policy Changes (critical window T-6h) =====`.
 
-# 2. Node auto-repair — GKE replacing unhealthy node
-gcloud logging read \
-  'resource.type="gce_instance"
-   protoPayload.methodName=~"compute.instances.insert|compute.instances.delete"
-   protoPayload.authenticationInfo.principalEmail=~"system:|gke-|container-engine"
-   timestamp>="'$T_START'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT \
-  --order=asc \
-  --format="table(timestamp,protoPayload.methodName,protoPayload.authenticationInfo.principalEmail,protoPayload.resourceName)" \
-  --limit=30
+Note on 1f.2: the MIG deletes/recreates VMs as `<projnum>@cloudservices.gserviceaccount.com`
+(user-agent "GCE Managed Instance Group for GKE") — that principal is NOT `system:|gke-|
+container-engine`, so the script matches it explicitly or these deletes would be invisible. A
+burst of such deletes = the MIG recreating the fleet (often driven by a REPAIR_CLUSTER — see 1i).
 
-# 3. GKE automatic upgrades (control plane or node pool)
-gcloud logging read \
-  'resource.type="gce_instance" OR resource.type="gke_cluster"
-   (protoPayload.methodName=~"UpdateCluster|SetNodePoolVersion|UpdateNodePool"
-    OR textPayload=~"upgrade|Upgrading")
-   timestamp>="'$T_START_MINUS_2H'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT \
-  --order=asc \
-  --format="table(timestamp,protoPayload.methodName,textPayload)" \
-  --limit=30
-
-# 4. Preemptible/Spot VM preemption — GCE terminates node with 30s warning
-gcloud logging read \
-  'resource.type="gce_instance"
-   protoPayload.methodName="compute.instances.preempted"
-   timestamp>="'$T_START'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT \
-  --order=asc \
-  --format="table(timestamp,resource.labels.instance_id,protoPayload.resourceName)" \
-  --limit=20
-
-# 5. Node pool resize (automatic or manual)
-gcloud logging read \
-  'resource.type="gke_nodepool"
-   protoPayload.methodName=~"SetNodePoolSize|SetNodePoolAutoscaling"
-   timestamp>="'$T_START_MINUS_2H'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT \
-  --order=asc \
-  --format="table(timestamp,protoPayload.authenticationInfo.principalEmail,protoPayload.methodName)" \
-  --limit=20
-
-# 6. HPA scale events — automatic scaling can cascade failures
-gcloud logging read \
-  'resource.type="k8s_cluster"
-   log_name="projects/'$PROJECT'/logs/events"
-   jsonPayload.involvedObject.kind="HorizontalPodAutoscaler"
-   jsonPayload.reason=~"SuccessfulRescale|DesiredReplicasComputed"
-   resource.labels.namespace_name="'$NAMESPACE'"
-   timestamp>="'$T_START'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT \
-  --order=asc \
-  --format="table(timestamp,jsonPayload.involvedObject.name,jsonPayload.reason,jsonPayload.message)" \
-  --limit=50
-
-# 7. Maintenance window activity
-gcloud container clusters describe $CLUSTER --region=$REGION --project=$PROJECT \
-  --format="value(maintenancePolicy.window.dailyMaintenanceWindow,maintenancePolicy.window.recurringWindow)"
-
-# 8. IAM / Workload Identity policy changes
-gcloud logging read \
-  'protoPayload.serviceName="iam.googleapis.com"
-   (protoPayload.methodName=~"SetIamPolicy|CreateServiceAccountKey|DeleteServiceAccountKey|DisableServiceAccount"
-    OR protoPayload.methodName=~"roles.update|bindings")
-   timestamp>="'$T_START_MINUS_2H'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT \
-  --order=asc \
-  --format="table(timestamp,protoPayload.authenticationInfo.principalEmail,protoPayload.methodName,protoPayload.resourceName)" \
-  --limit=30
-```
+Note on 1f.8: uses the T−6h critical lookback — a key/policy change often only bites later, when
+cached tokens expire.
 
 **HPA cascades:** Scale-down → overload remaining. Scale-up → thundering herd on DB. Flapping → endpoint churn.
 
@@ -479,66 +253,20 @@ gcloud logging read \
 
 ---
 
-### 1g — Node Provisioning & Capacity (H11)
+### 1g — Node Provisioning & Capacity (H11, H16)
 
-Run when pods are stuck `Pending`, the autoscaler keeps trying to scale up, or a scale-up "decides" but no node ever appears. Distinguishes a Kubernetes-level block (H4) from a cloud-provider-level capacity stockout (H11).
+Run when pods are stuck `Pending`, the autoscaler keeps trying to scale up, or a scale-up "decides" but no node ever appears. Distinguishes a Kubernetes-level block (H4) from a cloud-provider capacity stockout (H11 — nodes *can't* be created) and from mere scale-up latency (H16 — nodes *can* be created but haven't arrived within `$PENDING_GRACE_MIN`m).
 
-```bash
-# 1. Autoscaler scale-up decisions and blockers (cluster-autoscaler-visibility)
-gcloud logging read \
-  'resource.type="k8s_cluster"
-   log_name=~"container.googleapis.com%2Fcluster-autoscaler-visibility"
-   resource.labels.cluster_name="'$CLUSTER'"
-   timestamp>="'$T_START'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT \
-  --order=asc \
-  --format="json" \
-  --limit=200
-# Look for jsonPayload.decision.scaleUp (autoscaler wants nodes) and
-# jsonPayload.noScaleUp / noDecisionStatus (why it couldn't). A growing gap between
-# status.autoscaledNodesTarget and .autoscaledNodesCount = decisions never materialized.
-
-# 2. GCE VM create failures — the cloud stockout smoking gun
-gcloud logging read \
-  'resource.type="gce_instance"
-   protoPayload.methodName="v1.compute.instances.insert"
-   (protoPayload.response.error.errors.code=~"ZONE_RESOURCE_POOL_EXHAUSTED|QUOTA_EXCEEDED|RESOURCE_POOL_EXHAUSTED|IP_SPACE_EXHAUSTED"
-    OR protoPayload.status.message=~"exhausted|does not have enough resources|resource pool")
-   timestamp>="'$T_START'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT \
-  --order=asc \
-  --format="table(timestamp,protoPayload.authenticationInfo.principalEmail,protoPayload.response.error.errors.code,protoPayload.status.message)" \
-  --limit=100
-# ZONE_RESOURCE_POOL_EXHAUSTED / RESOURCE_POOL_EXHAUSTED = cloud stockout → H11.
-# QUOTA_EXCEEDED = project/regional quota → H4 (quota) not H11 — check step 4.
-# IP_SPACE_EXHAUSTED = subnet/pod CIDR full → H12 (network), not capacity.
-
-# 3. GKE create/delete churn — robot retrying failed provisions
-gcloud logging read \
-  'resource.type="gce_instance_group_manager"
-   protoPayload.methodName=~"createInstances|deleteInstances"
-   protoPayload.authenticationInfo.principalEmail=~"container-engine-robot|system:"
-   timestamp>="'$T_START'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT \
-  --order=asc \
-  --format="table(timestamp,protoPayload.methodName,protoPayload.resourceName)" \
-  --limit=100
-# Repeated create→delete of the same instance name ~10s apart = provisioning kept failing.
-
-# 4. Rule out quota as the cause — compare usage vs limit for the pool's machine family
-gcloud compute regions describe $REGION --project=$PROJECT \
-  --format="table(quotas.metric,quotas.usage,quotas.limit)" \
-  | grep -iE "CPUS|C2D|E2|N2|N2D|IN_USE_ADDRESSES" || true
-# If usage << limit, quota is NOT the constraint → stockout (H11), not H4.
-
-# 5. Node pool config — single-zone pools have no fallback during a zone stockout
-gcloud container node-pools list --cluster=$CLUSTER --region=$REGION --project=$PROJECT \
-  --format="table(name,config.machineType,initialNodeCount,autoscaling.enabled,locations)"
-# locations with a single zone = a zone stockout fully blocks scale-up (contributing factor).
-```
+Five sub-queries, in order: `===== 1g.1 — Autoscaler Scale-up Decisions/Blockers (H11) =====`
+(look for `jsonPayload.decision.scaleUp` / `noScaleUp`/`noDecisionStatus`; a growing gap between
+`status.autoscaledNodesTarget` and `.autoscaledNodesCount` = decisions never materialized),
+`===== 1g.2 — GCE VM Create Failures (stockout smoking gun, H11) =====` (`ZONE_RESOURCE_POOL_EXHAUSTED`/`RESOURCE_POOL_EXHAUSTED`
+= cloud stockout → H11; `QUOTA_EXCEEDED` = H4-quota, not H11 — check 1g.4; `IP_SPACE_EXHAUSTED` =
+H12, not capacity), `===== 1g.3 — GKE Create/Delete Churn (H11) =====` (repeated create→delete of
+the same instance name ~10s apart = provisioning kept failing), `===== 1g.4 — Quota Headroom Check
+(rules out H4-quota) =====` (usage << limit → quota is not the constraint), `===== 1g.5 — Node
+Pool Topology =====` (a single-zone `locations` list = a zone stockout fully blocks scale-up —
+contributing factor).
 
 **H11 vs H4 (quota):** H11 = GCE returns `ZONE_RESOURCE_POOL_EXHAUSTED` / `RESOURCE_POOL_EXHAUSTED` — physical capacity stockout in the zone, quota has headroom. H4 (quota) = `QUOTA_EXCEEDED` — you hit a project/regional quota ceiling. H4 (HPA) = block is at the Kubernetes layer (maxReplicas or ResourceQuota), no VM create attempt fails.
 
@@ -546,72 +274,98 @@ gcloud container node-pools list --cluster=$CLUSTER --region=$REGION --project=$
 
 Run when connectivity is broadly broken (multiple services, cross-node, or LB→backend) while pods themselves look healthy, or when a VPC/firewall/route/NAT change lands in the window.
 
-```bash
-# 1. VPC / firewall / route / NAT / peering changes (audit log, T-2h lookback)
-gcloud logging read \
-  'protoPayload.serviceName="compute.googleapis.com"
-   protoPayload.methodName=~"compute\.(firewalls|routes|networks|subnetworks|routers|globalAddresses|addresses)\.(insert|update|patch|delete)"
-   timestamp>="'$T_START_MINUS_2H'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT \
-  --order=asc \
-  --format="table(timestamp,protoPayload.authenticationInfo.principalEmail,protoPayload.methodName,protoPayload.resourceName)" \
-  --limit=50
-
-# 2. Cloud NAT port/allocation exhaustion — breaks outbound (dep + DNS + GCP APIs)
-gcloud logging read \
-  'resource.type="nat_gateway"
-   (jsonPayload.allocation_status="DROPPED"
-    OR textPayload=~"OUT_OF_RESOURCES|allocation|dropped")
-   timestamp>="'$T_START'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT \
-  --order=asc \
-  --format="table(timestamp,resource.labels.gateway_name,jsonPayload.allocation_status,textPayload)" \
-  --limit=100
-
-# 3. CNI / pod-sandbox networking failures on nodes
-gcloud logging read \
-  'resource.type="k8s_cluster"
-   log_name="projects/'$PROJECT'/logs/events"
-   jsonPayload.reason=~"FailedCreatePodSandBox|NetworkNotReady|CNI|FailedCreatePodContainer"
-   timestamp>="'$T_START'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT \
-  --order=asc \
-  --format="table(timestamp,jsonPayload.involvedObject.name,jsonPayload.reason,jsonPayload.message)" \
-  --limit=100
-
-# 4. Subnet / pod-IP exhaustion — no free IPs to place new pods/nodes
-gcloud logging read \
-  'resource.type="gce_subnetwork" OR (resource.type="gce_instance" AND protoPayload.response.error.errors.code="IP_SPACE_EXHAUSTED")
-   timestamp>="'$T_START'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT \
-  --order=asc \
-  --format="table(timestamp,protoPayload.methodName,protoPayload.status.message)" \
-  --limit=50
-gcloud container clusters describe $CLUSTER --region=$REGION --project=$PROJECT \
-  --format="value(ipAllocationPolicy.clusterSecondaryRangeName,ipAllocationPolicy.servicesSecondaryRangeName,ipAllocationPolicy.podCidrOverprovisionConfig)" 2>/dev/null
-
-# 5. LB backend health from the network side — healthy pods but LB sees them DOWN = firewall/route
-gcloud compute backend-services get-health $LB_BACKEND_NAME \
-  --global --project=$PROJECT --format="table(status.healthStatus[].instance,status.healthStatus[].healthState)" 2>/dev/null || true
-# GKE health-check firewall ranges are 35.191.0.0/16 and 130.211.0.0/22 — if a firewall
-# change blocks these, backends flip UNHEALTHY while pods pass k8s readiness.
-```
+Five sub-queries, in order: `===== 1h.1 — VPC/Firewall/Route/NAT Changes (H12, T-2h) =====`,
+`===== 1h.2 — Cloud NAT Exhaustion (H12) =====` (breaks outbound: dep + DNS + GCP APIs), `=====
+1h.3 — CNI / Pod-Sandbox Failures (H12) =====`, `===== 1h.4 — Subnet/Pod-IP Exhaustion (H12)
+=====` (no free IPs to place new pods/nodes), `===== 1h.5 — LB Backend Health, Network Side (H12)
+=====` (healthy pods but LB sees them DOWN = firewall/route; GKE health-check firewall ranges are
+35.191.0.0/16 and 130.211.0.0/22 — a firewall change blocking these flips backends UNHEALTHY
+while pods pass k8s readiness).
 
 **H12 vs H6 / H9:** H12 = infrastructure layer (VPC/firewall/route/NAT/subnet) — broad blast radius, often spans multiple services and outbound + inbound, correlates with a network change or NAT/IP exhaustion, and pods/CoreDNS themselves are healthy. H6 = one specific downstream dependency is degraded. H9 = DNS resolution specifically (a common *symptom* of H12 when NAT/upstream breaks — if CoreDNS is healthy but resolution still fails cluster-wide, suspect H12 upstream/NAT over H9).
 
 ---
 
-**Before Phase 2:** Traffic spike? Dominant status code? statusDetails? System change? Manual deploy? Multi-service errors (→ H9/H12)? GCP auth errors (→ H8)? CPU throttling symptoms (→ H10)? Pods stuck Pending with scale-up failing (→ H11)? VPC/firewall/NAT change or broad connectivity loss (→ H12)?
+### 1i — Billing & Node-Reclamation Family (B1 / H13 / H14 / H15)
+
+Run when **whole node pools or all nodes disappear**, node count drops far below the pool's
+`minNodeCount`, nodes are all suspiciously young (fleet recreated), or a billing/lifecycle event
+lands in the window. A disabled billing account makes GCP **suspend/reclaim compute** — nodes
+vanish from the cluster (they do NOT show `NotReady`; they are simply gone) — and when billing is
+restored GKE fires a `REPAIR_CLUSTER` that recreates the fleet. `REPAIR_CLUSTER` is **not in Cloud
+Logging** — only the container operations API shows it.
+
+This family splits into **four independently-reported rules**. Each fires only on an **in-window**
+match (`$T_START..$T_END`) and carries its own severity:
+
+| Rule | Severity | Fires when |
+|------|----------|-----------|
+| **B1**  | 🔴 CRITICAL | any billing-disabled log entry (`BILLING_DISABLED` / "requires billing to be enabled") matches in-window |
+| **H13** | 🟡 WARNING  | an in-window `REPAIR_CLUSTER` **or** `UPGRADE_*` container operation is present |
+| **H14** | 🟡 WARNING  | in-window GKE node VM deletions reach the configured burst (`$NODE_DELETE_BURST`) |
+| **H15** | 🔴/🟡 (per condition) | node **count loss** below `minNodeCount`, **excessive NotReady** nodes, or **mass creation-age reset** — subject to the guards below |
+
+Thresholds (override via env before running the collector): `NODE_DELETE_BURST` (default `3`,
+H14), `NOTREADY_MAX` (default `2`, H15), `AGE_RESET_FRAC` (default `0.5`, H15). The script prints
+the resolved values under `===== Pre-Flight — Resolved Inputs =====`.
+
+**B1 — Billing disabled (CRITICAL).** Field-scoped `textPayload` (a global `"BILLING_DISABLED"`
+search misses it; the string is embedded in a JSON stderr line). The real in-incident payload
+reads like this — note it contains the human string, **not** the token `BILLING_DISABLED`, so the
+`"requires billing to be enabled"` clause is what actually matches:
+
+> `This API method requires billing to be enabled. Please enable billing on project #<PROJECT_NUMBER> by visiting https://console.developers.google.com/billing/enable?project=<PROJECT_NUMBER> then retry. If you enabled billing for this project recently, wait a few minutes for the action to propagate to our systems and retry.`
+
+See `===== 1i — B1 Billing Disabled Scan (critical window T-6h) =====` in the script output. ≥1
+hit in the critical window (T−6h) ⇒ B1 FIRES (CRITICAL): billing was disabled → compute reclaimed.
+The disable event often predates the node loss by minutes-to-hours (propagation), so this scan
+uses the longer `$T_START_CRITICAL` lookback rather than the T−30m symptom window. The same section
+also confirms current billing state and who changed it (billing account disable/re-assign).
+
+**H13 — Repair/upgrade operation (WARNING).** `REPAIR_CLUSTER`/`UPGRADE_*` live in the operations
+API only, never in Cloud Logging.
+
+See `===== 1i — H13 Repair/Upgrade Op Scan (critical window T-6h) =====` in the script output.
+Uses the T−6h lookback: repair/upgrade ops are long-running and often *start* before the 30m
+symptom window. `operationType` exposes *what* ran, never *why* — correlate `startTime` with B1
+(billing re-enable) and H14 (delete burst) to establish the fleet-rebuild chain.
+
+**H14 — Node VM delete burst (WARNING).** Guard: only the MIG's own deletes count (principal =
+`cloudservices` SA, UA "GCE Managed Instance Group for GKE") — human/CI deletes are ordinary
+maintenance, not a reclamation burst.
+
+See `===== 1i — H14 Node VM Delete Burst =====` in the script output — it counts in-window MIG
+deletes and reports whether the `$NODE_DELETE_BURST` threshold is reached.
+
+**H15 — Node count loss / NotReady / creation-age reset (severity per condition, guarded).**
+
+See `===== 1i — H15 Node Count Loss / NotReady / Age Reset =====` in the script output (prints
+`nodes`, `notReady`, `young` counts plus per-pool `minNodeCount` and evaluates both thresholds).
+
+**H15 fires** on any of these — each with its own severity and guard:
+- **count loss** — live `NODES` < summed pool `minNodeCount` (nodes *gone*, not NotReady) ⇒ 🔴 CRITICAL.
+  *Guard:* clear if a planned `SetNodePoolSize`/scale-down (1f #5) or node drain explains the drop.
+- **excessive NotReady** — `NOTREADY ≥ $NOTREADY_MAX` ⇒ 🟡 WARNING.
+  *Guard:* a single flapping node (`< $NOTREADY_MAX`) is noise; NotReady nodes are *present*, which
+  is H3 territory — distinct from B1/reclamation where nodes vanish entirely.
+- **mass creation-age reset** — `YOUNG / NODES ≥ $AGE_RESET_FRAC` (fleet recreated) ⇒ 🟡 WARNING.
+  *Guard:* require the majority fraction; a couple of young nodes from routine autoscaling do not count.
+
+**Family vs H3 vs H11:** the B1/H13/H14/H15 family = nodes **gone** (H15 count below minimum /
+vanished), `BILLING_DISABLED` (B1), `REPAIR_CLUSTER`/`UPGRADE_*` in the operations API (H13), MIG
+delete burst by `cloudservices` SA (H14). H3 = nodes present but `Evicted`/`NotReady` under
+pressure. H11 = nodes stuck `Pending` because new VMs can't be created (`ZONE_RESOURCE_POOL_EXHAUSTED`).
+Single-zone pools make H15 count-loss look total — one zone's reclamation removes the whole pool.
+
+---
+
+**Before Phase 2:** Traffic spike? Dominant status code? statusDetails? System change? Manual deploy? Multi-service errors (→ H9/H12)? GCP auth errors (→ H8)? CPU throttling symptoms (→ H10)? Pods stuck Pending — stockout (→ H11) vs scale-up latency past grace (→ H16)? VPC/firewall/NAT change or broad connectivity loss (→ H12)? **`BILLING_DISABLED` (→ B1), in-window `REPAIR_CLUSTER`/`UPGRADE_*` op (→ H13), MIG node-delete burst (→ H14), or node count below pool minimum / mass creation-age reset (→ H15)?**
 
 ---
 
 ## Phase 2 — Hypothesis Scoring
 
-Score all 12 from Phase 1. No dismissal without evidence — record signals for every H present.
+Score every hypothesis from Phase 1 (H1–H12 and H16, plus the B1/H13/H14/H15 billing/reclamation family). No dismissal without evidence — record signals for every H present. Treat each script `[VERDICT: FIRES-*]` as a **candidate signal**, not a verdict on the incident: it still needs a second independent, time-correlated signal to confirm. A `[VERDICT: UNKNOWN]` means the detector could not run — the hypothesis stays **open** (do not score it 0), and you should note the missing capability rather than rule it out. An `[VERDICT: INFO]` (planned op / recovered state) counts as evidence *against* the hypothesis unless its timing overlaps symptom onset.
 
 ```
 EVIDENCE LEDGER (example — actual ledger should include signals for every scored H)
@@ -632,15 +386,15 @@ Investigate the highest-scoring hypothesis first. When multiple H tie, prefer sy
 
 | Points | Trigger |
 |--------|---------|
-| +4 | System change — autoscaler, node repair, GKE upgrade, preemption, HPA, IAM policy change, CoreDNS change, VPC/firewall/route/NAT change (H12) |
-| +3 | Manual deploy → H7 |
-| +2 | **Direct signal** — required-signal match for any H (OOMKilling+exit 137, Evicted, Unhealthy, pool error, IAM `permission denied`, cluster-wide `no such host`, CPU `limit_utilization`>0.8, `ZONE_RESOURCE_POOL_EXHAUSTED` (H11), NAT/IP-space exhaustion (H12), etc.) |
+| +4 | System change — autoscaler, node repair, GKE upgrade, preemption, HPA, IAM policy change, CoreDNS change, VPC/firewall/route/NAT change (H12), billing account change, in-window `REPAIR_CLUSTER`/`UPGRADE_*` op (H13), or MIG node-delete burst (H14) |
+| +2 | **Direct signal** — required-signal match for any H (OOMKilling+exit 137, Evicted, Unhealthy, pool error, IAM `permission denied`, cluster-wide `no such host`, CPU `limit_utilization`>0.8, `ZONE_RESOURCE_POOL_EXHAUSTED` (H11), pods Pending ≥ `$PENDING_GRACE_MIN`m awaiting scale-up with no stockout (H16), NAT/IP-space exhaustion (H12), `BILLING_DISABLED` (B1, critical), node count below pool minimum / mass creation-age reset (H15), etc.), **or a manual deploy → H7** (a system-driven deploy — GKE upgrade, MIG recreation — scores +4 under System change) |
 | +1 | **Indirect signal** — statusDetails match, traffic spike before failures, single Unhealthy event, ScalingReplicaSet |
 
-### The 12 Hypotheses
+### The Hypotheses (H1–H12, H16 + the B1/H13/H14/H15 family)
 
 | H | Name | Smoking Gun | Required Signal |
 |---|------|-------------|-----------------|
+| B1  | Billing disabled (CRITICAL) | Any in-window billing-disabled log entry → project billing off → compute reclaimed | `BILLING_DISABLED`/"requires billing to be enabled" in logs (in-window) OR billing account disable/re-assign |
 | H1 | OOMKill | `OOMKilling` + exit 137 + mem >85% | exit 137 |
 | H2 | Probe failure | `Unhealthy` + (startup/liveness: high restarts; readiness: endpoint flap) | Unhealthy event |
 | H3 | Node eviction | `Evicted` + node pressure condition + FailedScheduling | Evicted event |
@@ -651,8 +405,12 @@ Investigate the highest-scoring hypothesis first. When multiple H tie, prefer sy
 | H8 | IAM / Workload Identity failure | `permission denied` / `token expired` / `403` to GCP API + WI annotation present | permission-denied error in app logs |
 | H9 | DNS / CoreDNS degradation | `no such host` across multiple pods/services simultaneously + CoreDNS pod CPU spike or restarts | `no such host` errors cluster-wide |
 | H10 | CPU throttling | `cpu/limit_utilization` near 1.0 + probe timeouts but memory flat + no OOMKill event | CPU throttling metric >80% sustained |
-| H11 | Cloud capacity stockout | Pods `Pending` + autoscaler scale-up decided but `autoscaledNodesCount` < `Target` + `ZONE_RESOURCE_POOL_EXHAUSTED` on `instances.insert` + quota has headroom | `ZONE_RESOURCE_POOL_EXHAUSTED`/`RESOURCE_POOL_EXHAUSTED` in GCE audit |
+| H11 | Cloud capacity stockout (CRITICAL, immediate) | Pods `Pending` + autoscaler scale-up decided but `autoscaledNodesCount` < `Target` + `ZONE_RESOURCE_POOL_EXHAUSTED` on `instances.insert` + quota has headroom | `ZONE_RESOURCE_POOL_EXHAUSTED`/`RESOURCE_POOL_EXHAUSTED` in GCE audit |
+| H16 | Scale-up pending latency (CRITICAL after `$PENDING_GRACE_MIN`m) | Unschedulable pods with `TriggeredScaleUp` but no node yet AND **no** stockout error; oldest Pending age ≥ `$PENDING_GRACE_MIN`m (default 10) — below that it is EXPECTED provisioning, not an incident | oldest Pending age ≥ `$PENDING_GRACE_MIN`m with scale-up triggered and no `ZONE_RESOURCE_POOL_EXHAUSTED` |
 | H12 | Network infra / VPC | Broad connectivity loss (multi-service, cross-node, or LB→backend) with pods healthy + VPC/firewall/route/NAT/subnet change or NAT/IP-space exhaustion | Network infra change in audit OR NAT/`IP_SPACE_EXHAUSTED`/CNI failure |
+| H13 | Repair/upgrade op (WARNING) | In-window `REPAIR_CLUSTER` or `UPGRADE_*` container operation (operations API only) | `REPAIR_CLUSTER` or `UPGRADE_*` op with `startTime` in `$T_START..$T_END` |
+| H14 | Node VM delete burst (WARNING) | In-window MIG node VM deletes ≥ `$NODE_DELETE_BURST`, actor = `cloudservices` SA | delete count ≥ `$NODE_DELETE_BURST` by `cloudservices` SA (guard: exclude human/CI deletes) |
+| H15 | Node count loss / NotReady / age reset | Count below `minNodeCount` (CRITICAL) OR NotReady ≥ `$NOTREADY_MAX` (WARNING) OR young-node fraction ≥ `$AGE_RESET_FRAC` (WARNING), past guards | count < summed `minNodeCount` OR `NOTREADY ≥ $NOTREADY_MAX` OR `YOUNG/NODES ≥ $AGE_RESET_FRAC`, unexplained by planned scale-down/drain |
 
 **H2 sub-variants:** Startup (never Ready, high restarts), Liveness (was Ready, high restarts), Readiness (running, endpoint flap, low restarts).
 
@@ -668,7 +426,11 @@ Investigate the highest-scoring hypothesis first. When multiple H tie, prefer sy
 
 **H11 vs H4:** H11 = cloud-provider stockout — autoscaler *decides* to scale up, GCE rejects the VM with `ZONE_RESOURCE_POOL_EXHAUSTED`, quota has headroom. H4 = Kubernetes-level block — HPA at `maxReplicas` or namespace `ResourceQuota` hit; no VM create even attempted. If quota is the ceiling (`QUOTA_EXCEEDED`), that is H4 (quota), not H11.
 
+**H11 vs H16 (two faces of "pods Pending"):** H11 = nodes **cannot** be created — GCE returns `ZONE_RESOURCE_POOL_EXHAUSTED`; CRITICAL the instant it appears and it will not self-resolve. H16 = nodes **can** be created but haven't yet — pods are Pending while the autoscaler provisions. That is normal for the first few minutes, so H16 is CRITICAL **only** once the oldest Pending pod has waited ≥ `$PENDING_GRACE_MIN` minutes (default 10) **and** there is no stockout error. If a stockout is present, the Pending is H11, not H16. If the autoscaler logged `NotTriggerScaleUp` (max-nodes reached / pod doesn't fit), that is H4, not H16. Check H11's stockout scan first, then H16's Pending-age verdict.
+
 **H12 vs H9 vs H6:** H12 = infrastructure layer (VPC/firewall/route/NAT/subnet) — broad blast radius, pods and CoreDNS healthy, correlates with a network change or NAT/IP exhaustion. H9 = DNS resolution specifically, with CoreDNS itself degraded (restarts/SERVFAIL/CPU). H6 = one specific downstream dependency degraded. Cluster-wide `no such host` with *healthy* CoreDNS points upstream (H12 NAT/forwarder), not H9.
+
+**B1/H13/H14/H15 family vs H3 vs H11:** the family = nodes **reclaimed** — they vanish from the node list entirely (a deleted node is *not* `NotReady`, it is gone). B1 (CRITICAL) = the root cause: a disabled billing account (`BILLING_DISABLED` / billing account change). H15 = the node-side symptom: count drops below the pool `minNodeCount`, or the fleet is mass-recreated (creation-age reset). H14 = the MIG delete burst by `cloudservices` SA that reclaims them. H13 = the `REPAIR_CLUSTER`/`UPGRADE_*` op (operations API only) that rebuilds them. H3 = nodes still present but `Evicted`/`NotReady` under memory/disk pressure. H11 = new nodes can't be *created* (`ZONE_RESOURCE_POOL_EXHAUSTED`), pods stuck `Pending`. Single-zone pools make H15 count-loss look like a total outage — one zone's reclamation removes the whole pool. Note: if a total billing outage stops the cluster's own control-plane/logging, the *absence* of expected node/app logs during the window is itself evidence for B1.
 
 ---
 
@@ -678,41 +440,21 @@ Stop at ≥2 independent signals confirming causal chain.
 
 ### H1 — OOMKill
 
-```bash
-# 1. OS-level OOMKill
-gcloud logging read \
-  'resource.type="gce_instance"
-   textPayload=~"oom_kill_process|Out of memory"
-   timestamp>="'$T_START'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT \
-  --order=asc \
-  --format="table(timestamp,resource.labels.instance_id,textPayload)" \
-  --limit=50
+See `===== H1 (OOMKill) — OS-level OOMKill =====` and `===== H1 (OOMKill) — Container names,
+previous logs, memory limits, VPA =====` in the script output (auto-discovers `POD_NAME`; falls
+back to a note if no pod was found — set `$POD_NAME` manually and re-run in that case).
 
-# 2. Container names (needed for Monitoring filter)
-kubectl get pod $POD_NAME -n $NAMESPACE \
-  -o jsonpath='{range .spec.containers[*]}{.name}{"\n"}{end}'
-
-# 3. Memory utilization — Cloud Console Metrics Explorer (MQL):
-#  fetch k8s_container
-#  | metric 'kubernetes.io/container/memory/limit_utilization'
-#  | filter resource.cluster_name == 'CLUSTER'
-#       && resource.namespace_name == 'NAMESPACE'
-#       && resource.pod_name =~ 'SERVICE.*'
-#  | within(30m, d'INCIDENT_TIME_UTC') | every 1m
-# Values >0.85 in 5min before crash = strong H1 confirmation
-
-# 4. Previous container logs — what was app doing before OOM
-kubectl logs $POD_NAME -n $NAMESPACE --previous --timestamps=true 2>/dev/null | tail -300
-
-# 5. Memory limits — is the limit realistic?
-kubectl get pod $POD_NAME -n $NAMESPACE \
-  -o jsonpath='{range .spec.containers[*]}{.name}{"\t"}{"req: "}{.resources.requests.memory}{"\t"}{"lim: "}{.resources.limits.memory}{"\n"}{end}'
-
-# 6. VPA recommendation if installed — was limit undersized?
-kubectl describe vpa -n $NAMESPACE 2>/dev/null
+Memory utilization is not CLI-queryable — run this manually in Cloud Console Metrics Explorer
+(MQL); the script also prints this as a `[MANUAL: ...]` reminder:
 ```
+fetch k8s_container
+| metric 'kubernetes.io/container/memory/limit_utilization'
+| filter resource.cluster_name == 'CLUSTER'
+     && resource.namespace_name == 'NAMESPACE'
+     && resource.pod_name =~ 'SERVICE.*'
+| within(30m, d'INCIDENT_TIME_UTC') | every 1m
+```
+Values >0.85 in 5min before crash = strong H1 confirmation.
 
 **Confirmed if**: oom_kill_process in node syslog + exit 137 + memory utilization >85% in 5min before crash
 **Ruled out if**: no oom_kill_process, exit codes not 137, memory flat
@@ -723,41 +465,16 @@ kubectl describe vpa -n $NAMESPACE 2>/dev/null
 
 **Step 1 — Unhealthy events**
 
-```bash
-gcloud logging read \
-  'resource.type="k8s_cluster"
-   log_name="projects/'$PROJECT'/logs/events"
-   jsonPayload.reason="Unhealthy"
-   resource.labels.namespace_name="'$NAMESPACE'"
-   timestamp>="'$T_START'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT \
-  --order=asc \
-  --format="table(timestamp,jsonPayload.involvedObject.name,jsonPayload.message)" \
-  --limit=200
-```
+See `===== H2 (Probe Failure) — Unhealthy events =====` in the script output.
 
 **Step 2 — Probe configs**
 
-```bash
-kubectl get deployment $DEPLOYMENT -n $NAMESPACE -o json | jq -r '
-  .spec.template.spec.containers[] |
-  "Container: \(.name)",
-  "  startup:   \(.startupProbe // "none" | if type == "object" then tojson else . end)",
-  "  liveness:  \(.livenessProbe // "none" | if type == "object" then tojson else . end)",
-  "  readiness: \(.readinessProbe // "none" | if type == "object" then tojson else . end)"'
-```
+See `===== H2 (Probe Failure) — Probe configs =====` in the script output.
 
 **Step 3 — Check restart count to distinguish sub-variant**
 
-```bash
-# Use POD_SELECTOR from 1b
-kubectl get pods -n $NAMESPACE -l $POD_SELECTOR -o json | jq -r '
-  .items[] | .metadata.name as $pod |
-  .status.containerStatuses[]? |
-  [$pod, .name, .restartCount, .lastState.terminated.exitCode // "-"] | @tsv' | \
-  column -t -s $'\t' -N POD,CONTAINER,RESTARTS,EXIT
-```
+See `===== H2 (Probe Failure) — Restart count / sub-variant + endpoint oscillation + app warnings
+=====` in the script output.
 
 - Restarts HIGH + pod never reached Ready → **startup** probe killing slow-starting app
 - Restarts HIGH + pod was Ready before → **liveness** (exit 0/143/137 all possible — check for `Unhealthy/Liveness` event)
@@ -765,34 +482,11 @@ kubectl get pods -n $NAMESPACE -l $POD_SELECTOR -o json | jq -r '
 
 **Step 4 — Endpoint oscillation (readiness sub-variant)**
 
-```bash
-gcloud logging read \
-  'resource.type="k8s_cluster"
-   protoPayload.resourceName=~"namespaces/'$NAMESPACE'/endpoints/'$SERVICE'"
-   timestamp>="'$T_START'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT \
-  --order=asc \
-  --format="table(timestamp,protoPayload.methodName,protoPayload.response)" \
-  --limit=100
-```
+Same script section as Step 3 above (endpoint mutation query runs alongside the restart-count query).
 
 **Step 5 — App logs around probe failure timestamps**
 
-```bash
-gcloud logging read \
-  'resource.type="k8s_container"
-   resource.labels.cluster_name="'$CLUSTER'"
-   resource.labels.namespace_name="'$NAMESPACE'"
-   resource.labels.pod_name=~"'$SVC_RE'"
-   severity>=WARNING
-   timestamp>="'$T_START'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT \
-  --order=asc \
-  --format="table(timestamp,resource.labels.pod_name,jsonPayload.message,textPayload)" \
-  --limit=300
-```
+Same script section as Step 3 above (app-log warning query runs last in that block).
 
 **Red flags in probe config:**
 - `timeoutSeconds: 1` with any I/O in the handler
@@ -811,70 +505,12 @@ gcloud logging read \
 
 ### H3 — Node Eviction
 
-```bash
-# 1. Eviction events — pod name, node, pressure type
-gcloud logging read \
-  'resource.type="k8s_cluster"
-   log_name="projects/'$PROJECT'/logs/events"
-   jsonPayload.reason="Evicted"
-   resource.labels.namespace_name="'$NAMESPACE'"
-   timestamp>="'$T_START'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT \
-  --order=asc \
-  --format="table(timestamp,jsonPayload.involvedObject.name,jsonPayload.message)" \
-  --limit=100
-
-# 2. Node condition events — what pressure type fired and when
-gcloud logging read \
-  'resource.type="k8s_cluster"
-   log_name="projects/'$PROJECT'/logs/events"
-   jsonPayload.reason=~"NodeHas|NodeNot|Pressure"
-   timestamp>="'$T_START'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT \
-  --order=asc \
-  --format="table(timestamp,jsonPayload.involvedObject.name,jsonPayload.reason,jsonPayload.message)" \
-  --limit=100
-
-# 3. FailedScheduling — evicted pods couldn't find a new node
-gcloud logging read \
-  'resource.type="k8s_cluster"
-   log_name="projects/'$PROJECT'/logs/events"
-   jsonPayload.reason="FailedScheduling"
-   timestamp>="'$T_START'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT \
-  --order=asc \
-  --format="table(timestamp,jsonPayload.involvedObject.name,jsonPayload.message)" \
-  --limit=50
-
-# 4. Node system logs — substitute NODE_INSTANCE_ID from eviction event or: kubectl describe pod $POD_NAME -n $NAMESPACE | grep Node:
-gcloud logging read \
-  'resource.type="gce_instance"
-   resource.labels.instance_id="NODE_INSTANCE_ID"
-   timestamp>="'$T_START'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT \
-  --order=asc \
-  --format="table(timestamp,textPayload,jsonPayload.message)" \
-  --limit=100
-
-# 5. GCE preemption or live migration?
-gcloud logging read \
-  'resource.type="gce_instance"
-   protoPayload.methodName=~"compute.instances.delete|preempted|migrate"
-   timestamp>="'$T_START'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT \
-  --order=asc \
-  --limit=20
-
-# 6. Current node state — conditions summary
-kubectl get nodes -o wide
-kubectl get nodes -o json | jq -r '
-  .items[] | "\(.metadata.name): \(.status.conditions | map(select(.status=="True")) | map(.type) | join(", "))"'
-```
+See `===== H3 (Node Eviction) — Evicted / pressure / FailedScheduling / node syslog / preemption /
+node state =====` in the script output. Covers, in order: eviction events, node condition events,
+FailedScheduling, node syslog (auto-discovered `NODE_INSTANCE_ID` — falls back to a note if
+discovery failed; set `$NODE_INSTANCE_ID` manually via `kubectl describe pod $POD_NAME -n
+$NAMESPACE | grep Node:` and re-run in that case), GCE preemption/migration events, and current
+node conditions summary.
 
 **Confirmed if**: Evicted events + node condition (MemoryPressure/DiskPressure) fires before evictions + FailedScheduling if pods can't reschedule
 **Ruled out if**: no Evicted events, nodes all Ready, pods distributed across multiple healthy nodes
@@ -883,53 +519,11 @@ kubectl get nodes -o json | jq -r '
 
 ### H4 — HPA / Quota Maxed
 
-```bash
-# 1. HPA current state — is it at maxReplicas?
-kubectl get hpa -n $NAMESPACE
-kubectl describe hpa -n $NAMESPACE
-
-# 2. HPA scale events in window
-gcloud logging read \
-  'resource.type="k8s_cluster"
-   log_name="projects/'$PROJECT'/logs/events"
-   jsonPayload.involvedObject.kind="HorizontalPodAutoscaler"
-   resource.labels.namespace_name="'$NAMESPACE'"
-   timestamp>="'$T_START'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT \
-  --order=asc \
-  --format="table(timestamp,jsonPayload.involvedObject.name,jsonPayload.reason,jsonPayload.message)" \
-  --limit=100
-
-# 3. Cluster autoscaler — tried to add nodes and failed?
-gcloud logging read \
-  'resource.type="k8s_cluster"
-   log_name=~"cluster-autoscaler"
-   timestamp>="'$T_START'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT \
-  --order=asc \
-  --format="table(timestamp,textPayload)" \
-  --limit=100
-
-# 4. FailedScheduling — new pods pending, no node capacity
-gcloud logging read \
-  'resource.type="k8s_cluster"
-   log_name="projects/'$PROJECT'/logs/events"
-   jsonPayload.reason="FailedScheduling"
-   timestamp>="'$T_START'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT \
-  --order=asc \
-  --limit=50
-
-# 5. Pod CPU/memory utilization
-kubectl top pods -n $NAMESPACE 2>/dev/null
-
-# 6. Namespace resource quotas — can cause FailedScheduling independent of node capacity
-kubectl describe resourcequota -n $NAMESPACE 2>/dev/null
-# Hard limits on cpu/memory/pods hit → scheduler rejects new pods → HPA can't scale even with node headroom
-```
+See `===== H4 (HPA/Quota) — HPA state, scale events, autoscaler, FailedScheduling, top pods, quota
+=====` in the script output. Covers, in order: current HPA state (is it at `maxReplicas`?), HPA
+scale events, cluster autoscaler activity, FailedScheduling events, pod CPU/memory utilization, and
+namespace ResourceQuota (hard limits on cpu/memory/pods hit → scheduler rejects new pods → HPA
+can't scale even with node headroom).
 
 **503 vs 504**: H4 produces 504s (connection accepted, upstream timed out) not 503s (no endpoint). Pure 503s → H4 unlikely. Mixed → H2+H4 may both be active.
 
@@ -940,56 +534,12 @@ kubectl describe resourcequota -n $NAMESPACE 2>/dev/null
 
 ### H5 — Pool Exhausted
 
-```bash
-# 1. App logs — pool exhaustion signatures
-gcloud logging read \
-  'resource.type="k8s_container"
-   resource.labels.cluster_name="'$CLUSTER'"
-   resource.labels.namespace_name="'$NAMESPACE'"
-   resource.labels.pod_name=~"'$SVC_RE'"
-   (textPayload=~"connection pool|pool exhausted|too many connections|pool timeout|acquire.*timeout|no idle connection|max.*connections.*reached"
-    OR jsonPayload.message=~"connection pool|pool exhausted|too many connections|pool timeout|acquire.*timeout|no idle connection")
-   timestamp>="'$T_START'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT \
-  --order=asc \
-  --format="table(timestamp,resource.labels.pod_name,jsonPayload.message,textPayload)" \
-  --limit=300
-
-# 2. DB server — active connection count at incident time
-#    Cloud SQL: check connections metric
-gcloud logging read \
-  'resource.type="cloudsql_database"
-   timestamp>="'$T_START'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT \
-  --order=asc \
-  --format="table(timestamp,severity,jsonPayload.message,textPayload)" \
-  --limit=100
-
-# 3. DB server — was it healthy? (no errors = pool is the problem, not the DB)
-#    If DB logs are clean while app shows pool errors → H5 confirmed over H6
-gcloud logging read \
-  'resource.type="cloudsql_database"
-   severity>=WARNING
-   timestamp>="'$T_START'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT \
-  --order=asc \
-  --limit=50
-
-# 4. Readiness probe timing — did probe failures follow pool exhaustion messages?
-#    Cross-reference pool error timestamps vs Unhealthy event timestamps
-#    Pool errors must predate probe failures to be causal
-
-# 5. App config — what is max pool size configured?
-#    Check env vars on the deployment for pool-related settings
-kubectl get deployment $DEPLOYMENT -n $NAMESPACE \
-  -o jsonpath='{range .spec.template.spec.containers[*]}{.name}{"\n"}{range .env[*]}{.name}{" = "}{.value}{"\n"}{end}{"\n"}{end}' | \
-  grep -iE "pool|conn|database|db_max|max_conn|pg_pool|hikari|c3p0|drizzle"
-# Look for: DB_POOL_SIZE, DATABASE_POOL_MAX, HIKARI_MAX_POOL_SIZE, PG_POOL_MAX, etc.
-# If value is not set → app uses default (often 10 for most ORMs — easy to exhaust under load)
-```
+See `===== H5 (Pool Exhausted) — App logs, DB logs, pool config =====` in the script output.
+Covers: app-log pool-exhaustion signatures, Cloud SQL logs (active connections / errors), and
+deployment env vars for pool-size config (`DB_POOL_SIZE`, `HIKARI_MAX_POOL_SIZE`, `PG_POOL_MAX`,
+etc. — unset means the app is on an ORM default, often 10, easy to exhaust under load). Cross-
+reference pool-error timestamps against H2's Unhealthy-event timestamps manually — pool errors
+must predate probe failures to be causal.
 
 **H5 vs H6 distinction — critical:**
 | Signal | H5 (pool exhausted) | H6 (dep failure) |
@@ -1008,53 +558,22 @@ kubectl get deployment $DEPLOYMENT -n $NAMESPACE \
 
 Primary downstream dependency is **Memorystore for Redis**. Confirm the app's Redis errors, then correlate with the instance's own health — a Redis failover, OOM, or maxclients ceiling looks identical to app-side connection failure until you check the instance. (For a non-Redis dependency, swap the signatures in step 1 and the instance checks in steps 2–3.)
 
-```bash
-# 1. App logs — Redis client error signatures (connection + server-side)
-gcloud logging read \
-  'resource.type="k8s_container"
-   resource.labels.cluster_name="'$CLUSTER'"
-   resource.labels.namespace_name="'$NAMESPACE'"
-   resource.labels.pod_name=~"'$SVC_RE'"
-   (textPayload=~"redis|:6379|READONLY|LOADING|MISCONF|NOAUTH|WRONGPASS|max number of clients|OOM command not allowed|connection pool|pool timeout|connection reset|ECONNREFUSED|i/o timeout|context deadline exceeded|dial tcp"
-    OR jsonPayload.message=~"redis|:6379|READONLY|LOADING|MISCONF|NOAUTH|max number of clients|OOM command not allowed|connection pool|pool timeout|connection reset|ECONNREFUSED|dial tcp")
-   timestamp>="'$T_START'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT --order=asc \
-  --format="table(timestamp,resource.labels.pod_name,jsonPayload.message,textPayload)" \
-  --limit=300
+See `===== H6 (Dependency/Redis) — App error signatures, instance state, blast radius,
+connectivity =====` in the script output. Covers: app-log Redis client error signatures,
+Memorystore instance state + maintenance/failover audit (`FailoverInstance`/maintenance/restart →
+primary flips, briefly returns READONLY/errors), blast radius across other pods on the same
+instance, and the pod's node/subnet (for the connectivity-path check below).
 
-# 2. Memorystore instance state + maintenance/failover audit
-gcloud redis instances list --region=$REGION --project=$PROJECT \
-  --format="table(name,tier,memorySizeGb,host,port,state,redisVersion)" 2>/dev/null
-gcloud logging read \
-  'resource.type="redis_instance"
-   timestamp>="'$T_START'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT --order=asc \
-  --format="table(timestamp,severity,protoPayload.methodName,jsonPayload.message,textPayload)" \
-  --limit=100
-# FailoverInstance / maintenance / node restart → primary flips, briefly returns READONLY/errors.
-
-# 3. Memorystore health — Metrics Explorer (MQL). Confirms the instance itself, not just the client:
-#  fetch redis_instance
-#  | metric 'redis.googleapis.com/stats/memory/usage_ratio'   # >0.9 → evictions, writes get OOM-rejected
-#      -- also: clients/connected, clients/blocked,
-#      --       stats/reject_connections_count (maxclients hit),
-#      --       stats/evicted_keys, stats/cpu_utilization,
-#      --       replication/master_slave_lag (failover/replica lag)
-#  | filter resource.instance_id =~ '.*' | within(30m, d'INCIDENT_TIME_UTC') | every 1m
-
-# 4. Blast radius — other pods/services on the same Redis also degraded?
-kubectl get pods -n $NAMESPACE -o json | jq -r '
-  .items[] | select(.metadata.name | test("'$SERVICE'") | not) |
-  [.metadata.name,
-   ([.status.containerStatuses[]?.restartCount] | add // 0),
-   ([.status.containerStatuses[]?.ready] | all)] | @tsv' | \
-  column -t -s $'\t' -N POD,RESTARTS,READY | head -20
-
-# 5. Connectivity path — Redis is reached over a private IP in the VPC; rule network in/out (→ H12).
-#    'connection refused/timeout to <redis-host>:6379' while the instance is READY = network, not H6.
-kubectl get pods -n $NAMESPACE -l $POD_SELECTOR -o wide 2>/dev/null | head   # note nodes/subnet
+Memorystore health is not CLI-queryable — run this manually in Cloud Console Metrics Explorer
+(MQL); the script also prints this as a `[MANUAL: ...]` reminder:
+```
+fetch redis_instance
+| metric 'redis.googleapis.com/stats/memory/usage_ratio'   # >0.9 → evictions, writes get OOM-rejected
+    -- also: clients/connected, clients/blocked,
+    --       stats/reject_connections_count (maxclients hit),
+    --       stats/evicted_keys, stats/cpu_utilization,
+    --       replication/master_slave_lag (failover/replica lag)
+| filter resource.instance_id =~ '.*' | within(30m, d'INCIDENT_TIME_UTC') | every 1m
 ```
 
 **Redis signal → cause:**
@@ -1077,43 +596,10 @@ kubectl get pods -n $NAMESPACE -l $POD_SELECTOR -o wide 2>/dev/null | head   # n
 
 **Gate already run in Phase 1e.** No deploy found → stop here. Deploy found → set `DEPLOY_TIME` and continue:
 
-```bash
-# New pod status — stuck in bad state? (use POD_SELECTOR from 1b)
-kubectl get pods -n $NAMESPACE -l $POD_SELECTOR -o json | jq -r '
-  .items | sort_by(.metadata.creationTimestamp) | .[] |
-  [.metadata.name, .metadata.creationTimestamp,
-   (.status.phase),
-   (.status.containerStatuses[]?.state | keys[0] // "-"),
-   (.status.containerStatuses[]?.state.waiting.reason // "-")] | @tsv' | \
-  column -t -s $'\t' -N POD,CREATED,PHASE,STATE,REASON
-
-# Image pull, config, or mount errors on new pods
-gcloud logging read \
-  'resource.type="k8s_cluster"
-   log_name="projects/'$PROJECT'/logs/events"
-   jsonPayload.reason=~"Failed|BackOff|FailedMount|FailedAttachVolume|CreateContainerConfigError"
-   resource.labels.namespace_name="'$NAMESPACE'"
-   timestamp>="'$T_START'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT \
-  --order=asc \
-  --format="table(timestamp,jsonPayload.involvedObject.name,jsonPayload.reason,jsonPayload.message)" \
-  --limit=100
-
-# Check for missing secrets/configmaps referenced by new deployment
-kubectl get deployment $DEPLOYMENT -n $NAMESPACE -o json | jq -r '
-  .spec.template.spec |
-  (.containers[].env[]?.valueFrom.secretKeyRef.name // empty),
-  (.containers[].env[]?.valueFrom.configMapKeyRef.name // empty),
-  (.volumes[]?.secret.secretName // empty),
-  (.volumes[]?.configMap.name // empty)' | sort -u | while read ref; do
-    [ -z "$ref" ] && continue
-    kubectl get secret "$ref" -n $NAMESPACE 2>/dev/null || kubectl get configmap "$ref" -n $NAMESPACE 2>/dev/null || echo "MISSING: $ref"
-done
-
-# Rollout history — what image/config changed?
-kubectl rollout history deployment/$DEPLOYMENT -n $NAMESPACE
-```
+See `===== H7 (Bad Deploy) — New pod status, failure events, missing refs, rollout history =====`
+in the script output. Covers, in order: new-pod status (stuck in a bad state?), image pull/config/
+mount failure events, a check for missing secrets/configmaps referenced by the deployment, and
+rollout history (what image/config changed).
 
 **Confirmed if**: deploy timestamp precedes first error + new pods in ImagePullBackOff/CrashLoopBackOff/CreateContainerConfigError/Pending + endpoint count dropped as old pods terminated
 **Ruled out if**: no deploy changes in [T-2h, T_END] — stop after gate query
@@ -1130,53 +616,12 @@ kubectl rollout history deployment/$DEPLOYMENT -n $NAMESPACE
 
 **Gate:** Only investigate if app logs contain `permission denied`, `403`, `PERMISSION_DENIED`, `token expired`, or `invalid_grant` errors pointing at a GCP API.
 
-```bash
-# 1. App logs — IAM/auth error signatures
-gcloud logging read \
-  'resource.type="k8s_container"
-   resource.labels.cluster_name="'$CLUSTER'"
-   resource.labels.namespace_name="'$NAMESPACE'"
-   resource.labels.pod_name=~"'$SVC_RE'"
-   (textPayload=~"permission denied|PERMISSION_DENIED|403|token expired|invalid_grant|iam|workload identity|metadata server"
-    OR jsonPayload.message=~"permission denied|PERMISSION_DENIED|403|token expired|invalid_grant|iam|workload identity")
-   timestamp>="'$T_START'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT \
-  --order=asc \
-  --format="table(timestamp,resource.labels.pod_name,jsonPayload.message,textPayload)" \
-  --limit=200
-
-# 2. Workload Identity annotation present?
-kubectl get serviceaccount -n $NAMESPACE -o json | jq -r '
-  .items[] | "\(.metadata.name): \(.metadata.annotations["iam.gke.io/gcp-service-account"] // "NO WI ANNOTATION")"'
-
-# 3. IAM policy changes in audit log (window T-2h to T_END)
-gcloud logging read \
-  'protoPayload.serviceName="iam.googleapis.com"
-   (protoPayload.methodName=~"SetIamPolicy|CreateServiceAccountKey|DeleteServiceAccountKey|DisableServiceAccount"
-    OR protoPayload.resourceName=~"'$PROJECT'")
-   timestamp>="'$T_START_MINUS_2H'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT \
-  --order=asc \
-  --format="table(timestamp,protoPayload.authenticationInfo.principalEmail,protoPayload.methodName,protoPayload.resourceName)" \
-  --limit=30
-
-# 4. GKE metadata server reachable from node?
-#    Metadata server 169.254.169.254 — if nodes have --metadata-from-node=false or WI
-#    misconfigured, pods get 403 or empty token
-#    Check: is the pod's service account bound to a GCP SA with the right roles?
-gcloud projects get-iam-policy $PROJECT \
-  --format="table(bindings.role,bindings.members)" \
-  --flatten="bindings[].members" \
-  --filter="bindings.members=serviceAccount:$PROJECT.svc.id.goog[*]" 2>/dev/null | head -40
-
-# 5. Service account key expiry (if not using WI)
-gcloud iam service-accounts keys list \
-  --iam-account="$(kubectl get deployment $DEPLOYMENT -n $NAMESPACE \
-    -o jsonpath='{.spec.template.spec.serviceAccountName}')@$PROJECT.iam.gserviceaccount.com" \
-  --project=$PROJECT 2>/dev/null
-```
+See `===== H8 (IAM/WI) — App auth errors, WI annotations, IAM changes (critical window), IAM
+policy, SA keys =====` in the script output. Covers, in order: app-log IAM/auth error signatures,
+Workload Identity annotation presence per ServiceAccount, IAM policy changes in the audit log
+(critical window T−6h — a key/policy change can predate the failure by hours, until cached tokens
+expire), the project IAM policy filtered to WI-bound members, and service-account key list (if not
+using WI; auto-discovers the deployment's `serviceAccountName`).
 
 **Confirmed if**: `permission denied` / `403` / `token expired` in app logs pointing at GCP API + IAM policy change or key expiry in audit log predating errors, OR WI annotation present but GCP SA binding missing
 **Ruled out if**: no auth/permission errors in app logs, IAM policy unchanged in T-2h window
@@ -1195,58 +640,10 @@ gcloud iam service-accounts keys list \
 
 **Gate:** Only investigate if `no such host` or DNS-related errors appear across **multiple unrelated pods or services** simultaneously, OR if a single service shows persistent DNS failures without a network topology change.
 
-```bash
-# 1. DNS errors across namespace — cluster-wide signal
-gcloud logging read \
-  'resource.type="k8s_container"
-   resource.labels.cluster_name="'$CLUSTER'"
-   (textPayload=~"no such host|dns|lookup failed|NXDOMAIN|SERVFAIL|i/o timeout.*53"
-    OR jsonPayload.message=~"no such host|dns|lookup failed|NXDOMAIN|SERVFAIL")
-   timestamp>="'$T_START'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT \
-  --order=asc \
-  --format="table(timestamp,resource.labels.namespace_name,resource.labels.pod_name,jsonPayload.message,textPayload)" \
-  --limit=200
-
-# 2. CoreDNS pod state
-kubectl get pods -n kube-system -l k8s-app=kube-dns -o wide
-kubectl get pods -n kube-system -l k8s-app=kube-dns -o json | jq -r '
-  .items[] | [.metadata.name, .status.phase,
-   ([.status.containerStatuses[]?.restartCount] | add // 0),
-   (.status.containerStatuses[]?.ready)] | @tsv' | \
-  column -t -s $'\t' -N POD,PHASE,RESTARTS,READY
-
-# 3. CoreDNS logs — errors, timeouts, upstream failures
-gcloud logging read \
-  'resource.type="k8s_container"
-   resource.labels.cluster_name="'$CLUSTER'"
-   resource.labels.namespace_name="kube-system"
-   resource.labels.container_name="coredns"
-   timestamp>="'$T_START'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT \
-  --order=asc \
-  --format="table(timestamp,resource.labels.pod_name,textPayload,jsonPayload.message)" \
-  --limit=200
-
-# 4. CoreDNS CPU/memory — was it throttled or OOMKilled?
-kubectl top pods -n kube-system -l k8s-app=kube-dns 2>/dev/null
-gcloud logging read \
-  'resource.type="k8s_cluster"
-   log_name="projects/'$PROJECT'/logs/events"
-   jsonPayload.involvedObject.namespace="kube-system"
-   jsonPayload.reason=~"OOMKilling|Unhealthy|BackOff"
-   timestamp>="'$T_START'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT \
-  --order=asc \
-  --format="table(timestamp,jsonPayload.involvedObject.name,jsonPayload.reason,jsonPayload.message)" \
-  --limit=50
-
-# 5. CoreDNS ConfigMap — upstream forwarder or rewrite rule changed?
-kubectl get configmap coredns -n kube-system -o yaml
-```
+See `===== H9 (DNS/CoreDNS) — Cluster-wide DNS errors, CoreDNS state/logs/resources/config =====`
+in the script output. Covers, in order: cluster-wide DNS error signatures, CoreDNS pod state,
+CoreDNS logs, CoreDNS CPU/memory + OOMKill/Unhealthy/BackOff events in `kube-system`, and the
+CoreDNS ConfigMap (upstream forwarder / rewrite rule changed?).
 
 **Confirmed if**: `no such host` / `SERVFAIL` errors across multiple pods + CoreDNS pod restarts or CPU spike in the window
 **Ruled out if**: DNS errors limited to one pod/service (likely H6), CoreDNS pods healthy with no restarts, errors persist after CoreDNS recovery
@@ -1264,47 +661,23 @@ kubectl get configmap coredns -n kube-system -o yaml
 
 **Gate:** Only investigate if memory is flat (no OOMKill), exit codes are not 137, and probe timeouts are intermittent rather than consistent. CPU throttling causes slow responses that fail `timeoutSeconds`-tight probes without killing the pod.
 
-```bash
-# 1. CPU limits — is a limit set? Throttling only occurs when limits are set
-kubectl get deployment $DEPLOYMENT -n $NAMESPACE \
-  -o jsonpath='{range .spec.template.spec.containers[*]}{.name}{"\t"}{"req: "}{.resources.requests.cpu}{"\t"}{"lim: "}{.resources.limits.cpu}{"\n"}{end}'
+See `===== H10 (CPU Throttling) — CPU limits, probe timeoutSeconds, Unhealthy events, node CPU
+=====` in the script output. Covers: configured CPU requests/limits, probe `timeoutSeconds`/
+`periodSeconds` (timeoutSeconds=1 default + CPU throttled → probe times out → pod killed/
+excluded), Unhealthy events (present same as H2 but distinguish via no OOMKill + memory flat), and
+node CPU pressure/`kubectl top nodes`.
 
-# 2. CPU utilization — Cloud Console Metrics Explorer (MQL):
-#  fetch k8s_container
-#  | metric 'kubernetes.io/container/cpu/limit_utilization'
-#  | filter resource.cluster_name == 'CLUSTER'
-#       && resource.namespace_name == 'NAMESPACE'
-#       && resource.pod_name =~ 'SERVICE.*'
-#  | within(30m, d'INCIDENT_TIME_UTC') | every 1m
-# Values >0.8 sustained = strong H10 signal
-
-# 3. Probe config — is timeoutSeconds tight?
-kubectl get deployment $DEPLOYMENT -n $NAMESPACE -o json | jq -r '
-  .spec.template.spec.containers[] |
-  "Container: \(.name)",
-  "  liveness timeoutSeconds:  \(.livenessProbe.timeoutSeconds // "default(1)")",
-  "  readiness timeoutSeconds: \(.readinessProbe.timeoutSeconds // "default(1)")",
-  "  liveness periodSeconds:   \(.livenessProbe.periodSeconds // "default(10)")"'
-# timeoutSeconds=1 (default) + CPU throttled → probe times out → pod killed/excluded
-
-# 4. Unhealthy events — will be present (same as H2) but distinguish: H10 has no OOMKill + memory flat
-gcloud logging read \
-  'resource.type="k8s_cluster"
-   log_name="projects/'$PROJECT'/logs/events"
-   jsonPayload.reason="Unhealthy"
-   resource.labels.namespace_name="'$NAMESPACE'"
-   timestamp>="'$T_START'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT \
-  --order=asc \
-  --format="table(timestamp,jsonPayload.involvedObject.name,jsonPayload.message)" \
-  --limit=100
-
-# 5. Node CPU pressure
-kubectl get nodes -o json | jq -r '
-  .items[] | "\(.metadata.name): \(.status.conditions | map(select(.type=="Ready")) | .[0].status)"'
-kubectl top nodes 2>/dev/null
+CPU utilization is not CLI-queryable — run this manually in Cloud Console Metrics Explorer (MQL);
+the script also prints this as a `[MANUAL: ...]` reminder:
 ```
+fetch k8s_container
+| metric 'kubernetes.io/container/cpu/limit_utilization'
+| filter resource.cluster_name == 'CLUSTER'
+     && resource.namespace_name == 'NAMESPACE'
+     && resource.pod_name =~ 'SERVICE.*'
+| within(30m, d'INCIDENT_TIME_UTC') | every 1m
+```
+Values >0.8 sustained = strong H10 signal.
 
 **Confirmed if**: CPU `limit_utilization` >0.8 sustained before probe failures + probe `timeoutSeconds` ≤ 1 + no OOMKill, memory flat + Unhealthy events present
 **Ruled out if**: CPU headroom available, timeoutSeconds generous (≥5), exit codes are 137 (→ H1 instead)
@@ -1322,56 +695,42 @@ kubectl top nodes 2>/dev/null
 
 ### H11 — Cloud Capacity Stockout
 
-**Gate:** Only investigate if pods are stuck `Pending`/`FailedScheduling` AND the autoscaler tried to add nodes but they never appeared. If quota is the ceiling (`QUOTA_EXCEEDED`) or the block is HPA/ResourceQuota, that is H4 — not H11.
+**Gate:** Only investigate if pods are stuck `Pending`/`FailedScheduling` AND the autoscaler tried to add nodes. H11 is specifically the case where the nodes **cannot** be created. If quota is the ceiling (`QUOTA_EXCEEDED`) or the block is HPA/ResourceQuota, that is H4 — not H11. If nodes *can* be created but simply haven't arrived yet, that is **H16** (scale-up latency), not H11.
 
-```bash
-# 1. Pending pods and why the scheduler couldn't place them
-kubectl get pods -A --field-selector=status.phase=Pending -o wide 2>/dev/null | head -40
-gcloud logging read \
-  'resource.type="k8s_cluster"
-   log_name="projects/'$PROJECT'/logs/events"
-   jsonPayload.reason="FailedScheduling"
-   timestamp>="'$T_START'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT --order=asc \
-  --format="table(timestamp,jsonPayload.involvedObject.namespace,jsonPayload.involvedObject.name,jsonPayload.message)" \
-  --limit=100
+See `===== H11 (Capacity Stockout) — Pending pods, stockout errors, quota, topology =====` in the
+script output. Covers, in order: pending pods + FailedScheduling reasons, GCE stockout errors on
+instance creation (the smoking gun), an explicit **H11 FIRES (CRITICAL)** / does-not-fire verdict,
+quota headroom (rules out H4-quota), and node pool topology (single-zone = no fallback, contributing
+factor).
 
-# 2. Autoscaler target vs actual — the materialization gap
-gcloud logging read \
-  'resource.type="k8s_cluster"
-   log_name=~"container.googleapis.com%2Fcluster-autoscaler-visibility"
-   resource.labels.cluster_name="'$CLUSTER'"
-   timestamp>="'$T_START'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT --order=asc --format="json" --limit=200
-# scaleUp decisions present + status.autoscaledNodesTarget > .autoscaledNodesCount = decided, never delivered.
-
-# 3. GCE stockout errors on instance creation (the smoking gun)
-gcloud logging read \
-  'resource.type="gce_instance"
-   protoPayload.methodName="v1.compute.instances.insert"
-   protoPayload.response.error.errors.code=~"ZONE_RESOURCE_POOL_EXHAUSTED|RESOURCE_POOL_EXHAUSTED"
-   timestamp>="'$T_START'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT --order=asc \
-  --format="table(timestamp,protoPayload.response.error.errors.code,protoPayload.status.message)" \
-  --limit=100 | tee /dev/stderr | wc -l   # count = number of failed create attempts
-
-# 4. Confirm quota is NOT the constraint (rules H4-quota out)
-gcloud compute regions describe $REGION --project=$PROJECT \
-  --format="table(quotas.metric,quotas.usage,quotas.limit)" \
-  | grep -iE "CPUS|C2D|E2|N2|N2D" || true
-
-# 5. Node pool topology — single-zone pool with no fallback family (contributing factor)
-gcloud container node-pools list --cluster=$CLUSTER --region=$REGION --project=$PROJECT \
-  --format="table(name,config.machineType,autoscaling.enabled,autoscaling.minNodeCount,autoscaling.maxNodeCount,locations)"
-```
-
-**Confirmed if**: pods `Pending` + autoscaler scale-up decisions + `autoscaledNodesTarget` > `autoscaledNodesCount` gap + `ZONE_RESOURCE_POOL_EXHAUSTED` on `instances.insert` + quota under limit
-**Ruled out if**: no stockout errors (create fails with `QUOTA_EXCEEDED` → H4-quota; no create attempted → H4-HPA/ResourceQuota), or nodes provisioned fine
+**Confirmed if**: pods `Pending` + `ZONE_RESOURCE_POOL_EXHAUSTED`/`RESOURCE_POOL_EXHAUSTED` on `instances.insert` + quota under limit — fires CRITICAL immediately, will not self-resolve
+**Ruled out if**: no stockout errors (create fails with `QUOTA_EXCEEDED` → H4-quota; no create attempted → H4-HPA/ResourceQuota; created but slow → H16), or nodes provisioned fine
 
 **Contributing factors to note**: single-zone node pool `locations` (no multi-zone fallback), no alternate machine-family pool with autoscaling enabled, no capacity reservation for baseline footprint.
+
+---
+
+### H16 — Scale-up Pending Latency
+
+**Gate:** Investigate when pods are `Pending`/`Unschedulable` and the autoscaler **did** trigger a scale-up (`TriggeredScaleUp`) but the nodes have not become Ready yet, **and H11's stockout scan came back clean**. This is normal for the first few minutes of provisioning, so H16 is an incident **only** once the wait exceeds the grace period.
+
+See `===== H16 (Scale-up Pending Latency) — pods Pending awaiting new nodes past grace =====` in the
+script output. It reports the unschedulable-pod count, the **oldest Pending age in seconds** vs the
+grace (`$PENDING_GRACE_MIN`m, default 10), whether a stockout is present, the `TriggeredScaleUp` /
+`NotTriggerScaleUp` autoscaler events, and an explicit verdict:
+
+- **H16 FIRES (CRITICAL)** — oldest Pending age ≥ grace, no stockout, **and** a `TriggeredScaleUp` in the window: the autoscaler asked for nodes but they aren't arriving. Check 1g.4 quota, IP space (H12), or node boot failures.
+- **NOT H16 → H4** — age ≥ grace but the autoscaler logged `NotTriggerScaleUp` (max-nodes reached / pod fits no pool): pods stay Pending until replicas/quota/pool-max change. Score under H4.
+- **H16 LIKELY** — age ≥ grace, no stockout, but no scale-up decision logged in the window: confirm a scale-up was attempted (1g.1) before scoring H16 vs H4.
+- **H16 EXPECTED (not yet an incident)** — Pending within grace: autoscaler provisioning in progress; re-check after `$PENDING_GRACE_MIN`m.
+- **does not fire** — no unschedulable pods, or the Pending is explained by an H11 stockout (fix capacity, not latency).
+
+> The Pending-age verdict is a **live** `kubectl` snapshot; the `TriggeredScaleUp`/`FailedScheduling` evidence is windowed to `T_START..T_END`. For a past/recovered incident, trust the windowed events over a live "does not fire".
+
+**Confirmed if**: unschedulable pods with `TriggeredScaleUp` + oldest Pending age ≥ `$PENDING_GRACE_MIN`m + **no** `ZONE_RESOURCE_POOL_EXHAUSTED`
+**Ruled out if**: Pending within grace (expected), a stockout is present (→ H11), the autoscaler logged `NotTriggerScaleUp`/max-nodes (→ H4), or no pods are Pending
+
+**Tuning:** lower `PENDING_GRACE_MIN` to flag slow scale-ups sooner (risks firing on normal-but-slow provisioning — large images, NAP node creation, cold MIG); raise it to reduce false positives at the cost of slower detection.
 
 ---
 
@@ -1379,63 +738,54 @@ gcloud container node-pools list --cluster=$CLUSTER --region=$REGION --project=$
 
 **Gate:** Only investigate if connectivity is broadly broken (multiple services, cross-node, or LB→backend) while pods and CoreDNS look healthy, OR a VPC/firewall/route/NAT/subnet change lands in [T-2h, T_END].
 
-```bash
-# 1. VPC / firewall / route / NAT / peering changes (audit, T-2h lookback)
-gcloud logging read \
-  'protoPayload.serviceName="compute.googleapis.com"
-   protoPayload.methodName=~"compute\.(firewalls|routes|networks|subnetworks|routers)\.(insert|update|patch|delete)"
-   timestamp>="'$T_START_MINUS_2H'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT --order=asc \
-  --format="table(timestamp,protoPayload.authenticationInfo.principalEmail,protoPayload.methodName,protoPayload.resourceName)" \
-  --limit=50
-
-# 2. Cloud NAT drops / port exhaustion — kills outbound to deps, DNS upstream, GCP APIs
-gcloud logging read \
-  'resource.type="nat_gateway"
-   (jsonPayload.allocation_status="DROPPED" OR textPayload=~"OUT_OF_RESOURCES|dropped")
-   timestamp>="'$T_START'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT --order=asc \
-  --format="table(timestamp,resource.labels.gateway_name,jsonPayload.allocation_status)" \
-  --limit=100
-
-# 3. CNI / pod-sandbox failures on nodes
-gcloud logging read \
-  'resource.type="k8s_cluster"
-   log_name="projects/'$PROJECT'/logs/events"
-   jsonPayload.reason=~"FailedCreatePodSandBox|NetworkNotReady|CNI"
-   timestamp>="'$T_START'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT --order=asc \
-  --format="table(timestamp,jsonPayload.involvedObject.name,jsonPayload.reason,jsonPayload.message)" \
-  --limit=100
-
-# 4. Subnet / pod-IP exhaustion
-gcloud logging read \
-  'protoPayload.response.error.errors.code="IP_SPACE_EXHAUSTED"
-   timestamp>="'$T_START'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT --order=asc \
-  --format="table(timestamp,protoPayload.methodName,protoPayload.status.message)" \
-  --limit=50
-
-# 5. LB backend health from the network side (healthy pods but LB sees DOWN = firewall/route)
-gcloud compute backend-services get-health $LB_BACKEND_NAME \
-  --global --project=$PROJECT \
-  --format="table(status.healthStatus[].instance,status.healthStatus[].healthState)" 2>/dev/null || true
-# GKE health-check ranges 35.191.0.0/16, 130.211.0.0/22 — a firewall change blocking these
-# flips backends UNHEALTHY while pods still pass k8s readiness.
-
-# 6. Confirm pods/CoreDNS are healthy (proves the failure is infra, not app/DNS)
-kubectl get pods -n $NAMESPACE -l $POD_SELECTOR -o wide 2>/dev/null | head
-kubectl get pods -n kube-system -l k8s-app=kube-dns -o wide 2>/dev/null
-```
+Steps 1-5 are identical to the 1h queries already run in the broad sweep — see `=====
+1h.1-1h.5 =====` in the script output. Step 6 (confirm pods/CoreDNS are healthy, proving the
+failure is infra not app/DNS) is under `===== H12 (Network/VPC) — Confirm pods/CoreDNS healthy
+(deep-dive queries already run in 1h) =====`.
 
 **Confirmed if**: network infra change (or NAT/IP-space exhaustion, or CNI failures) in window + broad connectivity loss across services/nodes + pods and CoreDNS healthy + (LB backends UNHEALTHY while k8s readiness passes, if LB-fronted)
 **Ruled out if**: connectivity failures isolated to one dependency (→ H6), CoreDNS itself degraded (→ H9), no network change and NAT/subnet have headroom
 
 **Contributing factors to note**: overly broad firewall/route edits, Cloud NAT undersized (min ports per VM), small pod/subnet secondary ranges near exhaustion, single NAT gateway with no redundancy.
+
+---
+
+### B1 / H13 / H14 / H15 — Billing & Node Reclamation
+
+Deep-dive for the four family rules (B1 billing-disabled, H13 repair/upgrade op, H14 delete burst,
+H15 node count-loss/NotReady/age-reset). The 1i fingerprint already reports which rules fired; this
+step bounds the outage and proves the causal chain between them.
+
+**Gate:** Only investigate if node count dropped below the pool `minNodeCount` / whole pools
+disappeared, nodes are all younger than the incident window (fleet recreated), a `BILLING_DISABLED`
+log or billing account change appears, or a `REPAIR_CLUSTER`/`UPGRADE_*` op is present. Ran the fingerprint in 1i.
+
+See `===== B1/H13/H14/H15 (Billing & Node Reclamation) — outage span + REPAIR_CLUSTER op detail
+=====` in the script output. Covers, in order: billing disable/enable timeline (critical window
+T−6h), first/last `BILLING_DISABLED`/"requires billing to be enabled" occurrence (bounds the
+outage — T−6h so the FIRST occurrence isn't clipped when the disable predates the node loss),
+node VM delete burst per-minute count + actor confirmation (user-agent "GCE Managed Instance Group
+for GKE", principal `cloudservices` SA), and `REPAIR_CLUSTER`/upgrade/resize ops via the
+operations API (NOT Cloud Logging — `statusMessage`/`error`/`detail` are empty; GKE does not
+expose the trigger reason, so correlate `startTime` with the billing re-enable manually to
+establish causation).
+
+**Per-rule verdict:**
+- **B1 (CRITICAL) confirmed if** ≥1 in-window billing-disabled entry OR a billing account disable/re-assign; **ruled out if** `billingEnabled=True` throughout with no account change and no in-window billing-disabled logs.
+- **H13 (WARNING) confirmed if** an in-window `REPAIR_CLUSTER`/`UPGRADE_*` op is present; **ruled out if** none in `$T_START..$T_END`.
+- **H14 (WARNING) confirmed if** in-window MIG deletes ≥ `$NODE_DELETE_BURST` by the `cloudservices` SA; **ruled out if** below burst or deletes are human/CI.
+- **H15 confirmed if** count < summed `minNodeCount` (CRITICAL) / NotReady ≥ `$NOTREADY_MAX` (WARNING) / young fraction ≥ `$AGE_RESET_FRAC` (WARNING) past its guard; **ruled out if** node count matches pool config, NotReady below threshold, and no mass age reset.
+
+**Full-outage confirmed if**: B1 fires + H15 count-loss + H14 delete burst + (usually) H13 `REPAIR_CLUSTER` starting right after billing is restored.
+
+**Causal order:** B1 billing disabled → compute reclaimed (H14 delete burst → H15 nodes vanish, workloads 503) → billing
+restored → H13 `REPAIR_CLUSTER` → MIG recreates fleet → H15 creation-age reset, nodes rejoin. The billing event must
+**predate** the node loss; an H13 `REPAIR_CLUSTER` with no preceding B1/pressure signal is a
+routine repair, not this family.
+
+**Contributing factors to note**: single-zone node pools (one zone's reclamation removes the
+whole pool), no Cloud Billing budget/`billingEnabled` alert to page before nodes are reclaimed,
+payment method expiry / billing account closure, spending cap hit.
 
 ---
 
@@ -1446,9 +796,9 @@ Complete all before RCA.
 | # | Check | Rule |
 |---|-------|------|
 | 1 | Timestamp order | Root cause < all downstream. Out-of-order = invalid |
-| 2 | Two signals | Each confirmed H needs ≥2 independent signals. Examples — H1: oom_kill + exit 137. H2: Unhealthy + endpoint flap. H3: Evicted + node pressure. H4: HPA at max + FailedScheduling. H5: pool error + DB conn at max. H6: Redis error + instance-side signal (failover/OOM/maxclients). H7: deploy event + new-pod failure state. H8: permission-denied + IAM/key change. H9: cluster-wide DNS errors + CoreDNS restarts. H10: CPU>0.8 + tight probe timeout. H11: `ZONE_RESOURCE_POOL_EXHAUSTED` + autoscaler target>count gap (quota clear). H12: network change or NAT/IP exhaustion + broad connectivity loss with healthy pods. |
+| 2 | Two signals | Each confirmed H needs ≥2 independent signals. Examples — H1: oom_kill + exit 137. H2: Unhealthy + endpoint flap. H3: Evicted + node pressure. H4: HPA at max + FailedScheduling. H5: pool error + DB conn at max. H6: Redis error + instance-side signal (failover/OOM/maxclients). H7: deploy event + new-pod failure state. H8: permission-denied + IAM/key change. H9: cluster-wide DNS errors + CoreDNS restarts. H10: CPU>0.8 + tight probe timeout. H11: `ZONE_RESOURCE_POOL_EXHAUSTED` + autoscaler target>count gap (quota clear). H16: pods Pending ≥ `$PENDING_GRACE_MIN`m + `TriggeredScaleUp` with no stockout (quota/IP clear). H12: network change or NAT/IP exhaustion + broad connectivity loss with healthy pods. B1/H13/H14/H15 family: B1 `BILLING_DISABLED`/billing account change + H15 node count below pool minimum + H14 MIG delete burst + H13 `REPAIR_CLUSTER`/`UPGRADE_*` op (B1 alone is enough to confirm the critical root cause). |
 | 3 | Parsimony | One H explains all signals? Don't force-fit a second |
-| 4 | Required signal | H1: 137. H2: Unhealthy. H3: Evicted. H4: HPA max or quota hit. H5: pool msg. H6: Redis error + instance-side signal. H7: deploy event. H8: permission-denied in logs. H9: no-such-host cluster-wide. H10: CPU throttle >0.8 + tight probe timeout. H11: `ZONE_RESOURCE_POOL_EXHAUSTED` in GCE audit. H12: network infra change OR NAT/`IP_SPACE_EXHAUSTED`/CNI failure |
+| 4 | Required signal | H1: 137. H2: Unhealthy. H3: Evicted. H4: HPA max or quota hit. H5: pool msg. H6: Redis error + instance-side signal. H7: deploy event. H8: permission-denied in logs. H9: no-such-host cluster-wide. H10: CPU throttle >0.8 + tight probe timeout. H11: `ZONE_RESOURCE_POOL_EXHAUSTED` in GCE audit. H16: oldest Pending age ≥ `$PENDING_GRACE_MIN`m with `TriggeredScaleUp` and no stockout. H12: network infra change OR NAT/`IP_SPACE_EXHAUSTED`/CNI failure. B1: in-window billing-disabled log (CRITICAL). H13: in-window `REPAIR_CLUSTER`/`UPGRADE_*` op. H14: MIG delete burst ≥ `$NODE_DELETE_BURST`. H15: node count below minimum / mass creation-age reset |
 | 5 | User match | Data ≠ reported time? Real incident started earlier |
 | 6 | Traffic direction | A) spike < k8s event → traffic caused (H4/H1). B) k8s event < spike → retry storm. C) flat → pod-only |
 
@@ -1548,6 +898,7 @@ MTTM:        <first alert → service fully restored>
 ### Hypotheses Evaluated
 | #   | Hypothesis                          | Verdict   | Key Evidence                                       |
 |-----|-------------------------------------|-----------|----------------------------------------------------|
+| B1  | Billing disabled (CRITICAL)         | RULED OUT | billing enabled throughout, no in-window billing-disabled logs |
 | H1  | OOMKill → restart cascade           | CONFIRMED | exit 137 + oom_kill_process + mem spike            |
 | H2  | Probe failure (liveness/readiness)  | RULED OUT | no Unhealthy events                                |
 | H3  | Node pressure → eviction            | RULED OUT | no Evicted events, nodes all Ready                 |
@@ -1560,6 +911,9 @@ MTTM:        <first alert → service fully restored>
 | H10 | CPU throttling → probe timeout      | RULED OUT | CPU headroom available, exit codes not probe-kill  |
 | H11 | Cloud capacity stockout             | RULED OUT | no ZONE_RESOURCE_POOL_EXHAUSTED, nodes provisioned  |
 | H12 | Network infra / VPC                  | RULED OUT | no network change, NAT/subnet headroom, pods healthy|
+| H13 | Repair/upgrade op (WARNING)         | RULED OUT | no in-window REPAIR_CLUSTER/UPGRADE_* op |
+| H14 | Node VM delete burst (WARNING)      | RULED OUT | in-window MIG deletes below $NODE_DELETE_BURST |
+| H15 | Node count loss / NotReady / age reset | RULED OUT | node count matches pool config, NotReady below threshold, no mass age reset |
 
 ---
 
@@ -1579,9 +933,13 @@ MTTM:        <first alert → service fully restored>
 
 ## Safety Rules
 
-**Allowed:** `kubectl get/describe/logs/top/rollout history`, `gcloud logging read`, `gcloud monitoring metrics list`, `gcloud compute/container describe`, `gcloud auth list`, `gcloud config get-value`, `gcloud container clusters get-credentials` after confirmation
+**Allowed:** `kubectl get/describe/logs/top/rollout history`, `gcloud logging read`, `gcloud monitoring metrics list`, `gcloud compute/container describe`, `gcloud container operations list`, `gcloud container node-pools list`, `gcloud billing projects describe`, `gcloud auth list`, `gcloud config get-value`, `gcloud container clusters get-credentials` after confirmation
 
 **Never:** `kubectl apply/delete/edit/patch/exec/cp/port-forward`, `gcloud create/delete/update/set/patch`. Redact secrets.
+
+`scripts/gke-collect.sh` is the canonical way to run the Phase 1/3 read-only sweep — every command
+inside it stays within the Allowed list above, and the only state-mutating step
+(`get-credentials`, kubeconfig only) is gated behind an explicit `--get-credentials` flag.
 
 ---
 
@@ -1597,7 +955,7 @@ MTTM:        <first alert → service fully restored>
 | Pod | Multi-container: which crashed? | Specify `--container` |
 | Pod | Restarts=0 ≠ healthy | H2 readiness: running but excluded |
 | Pod | Startup vs liveness event | Message says "Startup probe failed" |
-| Codes | 503 vs 504 | 503 = no healthy/reachable backend (H1/H2/H3/H7/H8/H9/H12). 504 = timeout (H4/H5/H6/H10) |
+| Codes | 503 vs 504 | 503 = no healthy/reachable backend (H1/H2/H3/H7/H8/H9/H11/H12/B1+H15). 504 = timeout (H4/H5/H6/H10) |
 | Codes | 502 timing | `backend_connection_closed` = died mid-request. `failed_to_connect` = already dead |
 | Time | GCP timestamps UTC | Convert user timezone first |
 | Time | H6 causal direction | Dep errors must predate probe failures |
@@ -1620,6 +978,12 @@ MTTM:        <first alert → service fully restored>
 | H11 | Stockout misread as quota | `ZONE_RESOURCE_POOL_EXHAUSTED` = H11 (capacity). `QUOTA_EXCEEDED` = H4-quota. Check region quota usage vs limit |
 | H11 | Autoscaler "works" but no nodes | Scale-up *decision* ≠ node created; watch `autoscaledNodesTarget` > `autoscaledNodesCount` gap and create/delete churn by `container-engine-robot` |
 | H11 | Single-zone pool hides fallback | A zone stockout fully blocks a single-zone pool; multi-zone or NAP would have fallback |
+| H16 | Pending ≠ instant incident | Pods Pending during a scale-up is EXPECTED for the first few minutes; only CRITICAL once oldest Pending age ≥ `$PENDING_GRACE_MIN`m AND no stockout (else H11). `NotTriggerScaleUp`/max-nodes = H4, not H16 |
 | H12 | Network infra looks like H6/H9 | H12 = broad blast radius + healthy pods/CoreDNS + network change/NAT/IP exhaustion. H6 = one dep. H9 = CoreDNS itself degraded |
 | H12 | Healthy pods but LB UNHEALTHY | Firewall change blocking GKE health-check ranges (35.191.0.0/16, 130.211.0.0/22) flips backends down while k8s readiness passes |
 | H12 | `IP_SPACE_EXHAUSTED` ≠ capacity | Subnet/pod-CIDR exhaustion is a network (H12) problem, not a machine stockout (H11) |
+| H15 | Nodes gone read as eviction | A reclaimed node vanishes from `kubectl get nodes` — it is NOT `NotReady`. Count below pool `minNodeCount` = H15 count-loss, not H3 |
+| H13 | `REPAIR_CLUSTER`/`UPGRADE_*` invisible in logs | They only appear in `gcloud container operations list` (operations API), never in Cloud Logging |
+| H14 | MIG deletes missed by 1f filter | The MIG deletes VMs as `<projnum>@cloudservices.gserviceaccount.com` (UA "GCE Managed Instance Group for GKE") — not `system:/gke-/container-engine`; match it explicitly |
+| B1 | `BILLING_DISABLED` global search empty | The real payload is "…requires billing to be enabled…", not the token `BILLING_DISABLED`; field-scope `textPayload:"requires billing to be enabled"` (a bare `"BILLING_DISABLED"` search misses it) |
+| B1 | Monitor silent during outage | If billing kills the project, the monitor/logging in-project may not run — absence of expected logs is itself a B1 signal; page via an external billing budget alert |
