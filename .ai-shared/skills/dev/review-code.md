@@ -2,11 +2,11 @@
 
 Behavior is locked to the approved Goal/AC/TC spec. Review fidelity plus independent semantic correctness, security, and quality; do not reopen preferences owned by review-feature. A plan defect that makes work incorrect, insecure, lossy, or unverifiable is blocking and returns the plan through `approval.md`. Cosmetic design observations are out-of-band notes.
 
-Resolve the active plan per CORE; entry status is `implemented`, and `gate-check` owns plan, issue, worktree, and proof-order gates. Read plan/config and inspect `<base>..HEAD` diff, stat, and log inside `<worktree>`.
+Resolve the active plan per CORE; entry status is `implemented`, and `gate-check` owns plan, issue, worktree, and proof-order gates. Read plan/config and inspect `<base>..HEAD` diff, stat, and log inside `<worktree>`; changed-file reads and test runs resolve there too — a bare repo-relative path lands on `$MAIN_ROOT`'s pre-change copy and silently reviews the wrong tree. The worktree plan is authoritative for status and the AC/TC spec; `$MAIN_ROOT`'s copy is only the locator and never advances past its pre-execution status (worktree.md `Plan resolution vs. truth`).
 
 ## Independence and Cost Boundary
 
-Run the entire review in exactly one context. If this session produced the diff, that context is one fresh reviewer agent with no conversation inheritance (EXECUTION_CORE `Subagent context`): the packet names only the plan path, worktree and base ref, project AI config, and this skill file — never implementation rationale or a conversation summary. Otherwise review in the main session. Isolation unavailable → review in-session, treating execution memory as untrusted: re-derive every verdict from plan, diff, and test runs.
+Run the entire review in exactly one context. If this session produced the diff, that context is one fresh reviewer agent with no conversation inheritance (EXECUTION_CORE `Subagent context`): the packet names only the worktree plan path (never the `$MAIN_ROOT` locator), worktree and base ref, project AI config, and this skill file — never implementation rationale or a conversation summary. Otherwise review in the main session. Isolation unavailable → review in-session, treating execution memory as untrusted: re-derive every verdict from plan, diff, and test runs.
 
 The reviewer runs read-only Git inspection, tests, and `dev-check`, and reports verdict, findings, and self-check; it never mutates Git state or edits files. Verdict actions — Should Fix resolution, PR Pattern finalization, `reviewed` status, and the review commit — belong to the main agent, on the reviewer's evidence.
 
@@ -45,7 +45,7 @@ Verdict: any blocking finding → `REWORK REQUIRED`; none plus Should Fix → `P
 
 ## Self-Check (BLOCKING)
 
-- [ ] **Independence:** the review ran in a context without execution memory (fresh agent, or a session that did not implement); fallback in-session review re-derived every verdict from plan, diff, and test runs. Context: __.
+- [ ] **Independence:** the review ran in a context without execution memory (fresh agent, or a session that did not implement); fallback in-session review re-derived every verdict from plan, diff, and test runs; every file read, test, and Git command ran inside `<worktree>`. Context: __.
 - [ ] **Goal/behavior:** every AC has independent PASS evidence against the Goal; adversarial counterexample attempted; every TC maps to its AC and test; edge/failure paths and meaningful assertions verified. Gaps: __.
 - [ ] **Proof and symbols:** proof contents independently checked; app symbols resolve. Issues: __.
 - [ ] **Architecture/data:** every Non-functional commitment and each concern applicable to changed paths were checked; no repository-wide audit was substituted. Issues: __.

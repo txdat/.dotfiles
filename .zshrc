@@ -121,20 +121,20 @@ export KUBECONFIG=$HOME/.kube/config
 # claude
 export CLAUDE_CODE_ENABLE_TELEMETRY=0
 # export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
-# export CLAUDE_CODE_EFFORT_LEVEL="high"
 # export CLAUDE_CODE_DISABLE_1M_CONTEXT=1
-export CLAUDE_CODE_AUTO_COMPACT_WINDOW="272000"
-export CLAUDE_AUTOCOMPACT_PCT_OVERRIDE="85"
+export CLAUDE_CODE_AUTO_COMPACT_WINDOW="400000"
+# export CLAUDE_AUTOCOMPACT_PCT_OVERRIDE="70"
 export CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING=1
 export CLAUDE_CODE_DISABLE_AUTO_MEMORY=1
 export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
-export CLAUDE_CODE_SUBAGENT_MODEL="sonnet"
+# export CLAUDE_CODE_SUBAGENT_MODEL="sonnet"
+# export CLAUDE_CODE_EFFORT_LEVEL="high"
 export ENABLE_CLAUDEAI_MCP_SERVERS=false
 
 alias claude1="ANTHROPIC_AUTH_TOKEN=$(echo $CLAUDE1_AUTH_TOKEN) claude"
 alias claude2="ANTHROPIC_AUTH_TOKEN=$(echo $CLAUDE2_AUTH_TOKEN) claude"
-alias claudex="claude --dangerously-skip-permissions"
-alias deepseek="ANTHROPIC_BASE_URL='https://api.deepseek.com/anthropic' ANTHROPIC_AUTH_TOKEN=$(echo $DEEPSEEK_API_KEY) ANTHROPIC_MODEL='deepseek-v4-pro[1m]' ANTHROPIC_DEFAULT_OPUS_MODEL='deepseek-v4-pro[1m]' ANTHROPIC_DEFAULT_SONNET_MODEL='deepseek-v4-flash[1m]' ANTHROPIC_DEFAULT_HAIKU_MODEL='deepseek-v4-flash[1m]' claude"
+alias deepseek="ANTHROPIC_BASE_URL='https://api.deepseek.com/anthropic' ANTHROPIC_AUTH_TOKEN=$(echo $DEEPSEEK_API_KEY) ANTHROPIC_MODEL='deepseek-v4-pro[1m]' ANTHROPIC_DEFAULT_OPUS_MODEL='deepseek-v4-pro[1m]' ANTHROPIC_DEFAULT_SONNET_MODEL='deepseek-v4-flash[1m]' ANTHROPIC_DEFAULT_HAIKU_MODEL='deepseek-v4-flash[1m]' CLAUDE_CODE_EFFORT_LEVEL=high claude"
+alias gemini="agy"
 
 alias k=kubectl
 complete -o default -F __start_kubectl k
@@ -144,8 +144,6 @@ alias xsc="xclip -sel c" # copy stdout to clipboard
 alias xfc="xclip -sel c < " # copy data from file to clipboard
 alias xcf="xclip -sel c -o > " # copy data from clipboard to file
 alias tlmgr="/usr/share/texmf-dist/scripts/texlive/tlmgr.pl --usermode"
-
-alias gemini="agy"
 
 update_zsh () {
     dir=$(pwd)

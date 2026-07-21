@@ -18,6 +18,7 @@ Avoid anchoring on the proposed tests:
 Challenge every AC/TC graph with:
 
 - Can every TC pass while its AC fails?
+- Which production entry point does each TC's When invoke — does the behavior it proves execute as a consequence, or does the TC join below it?
 - Can every AC pass while the original Goal fails?
 - What invalid implementation could satisfy the proposed Then assertions?
 - What valid implementation would the tests incorrectly reject?
@@ -49,7 +50,7 @@ Undefined or unsupported expected behavior is blocking and becomes an Open Quest
 - [ ] **Independent outcomes:** expected outcomes were derived from Goal/sources before TC inspection; missing/invented ACs resolved. Issues: __.
 - [ ] **Adversarial behavior:** every AC/TC faced counterexample, invalid-pass, and valid-rejection challenges; failure/edge axes are sufficient. Gaps: __.
 - [ ] **Approach/system fit:** alternatives, boundaries, compatibility, order, blast radius, rollback, and Non-functional effects are sound. Issues: __.
-- [ ] **Traceability/TDD:** Goal → AC ↔ TC ↔ Step graph, fail/pass intent, meaningful observable assertions, and affected tests hold. Gaps: __.
+- [ ] **Traceability/TDD:** Goal → AC ↔ TC ↔ Step graph, fail/pass intent, meaningful observable assertions, and affected tests hold; each TC's entry point actually executes the behavior it proves. Gaps: __.
 - [ ] **Execution shape:** steps are dependency-ordered, ≤10, and each names its TC; the PR partition is independently mergeable and splits no TC; the plan stays at design altitude — language-neutral notation only, no target-language syntax or implementation bodies. Issues: __.
 
 Report summary, independently derived outcomes, blocking findings, counterexamples attempted, suggestions, and `READY` or `NEEDS CHANGES`.

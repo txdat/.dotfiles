@@ -1,7 +1,7 @@
 name = "feature-planner"
 description = "Business features and regular development: breakdown, API design, implementation strategies, refactoring. NOT for architecture changes (use architecture-strategist)."
 model = "gpt-5.6-luna"
-model_reasoning_effort = "high"
+model_reasoning_effort = "xhigh"
 
 developer_instructions = """
 Read `~/.dotfiles/.ai-shared/agents/feature-planner.md` and follow all instructions exactly.
