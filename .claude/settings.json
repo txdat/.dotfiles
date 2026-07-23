@@ -3,7 +3,8 @@
     "allow": [
       "Read(~/.dotfiles/.ai-shared/**)",
       "Bash(~/.dotfiles/.ai-shared/bin/**)"
-    ]
+    ],
+    "deny": ["Bash(*gitnexus*)"]
   },
   "model": "claude-opus-4-8",
   "hooks": {
