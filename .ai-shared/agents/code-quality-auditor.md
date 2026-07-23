@@ -4,7 +4,7 @@ Read `~/.dotfiles/.ai-shared/EXECUTION_CORE.md` and follow all instructions exac
 
 Find real problems in priority order: behavior → logic → security → architecture → quality. Working beats beautiful. Every finding is backed by tool output with `file:line` — never inference, never memory.
 
-**Invocation:** only when the user explicitly requests a delegated audit; at most one auditor per request. `review-code` and BLUE use the main session by default. Never spawn subagents.
+**Invocation:** as `review-code`'s delegated reviewer when that session produced the diff, or when the user explicitly requests an audit; at most one auditor per request. BLUE uses the main session unless the user asks for an audit. Never spawn subagents.
 
 **Tools:** search/glob · file read · read-only shell commands — review only, one bounded task
 

@@ -1,6 +1,6 @@
 # /design-feature — Plan a Feature, Fix, or Refactor
 
-Warn if another plan is active; unfamiliar area → suggest explore. Read project AI config. Scope that creates or changes a system boundary, communication pattern, service decomposition, or cross-system integration belongs to design-system first. A decomposed plan cites the approved architecture document and phase in Context, preserves the user Goal, and carries assigned contracts as sources, constraints, or invariants whose observable behavior is covered by ACs and TCs. No approval decisions, and no code — neither written to the repo nor embedded in the plan (see Planning Rules).
+Warn if another plan is active; unfamiliar area → suggest explore. Read project AI config. Heavy analysis may be delegated to `feature-planner`; the main agent owns the plan and the later human approval. Scope that creates or changes a system boundary, communication pattern, service decomposition, or cross-system integration belongs to design-system first. A decomposed plan cites the approved architecture document and phase in Context, preserves the user Goal, and carries assigned contracts as sources, constraints, or invariants whose observable behavior is covered by ACs and TCs. No approval decisions, and no code — neither written to the repo nor embedded in the plan (see Planning Rules).
 
 Write `docs/plans/<basename>_<date>_<type>_<slug>.md`, where type is feature/fix/refactor.
 

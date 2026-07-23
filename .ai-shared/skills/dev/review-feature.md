@@ -4,7 +4,7 @@ No code and no approval decisions. Design remains open: independently challenge 
 
 ## Independence
 
-If this session drafted the plan, do not review it here: delegate to one fresh agent with no conversation inheritance (EXECUTION_CORE `Subagent context`). The packet names only the plan path, project AI config, and this skill file — never drafting rationale, exploration notes, or a conversation summary. The reviewer reports findings, counterexamples, and READY/NEEDS CHANGES; the main agent relays them verbatim, and plan edits or status changes stay with the main agent. A session that did not draft the plan reviews directly. Isolation unavailable → review in-session, treating memory of the drafting as untrusted: re-derive every judgment from the plan file and source reads.
+If this session drafted the plan, do not review it here: delegate to one fresh `feature-planner` with no conversation inheritance (EXECUTION_CORE `Subagent context`). The packet names only the plan path, project AI config, and this skill file — never drafting rationale, exploration notes, or a conversation summary. The reviewer applies this file, not design-feature.md, judges the plan as written rather than redrafting it, and spawns nothing. It reports findings, counterexamples, and READY/NEEDS CHANGES; the main agent relays them verbatim, and plan edits or status changes stay with the main agent. A session that did not draft the plan reviews directly. Isolation unavailable → review in-session, treating memory of the drafting as untrusted: re-derive every judgment from the plan file and source reads.
 
 ## Independent Semantic Review
 

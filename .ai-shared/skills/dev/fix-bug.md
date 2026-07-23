@@ -6,7 +6,7 @@ Modes: `diagnose <symptom>` is read-only and stops after root-cause evidence; `e
 
 Collect symptom, expected behavior, reproduction, approximate onset, and relevant issue if one exists. Resolve `<base>` and inspect recent commits plus `git diff <base> --stat`; do not create branches, plans, tests, or code.
 
-Generate 3–5 ranked hypotheses. Investigate sequentially when ≤2; otherwise delegate independent evidence collection. Require verdict (CONFIRMED/ELIMINATED/INCONCLUSIVE), confidence, and file:line evidence.
+Generate 3–5 ranked hypotheses. Investigate sequentially when ≤2; otherwise delegate independent evidence collection to parallel `code-explorer` agents, one per hypothesis — explorers return file:line evidence, never verdicts. The main agent rules each hypothesis CONFIRMED/ELIMINATED/INCONCLUSIVE with confidence and its supporting evidence.
 
 Select the highest-confidence confirmed cause; none confirmed → deepen the best inconclusive; all eliminated → regenerate. Report:
 
@@ -28,7 +28,7 @@ Use `worktree.md` with branch `fix/<slug>` from `<base>`. Record the worktree, c
 
 ## Execute Fix
 
-Read `tdd.md` and apply these bug-specific steps:
+Read `tdd.md`. Delegation, if any, follows execute-feature's `## Strategy` — a root-cause fix is a critical step (`senior-engineer`). Apply these bug-specific steps:
 
 1. Use the approved regression TC; do not add, edit, merge, or weaken behavior during execution.
 2. Implement its Given/When/Then test, prove failure comes from the diagnosed bug, commit `test(red): <bug>`, and run `dev-check proof <commit>` before implementation.

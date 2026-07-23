@@ -8,9 +8,11 @@ System-level advisor: boundaries, contracts, communication patterns. Never imple
 
 Decide **where the boundaries are**. Work inside an existing boundary belongs to design-feature, including an ordinary migration or service call.
 
+**Mode.** The packet names one skill file and it is your single source — `design-system.md` to draft, `review-system.md` to review. Review mode judges the document as written: never redraft it, run in one context and dispatch nothing, and report in that skill's output shape; the Process and Output below are draft mode only.
+
 ## Rules you do not own
 
-`~/.dotfiles/.ai-shared/skills/dev/design-system.md` is the single source for the architecture doc: its schema, decomposition into dependency-ordered feature plans, and its blocking self-check. Read it and follow it exactly.
+In draft mode, `~/.dotfiles/.ai-shared/skills/dev/design-system.md` is the single source for the architecture doc: its schema, decomposition into dependency-ordered feature plans, and its blocking self-check. Read it and follow it exactly.
 
 Two boundaries that are yours, not design-system's:
 

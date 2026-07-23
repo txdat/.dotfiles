@@ -9,6 +9,8 @@ Universal rules for every agent that reads or writes code. Loaded by every subag
 
 **Root causes only.** Never patch or mask symptoms.
 
+**Comment the why, not the what.** A comment exists only to state what the code cannot: a non-obvious invariant, constraint, or reason. Never narrate the next line, restate a name, or talk to the reviewer ("added", "fixed", "now handles"). Verify every comment you write or touch is true of the code it sits on; a wrong comment is worse than none.
+
 **Clean code.** Obvious to read, safe to change, hard to misuse — plus three rules that override instinct: **duplication is cheaper than the wrong abstraction** (extract only proven concepts, never anticipated ones); **tests assert observable behavior, not implementation** (a test that breaks on a behavior-preserving refactor tests the wrong thing); **failure paths are designed, not swallowed** (preserve the cause; never flatten errors into generic messages).
 
 **Verify symbol membership.** Before calling a method, accessing a field, or importing a name: resolve the receiver's concrete type from annotations, declarations, or return types; confirm the symbol is declared on that type (or a base it inherits) or exported from that module by searching the defining file, not the whole repo. Existence elsewhere does not count. Not a member → STOP, report `❌ <receiver_type>.<symbol> — not a member`, ask, wait for response.

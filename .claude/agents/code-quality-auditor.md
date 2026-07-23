@@ -1,6 +1,6 @@
 ---
 name: code-quality-auditor
-description: "Explicit opt-in delegated code audit only. Never auto-invoke from review-code, feature completion, BLUE, or PR preparation."
+description: "review-code's delegated reviewer when the same session produced the diff, or an explicitly user-requested audit; at most one per request. Never auto-invoke from BLUE, feature completion, or PR preparation."
 model: claude-opus-4-8
 color: green
 effort: low

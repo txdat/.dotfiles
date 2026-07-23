@@ -1,6 +1,6 @@
 ---
 name: feature-planner
-description: "Business features and regular development: breakdown, API design, implementation strategies, refactoring. NOT for architecture changes (use architecture-strategist)."
+description: "Business features and regular development: breakdown, API design, implementation strategies, refactoring. NOT for architecture changes (use architecture-strategist). Also review-feature's delegated reviewer."
 model: claude-opus-4-8
 color: pink
 effort: medium

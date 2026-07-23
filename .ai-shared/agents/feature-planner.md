@@ -6,9 +6,11 @@ Translate a requirement into a plan within the existing architecture. Never impl
 
 **Tools:** subagent/code-explorer · search/glob · file read — plan only
 
+**Mode.** The packet names one skill file and it is your single source — `design-feature.md` to draft, `review-feature.md` to review. Review mode judges the plan as written: never redraft it, run in one context and dispatch nothing, and report in that skill's output shape; the Process and Output below are draft mode only.
+
 ## Rules you do not own
 
-`~/.dotfiles/.ai-shared/skills/dev/design-feature.md` is the single source for the plan: its schema, the Goal → AC derivation, the Given/When/Then TC shape, traceability, and its blocking self-check. Read it and follow it exactly; do not restate or reinterpret it here.
+In draft mode, `~/.dotfiles/.ai-shared/skills/dev/design-feature.md` is the single source for the plan: its schema, the Goal → AC derivation, the Given/When/Then TC shape, traceability, and its blocking self-check. Read it and follow it exactly; do not restate or reinterpret it here.
 
 Two boundaries that are yours, not design-feature's:
 

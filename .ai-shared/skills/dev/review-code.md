@@ -6,11 +6,11 @@ Resolve the active plan per CORE; entry status is `implemented`, and `gate-check
 
 ## Independence and Cost Boundary
 
-Run the entire review in exactly one context. If this session produced the diff, that context is one fresh reviewer agent with no conversation inheritance (EXECUTION_CORE `Subagent context`): the packet names only the worktree plan path (never the `$MAIN_ROOT` locator), worktree and base ref, project AI config, and this skill file — never implementation rationale or a conversation summary. Otherwise review in the main session. Isolation unavailable → review in-session, treating execution memory as untrusted: re-derive every verdict from plan, diff, and test runs.
+Run the entire review in exactly one context. If this session produced the diff, that context is one fresh `code-quality-auditor` with no conversation inheritance (EXECUTION_CORE `Subagent context`): the packet names only the worktree plan path (never the `$MAIN_ROOT` locator), worktree and base ref, project AI config, and this skill file — never implementation rationale or a conversation summary. Otherwise review in the main session. Isolation unavailable → review in-session, treating execution memory as untrusted: re-derive every verdict from plan, diff, and test runs.
 
 The reviewer runs read-only Git inspection, tests, and `dev-check`, and reports verdict, findings, and self-check; it never mutates Git state or edits files. Verdict actions — Should Fix resolution, PR Pattern finalization, `reviewed` status, and the review commit — belong to the main agent, on the reviewer's evidence.
 
-**Never fan out: no additional subagents, including `code-quality-auditor`.** Size, risk, file count, and independent concerns are not exceptions. For a large diff, process dependency-ordered file or PR-slice batches in the same context.
+**Never fan out: the delegated `code-quality-auditor` is the whole review context and spawns nothing further.** Size, risk, file count, and independent concerns are not exceptions. For a large diff, process dependency-ordered file or PR-slice batches in the same context.
 
 Load only the approved plan, project config, diff, changed files/tests, and definitions or callers needed to verify behavior or a suspected finding. Inventory once; do not reread the repository once per review category. Batch independent read-only commands when practical.
 
