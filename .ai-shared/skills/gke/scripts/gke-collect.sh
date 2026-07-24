@@ -15,7 +15,8 @@
 # override with $REPORT); the terminal only shows the path. The agent then reads that file.
 #
 # Optional overrides: PROJECT/CLUSTER/REGION/NAMESPACE/SERVICES, T_USER/T_DURATION/T_TZ,
-# NODE_DELETE_BURST/NOTREADY_MAX/AGE_RESET_FRAC/PENDING_GRACE_MIN/T_CRITICAL_LOOKBACK, POD_NAME, LB_NAME/LB_BACKEND_NAME, REPORT.
+# NODE_DELETE_BURST/NOTREADY_MAX/AGE_RESET_FRAC/PENDING_GRACE_MIN/T_CRITICAL_LOOKBACK, POD_NAME,
+# LB_NAME/LB_BACKEND_NAME, LB_LOG_LIMIT, REPORT.
 set -uo pipefail  # NOT -e: one failed/empty query must not abort the sweep
 
 # section "<title>" ["<extra hyp ids>"]
@@ -108,13 +109,11 @@ fi
 T_START_MINUS_2H=$(date -u -d "$T_UTC - 2 hours" +%Y-%m-%dT%H:%M:%SZ)
 T_CRITICAL_LOOKBACK="${T_CRITICAL_LOOKBACK:-6 hours}"
 T_START_CRITICAL=$(date -u -d "$T_UTC - $T_CRITICAL_LOOKBACK" +%Y-%m-%dT%H:%M:%SZ)
-T_BASELINE_START=$(date -u -d "$T_START - 7 days" +%Y-%m-%dT%H:%M:%SZ)
-T_BASELINE_END=$(date -u -d "$T_END - 7 days" +%Y-%m-%dT%H:%M:%SZ)
-
 NODE_DELETE_BURST="${NODE_DELETE_BURST:-3}"
 NOTREADY_MAX="${NOTREADY_MAX:-2}"
 AGE_RESET_FRAC="${AGE_RESET_FRAC:-0.5}"
 PENDING_GRACE_MIN="${PENDING_GRACE_MIN:-10}"   # H16: minutes a pod may sit Pending awaiting scale-up before CRITICAL
+LB_LOG_LIMIT="${LB_LOG_LIMIT:-5000}"           # 1d.2: max LB log entries read for the 5xx-ratio aggregation
 
 # All collected evidence goes to a single report file the agent then reads; only the
 # path (and any fatal pre-flight error above) reaches the terminal. Override with $REPORT.
@@ -128,8 +127,7 @@ echo "PROJECT=$PROJECT CLUSTER=$CLUSTER REGION=$REGION NAMESPACE=$NAMESPACE"
 echo "Services=$SERVICES  SVC_RE=$SVC_RE  primary=$SERVICE  deployment=$DEPLOYMENT"
 echo "T_START=$T_START  T_END=$T_END"
 echo "T_START_MINUS_2H=$T_START_MINUS_2H  T_START_CRITICAL=$T_START_CRITICAL ($T_CRITICAL_LOOKBACK)"
-echo "T_BASELINE=[$T_BASELINE_START .. $T_BASELINE_END]"
-echo "Thresholds: NODE_DELETE_BURST=$NODE_DELETE_BURST NOTREADY_MAX=$NOTREADY_MAX AGE_RESET_FRAC=$AGE_RESET_FRAC PENDING_GRACE_MIN=$PENDING_GRACE_MIN"
+echo "Thresholds: NODE_DELETE_BURST=$NODE_DELETE_BURST NOTREADY_MAX=$NOTREADY_MAX AGE_RESET_FRAC=$AGE_RESET_FRAC PENDING_GRACE_MIN=$PENDING_GRACE_MIN LB_LOG_LIMIT=$LB_LOG_LIMIT"
 note "Fast retrieval — every section header is tagged {HYP: ...}. To read all blocks for one"
 note "  hypothesis (e.g. H14), print each tagged section up to the next '=====':"
 note "    awk -v h=H14 '/^===== /{f=(\$0 ~ (\"[{ ]\" h \"[ }]\"))} f' \"\$REPORT\""
@@ -285,14 +283,43 @@ fi
 echo "LB_BACKEND_NAME=$LB_BACKEND_NAME  logConfig.enable=$LB_LOGGING_ENABLED"
 
 if [ -n "$LB_NAME" ] && [ "$LB_LOGGING_ENABLED" = "true" ]; then
-  section "1d.2 — LB Request Rate (per minute)"
+  # One read, three aggregations: per minute, per backend service, and a truncation guard.
+  # Per-backend matters because the ratio's denominator is the whole forwarding rule — one dead
+  # service behind a shared LB is diluted by its healthy siblings.
+  section "1d.2 — LB Request Rate & 5xx Ratio (per minute, per backend)"
   gcloud logging read \
     'resource.type="http_load_balancer"
      resource.labels.forwarding_rule_name="'$LB_NAME'"
      timestamp>="'$T_START'"
      timestamp<="'$T_END'"' \
-    --project=$PROJECT --order=asc --format="value(timestamp)" --limit=5000 | \
-    awk '{print substr($1,1,16)}' | sort | uniq -c
+    --project=$PROJECT --order=asc \
+    --format="value(timestamp,httpRequest.status,resource.labels.backend_service_name)" \
+    --limit=$LB_LOG_LIMIT | \
+    awk -F'\t' -v lim="$LB_LOG_LIMIT" '
+      {
+        m=substr($1,1,16); b=($3==""?"(no-backend-matched)":$3); is5=($2+0>=500)
+        tot[m]++; btot[b]++; T++
+        if (is5) {err[m]++; berr[b]++; E++}
+      }
+      END {
+        if (T==0) {print "(no LB log entries in window)"; exit}
+        # fflush() before each "sort" co-process: awk own-output is block-buffered when stdout is
+        # the report file, while sort writes to that same fd — without the flush the block headers
+        # can land after the rows they label.
+        print "-- per minute --"; fflush()
+        for (m in tot) printf "%s  total=%-6d 5xx=%-6d 5xx_ratio=%.1f%%\n", \
+          m, tot[m], err[m]+0, 100*(err[m]+0)/tot[m] | "sort"
+        close("sort")
+        print ""
+        print "-- per backend service (denominator check: is one service dead, or all of them?) --"
+        fflush()
+        for (b in btot) printf "%-45s total=%-6d 5xx=%-6d 5xx_ratio=%.1f%%\n", \
+          b, btot[b], berr[b]+0, 100*(berr[b]+0)/btot[b] | "sort"
+        close("sort")
+        printf "\nWINDOW_TOTAL  total=%d 5xx=%d 5xx_ratio=%.1f%%\n", T, E+0, 100*(E+0)/T
+        if (T>=lim)
+          printf "[NOTE] Read hit --limit=%d and is ordered ASC: these numbers cover only the EARLIEST %d requests of the window, not all of it. Ratios are biased toward incident onset. Narrow T_START/T_END or raise $LB_LOG_LIMIT before trusting the window ratio.\n", lim, lim
+      }'
 
   section "1d.3 — LB 5xx Breakdown"
   gcloud logging read \
@@ -330,24 +357,8 @@ if [ -n "$LB_NAME" ] && [ "$LB_LOGGING_ENABLED" = "true" ]; then
      timestamp<="'$T_END'"' \
     --project=$PROJECT --format="value(jsonPayload.statusDetails)" --limit=1000 | sort | uniq -c | sort -rn
 
-  section "1d.6 — LB Baseline (T-7d)"
-  gcloud logging read \
-    'resource.type="http_load_balancer"
-     resource.labels.forwarding_rule_name="'$LB_NAME'"
-     timestamp>="'$T_BASELINE_START'"
-     timestamp<="'$T_BASELINE_END'"' \
-    --project=$PROJECT --format="value(timestamp)" --limit=5000 | \
-    awk '{print substr($1,1,16)}' | sort | uniq -c
-
-  section "1d.7 — LB Client IP Distribution"
-  gcloud logging read \
-    'resource.type="http_load_balancer"
-     resource.labels.forwarding_rule_name="'$LB_NAME'"
-     timestamp>="'$T_START'"
-     timestamp<="'$T_END'"' \
-    --project=$PROJECT --format="value(httpRequest.remoteIp)" --limit=5000 | sort | uniq -c | sort -rn | head -20
 else
-  note "1d steps 2-7 skipped: LB_NAME not discovered or logConfig.enable=false. Set \$LB_NAME/\$LB_BACKEND_NAME and re-run, or run the LB queries manually (see skill 1d)."
+  note "1d steps 2-5 skipped: LB_NAME not discovered or logConfig.enable=false. Set \$LB_NAME/\$LB_BACKEND_NAME and re-run, or run the LB queries manually (see skill 1d)."
 fi
 
 section "1e — Deploy Gate (H7)"

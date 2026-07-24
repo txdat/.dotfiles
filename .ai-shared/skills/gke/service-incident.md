@@ -32,7 +32,8 @@ so you can sanity-check them before interpreting the rest of the output.
 
 ```bash
 export GCP_PROJECT_ID=... GKE_CLUSTER=... GKE_REGION=... GKE_NAMESPACE=... GKE_SERVICES=...
-# optional: T_USER, T_DURATION, T_TZ, T_CRITICAL_LOOKBACK, NODE_DELETE_BURST, NOTREADY_MAX, AGE_RESET_FRAC
+# optional: T_USER, T_DURATION, T_TZ, T_CRITICAL_LOOKBACK, NODE_DELETE_BURST, NOTREADY_MAX,
+#           AGE_RESET_FRAC, PENDING_GRACE_MIN, LB_LOG_LIMIT
 ```
 
 **Query-window tiers:** queries deliberately use different lookbacks by hypothesis class — a symptom is point-in-time, but a slow root cause can predate it by hours:
@@ -42,7 +43,6 @@ export GCP_PROJECT_ID=... GKE_CLUSTER=... GKE_REGION=... GKE_NAMESPACE=... GKE_S
 | Symptom | `T_START` | **T−30m → T_END** | H1, H2, H3, H4, H5, H6, H9, H10, H11, H14, H15, H16 + events/endpoints/LB |
 | Change lookback | `T_START_MINUS_2H` | **T−2h → T_END** | H7 (deploy), H12 (network), GKE upgrade / node-pool resize |
 | Critical root-cause | `T_START_CRITICAL` | **T−6h → T_END** (`$T_CRITICAL_LOOKBACK`) | **B1** (billing disable→reclaim propagation), **H13** (long-running repair/upgrade ops), **H8** (credential change → token-expiry delay) |
-| Baseline | `T_BASELINE_*` | **T−7d (±window)** | LB traffic baseline only |
 
 **Multi-service note:** app-log queries filter on `pod_name=~"'$SVC_RE'"` (the regex expanded from `SERVICES` in Pre-Flight), so they cover every affected service at once. Endpoint, NEG, and single-target `kubectl` commands use the primary `$SERVICE`/`$DEPLOYMENT` — repeat them per service when `SERVICES` lists more than one. If an exact (non-wildcard) service name is itself a prefix of a sibling (e.g. `api` vs `api-order`), verify ownership via the label selector in 1b rather than the pod-name regex.
 
@@ -150,11 +150,40 @@ Determines traffic-driven vs pod-driven causality.
 
 See `===== 1d.1 — LB Identification =====` in the script output (auto-discovers `LB_NAME` /
 `LB_BACKEND_NAME` from the Ingress IP where possible; check `logConfig.enable` — if `False`,
-steps 2-7 are skipped by the script and must be run manually once logging is enabled).
+steps 2-5 are skipped by the script and must be run manually once logging is enabled).
 
-**Step 2 — Request rate (per minute)**
+**Step 2 — Request rate & 5xx ratio (per minute, per backend)**
 
-See `===== 1d.2 — LB Request Rate (per minute) =====` in the script output.
+See `===== 1d.2 — LB Request Rate & 5xx Ratio (per minute, per backend) =====` in the script
+output. From one log read it prints three blocks: **per minute** (`total`, `5xx`, `5xx_ratio`), **per
+backend service**, and a `WINDOW_TOTAL`.
+
+**Read the ratio, not the raw 5xx count** — the count alone tracks traffic volume. Rough guide:
+`5xx_ratio` <1% = background noise, 1–10% = partial degradation (some backends healthy), >10%
+sustained = real outage, ~100% = all backends gone (H1/H2/H3/H7/H11/H12/B1+H15). The onset minute
+is where the ratio first steps up — anchor the causal chain there, not at the first 5xx.
+
+**Check the denominator before trusting those bands.** The per-minute ratio is computed over the
+whole forwarding rule, so on a shared LB one totally dead service is diluted by its healthy
+siblings — one backend of four failing completely reads as ~25% only if traffic is split evenly, and
+far lower if that service is the low-traffic one. A critical service can be 100% down at a 2% window
+ratio. The
+per-backend block is the corrective: compare each backend's ratio against the window total.
+- One backend ~100%, siblings ~0% → the fault is that service (or its NEG/endpoints), not the cluster.
+- All backends elevated together → cluster-, node-, or network-wide (H3/H9/H12/B1+H15).
+- `(no-backend-matched)` rows are requests the LB could not route to any backend at all — an
+  empty-NEG / all-backends-unhealthy signature; treat them as 100%-failure evidence, not noise.
+
+**Truncation.** The read is capped (`$LB_LOG_LIMIT`, default 5000) and ordered ascending, so on a
+busy LB the numbers describe only the *earliest* N requests of the window. The script emits a
+`[NOTE]` when the cap is hit — when you see it, narrow the window or raise the cap before quoting a
+window ratio. LB log **sampling** (`logConfig.sampleRate` < 1.0) scales counts but roughly preserves
+the ratio, which is another reason to lead with the ratio.
+
+Total requests also tells you the causality direction on its own: if `total` climbs sharply *while*
+the ratio rises, the failure is traffic-driven (H4/H11); if `total` is flat or falling while the
+ratio rises, it is pod-driven (H1/H2/H3/H7). A falling `total` with a high ratio can also mean
+clients gave up — check the ratio before concluding traffic dropped.
 
 **Step 3 — 5xx breakdown**
 
@@ -181,19 +210,10 @@ See `===== 1d.5 — LB statusDetails =====` in the script output.
 | `backend_early_response` | H2/H5/H6 (app rejection) |
 | `handled_by_identity_aware_proxy` or `forbidden` | H8 (IAM/auth rejection) |
 
-**Step 6 — Baseline (T-7d)**
+**LB Decision Matrix:** "Spike" here means `total` rising sharply *within* the window (1d.2) — the
+pre-onset minutes are the comparison, not a T−1d baseline. Every row assumes the 5xx *ratio* rose,
+not merely the 5xx count.
 
-See `===== 1d.6 — LB Baseline (T-7d) =====` in the script output.
-
-Spike vs baseline: >2x = traffic-driven, flat = pod-driven.
-
-**Step 7 — Client IP distribution**
-
-See `===== 1d.7 — LB Client IP Distribution =====` in the script output.
-
-Skewed = single client/DDoS (H4). Uniform = organic or pod-side.
-
-**LB Decision Matrix:**
 | Pattern | Hypothesis |
 |---------|------------|
 | Spike + 503s | H1/H4/H11 (overload — scale blocked by HPA/quota or capacity stockout) |
@@ -268,7 +288,8 @@ the same instance name ~10s apart = provisioning kept failing), `===== 1g.4 — 
 Pool Topology =====` (a single-zone `locations` list = a zone stockout fully blocks scale-up —
 contributing factor).
 
-**H11 vs H4 (quota):** H11 = GCE returns `ZONE_RESOURCE_POOL_EXHAUSTED` / `RESOURCE_POOL_EXHAUSTED` — physical capacity stockout in the zone, quota has headroom. H4 (quota) = `QUOTA_EXCEEDED` — you hit a project/regional quota ceiling. H4 (HPA) = block is at the Kubernetes layer (maxReplicas or ResourceQuota), no VM create attempt fails.
+Separating H11 (stockout) from H4 (quota / HPA ceiling) and H16 (scale-up latency): see the
+**Discriminators** table in Phase 2.
 
 ### 1h — Network Infrastructure (H12)
 
@@ -282,7 +303,9 @@ Five sub-queries, in order: `===== 1h.1 — VPC/Firewall/Route/NAT Changes (H12,
 35.191.0.0/16 and 130.211.0.0/22 — a firewall change blocking these flips backends UNHEALTHY
 while pods pass k8s readiness).
 
-**H12 vs H6 / H9:** H12 = infrastructure layer (VPC/firewall/route/NAT/subnet) — broad blast radius, often spans multiple services and outbound + inbound, correlates with a network change or NAT/IP exhaustion, and pods/CoreDNS themselves are healthy. H6 = one specific downstream dependency is degraded. H9 = DNS resolution specifically (a common *symptom* of H12 when NAT/upstream breaks — if CoreDNS is healthy but resolution still fails cluster-wide, suspect H12 upstream/NAT over H9).
+Separating H12 (infrastructure) from H6 (one dependency) and H9 (DNS): see the **Discriminators**
+table in Phase 2. Note DNS failure is a common *symptom* of H12 — healthy CoreDNS with cluster-wide
+resolution failures points upstream (NAT/forwarder), not at CoreDNS.
 
 ---
 
@@ -351,15 +374,12 @@ See `===== 1i — H15 Node Count Loss / NotReady / Age Reset =====` in the scrip
 - **mass creation-age reset** — `YOUNG / NODES ≥ $AGE_RESET_FRAC` (fleet recreated) ⇒ 🟡 WARNING.
   *Guard:* require the majority fraction; a couple of young nodes from routine autoscaling do not count.
 
-**Family vs H3 vs H11:** the B1/H13/H14/H15 family = nodes **gone** (H15 count below minimum /
-vanished), `BILLING_DISABLED` (B1), `REPAIR_CLUSTER`/`UPGRADE_*` in the operations API (H13), MIG
-delete burst by `cloudservices` SA (H14). H3 = nodes present but `Evicted`/`NotReady` under
-pressure. H11 = nodes stuck `Pending` because new VMs can't be created (`ZONE_RESOURCE_POOL_EXHAUSTED`).
-Single-zone pools make H15 count-loss look total — one zone's reclamation removes the whole pool.
+Separating this family from H3 (nodes present but `Evicted`/`NotReady`) and H11 (nodes can't be
+created): see the **Discriminators** table in Phase 2.
 
 ---
 
-**Before Phase 2:** Traffic spike? Dominant status code? statusDetails? System change? Manual deploy? Multi-service errors (→ H9/H12)? GCP auth errors (→ H8)? CPU throttling symptoms (→ H10)? Pods stuck Pending — stockout (→ H11) vs scale-up latency past grace (→ H16)? VPC/firewall/NAT change or broad connectivity loss (→ H12)? **`BILLING_DISABLED` (→ B1), in-window `REPAIR_CLUSTER`/`UPGRADE_*` op (→ H13), MIG node-delete burst (→ H14), or node count below pool minimum / mass creation-age reset (→ H15)?**
+**Before Phase 2:** What is the 5xx **ratio**, and is it one backend or all of them? Traffic spike? Dominant status code? statusDetails? System change? Manual deploy? Multi-service errors (→ H9/H12)? GCP auth errors (→ H8)? CPU throttling symptoms (→ H10)? Pods stuck Pending — stockout (→ H11) vs scale-up latency past grace (→ H16)? VPC/firewall/NAT change or broad connectivity loss (→ H12)? **`BILLING_DISABLED` (→ B1), in-window `REPAIR_CLUSTER`/`UPGRADE_*` op (→ H13), MIG node-delete burst (→ H14), or node count below pool minimum / mass creation-age reset (→ H15)?**
 
 ---
 
@@ -414,23 +434,32 @@ Investigate the highest-scoring hypothesis first. When multiple H tie, prefer sy
 
 **H2 sub-variants:** Startup (never Ready, high restarts), Liveness (was Ready, high restarts), Readiness (running, endpoint flap, low restarts).
 
-**H4 note:** HPA and ResourceQuota are now combined — both starve the scheduler. HPA = scale blocked by maxReplicas or node capacity. Quota = scale blocked by namespace hard limits. Check both before ruling out.
+**H4 note:** HPA and ResourceQuota are one hypothesis — both starve the scheduler. HPA = scale blocked by maxReplicas or node capacity. Quota = scale blocked by namespace hard limits. Check both before ruling out.
 
-**H5 vs H6:** H5 = client pool full but the backend (DB/Redis) is healthy. H6 = the dependency itself degraded — for Memorystore/Redis: failover, OOM/evictions, maxclients, or CPU saturation.
+### Discriminators — confusable hypotheses
 
-**H8 vs H6:** H8 = GCP IAM/token failure (permission denied, 403, token expired). H6 = non-GCP dependency is degraded or unreachable. Both show connection errors; distinguish by error message type and whether the target is a GCP service.
+**This table is the single authoritative place for "which of these is it".** Each row gives the
+mechanical test that separates them; Phase 1 and Phase 3 point here rather than restating it.
 
-**H9 vs H6:** H9 = `no such host` appears across multiple unrelated pods/services simultaneously. H6 = connection errors limited to one downstream service.
+| Confusable | The test that separates them |
+|------------|------------------------------|
+| **H1 vs H10** | Exit code + memory. H1 = exit 137, memory spikes to limit, `OOMKilling` present. H10 = exit 0/1/143, memory **flat**, no `OOMKilling`, `cpu/limit_utilization` >0.8 |
+| **H2 vs H10** | Why the probe failed. H10 = CPU throttled, so a healthy handler misses a tight `timeoutSeconds`. H2 = CPU normal, the app itself is slow/erroring |
+| **H5 vs H6** | Backend health. H5 = client pool full, backend (DB/Redis) **healthy** — `pool exhausted`/`acquire timeout`, DB logs clean, connections at the pool ceiling. H6 = backend itself degraded — failover, OOM/evictions, maxclients, CPU, or unreachable, with elevated or absent response times |
+| **H6 vs H8** | Error type + target. H8 = `permission denied`/`403`/`token expired` against a **GCP API**. H6 = `connection refused`/`ECONNREFUSED`/timeout against a dependency. Both look like "can't reach it" |
+| **H6 vs H9 vs H12** | Walk it in this order — (a) **radius**: errors confined to one downstream service = H6; broad (multi-service, cross-node, or LB→backend) = H9/H12. (b) **CoreDNS's own health**: degraded (restarts/SERVFAIL/CPU) = H9; healthy while resolution still fails cluster-wide = H12, the break is upstream (NAT/forwarder). (c) **corroborate H12** with a network change or NAT/IP exhaustion in-window while pods stay healthy |
+| **H4 vs H11** | Whether a VM create was attempted and what it returned. H11 = autoscaler *decided* to scale up, GCE rejected the VM with `ZONE_RESOURCE_POOL_EXHAUSTED`, quota has headroom. H4 = blocked at the Kubernetes layer (`maxReplicas`/`ResourceQuota`), no create attempted. `QUOTA_EXCEEDED` = H4-quota, not H11 |
+| **H11 vs H16** | Two faces of "pods Pending". H11 = nodes **cannot** be created (stockout present) — CRITICAL immediately, will not self-resolve. H16 = nodes **can** be created but haven't arrived — CRITICAL only once oldest Pending age ≥ `$PENDING_GRACE_MIN`m **and** no stockout. `NotTriggerScaleUp`/max-nodes = H4. Check the stockout scan first |
+| **H3 vs H15** | Are the nodes *there*? H3 = nodes present but `Evicted`/`NotReady` under memory/disk pressure. H15 = nodes **gone** — a reclaimed node vanishes from `kubectl get nodes` entirely, it is never `NotReady` |
+| **H11 vs H15** | Direction of the node change. H11 = new nodes can't be **created** (pods stuck Pending). H15 = existing nodes were **removed** (count below pool `minNodeCount`) |
+| **B1 vs H13 alone** | Whether a billing/pressure signal precedes it. B1→H14→H15→H13 is the reclamation chain. A `REPAIR_CLUSTER` with **no** preceding B1 or pressure signal is a routine repair, not this family |
 
-**H10 vs H1:** H10 = CPU limit_utilization near 1.0, memory flat, no exit 137, probes time out intermittently. H1 = memory spikes, exit 137 present.
-
-**H11 vs H4:** H11 = cloud-provider stockout — autoscaler *decides* to scale up, GCE rejects the VM with `ZONE_RESOURCE_POOL_EXHAUSTED`, quota has headroom. H4 = Kubernetes-level block — HPA at `maxReplicas` or namespace `ResourceQuota` hit; no VM create even attempted. If quota is the ceiling (`QUOTA_EXCEEDED`), that is H4 (quota), not H11.
-
-**H11 vs H16 (two faces of "pods Pending"):** H11 = nodes **cannot** be created — GCE returns `ZONE_RESOURCE_POOL_EXHAUSTED`; CRITICAL the instant it appears and it will not self-resolve. H16 = nodes **can** be created but haven't yet — pods are Pending while the autoscaler provisions. That is normal for the first few minutes, so H16 is CRITICAL **only** once the oldest Pending pod has waited ≥ `$PENDING_GRACE_MIN` minutes (default 10) **and** there is no stockout error. If a stockout is present, the Pending is H11, not H16. If the autoscaler logged `NotTriggerScaleUp` (max-nodes reached / pod doesn't fit), that is H4, not H16. Check H11's stockout scan first, then H16's Pending-age verdict.
-
-**H12 vs H9 vs H6:** H12 = infrastructure layer (VPC/firewall/route/NAT/subnet) — broad blast radius, pods and CoreDNS healthy, correlates with a network change or NAT/IP exhaustion. H9 = DNS resolution specifically, with CoreDNS itself degraded (restarts/SERVFAIL/CPU). H6 = one specific downstream dependency degraded. Cluster-wide `no such host` with *healthy* CoreDNS points upstream (H12 NAT/forwarder), not H9.
-
-**B1/H13/H14/H15 family vs H3 vs H11:** the family = nodes **reclaimed** — they vanish from the node list entirely (a deleted node is *not* `NotReady`, it is gone). B1 (CRITICAL) = the root cause: a disabled billing account (`BILLING_DISABLED` / billing account change). H15 = the node-side symptom: count drops below the pool `minNodeCount`, or the fleet is mass-recreated (creation-age reset). H14 = the MIG delete burst by `cloudservices` SA that reclaims them. H13 = the `REPAIR_CLUSTER`/`UPGRADE_*` op (operations API only) that rebuilds them. H3 = nodes still present but `Evicted`/`NotReady` under memory/disk pressure. H11 = new nodes can't be *created* (`ZONE_RESOURCE_POOL_EXHAUSTED`), pods stuck `Pending`. Single-zone pools make H15 count-loss look like a total outage — one zone's reclamation removes the whole pool. Note: if a total billing outage stops the cluster's own control-plane/logging, the *absence* of expected node/app logs during the window is itself evidence for B1.
+**Roles within the B1/H13/H14/H15 family:** B1 (CRITICAL) = root cause, billing disabled. H14 = the
+MIG delete burst (`cloudservices` SA) that reclaims the nodes. H15 = the node-side symptom (count
+below minimum, or mass creation-age reset). H13 = the `REPAIR_CLUSTER`/`UPGRADE_*` op that rebuilds
+the fleet. Single-zone pools make H15 count-loss look total — one zone's reclamation removes the
+whole pool. If a total billing outage stops the cluster's own control-plane/logging, the **absence**
+of expected node/app logs during the window is itself evidence for B1.
 
 ---
 
@@ -541,13 +570,7 @@ etc. — unset means the app is on an ORM default, often 10, easy to exhaust und
 reference pool-error timestamps against H2's Unhealthy-event timestamps manually — pool errors
 must predate probe failures to be causal.
 
-**H5 vs H6 distinction — critical:**
-| Signal | H5 (pool exhausted) | H6 (dep failure) |
-|---|---|---|
-| App log message | `pool exhausted`, `acquire timeout` | `connection refused`, `timeout`, `ECONNREFUSED` |
-| DB server logs | Clean — no errors | Errors, slow queries, or unreachable |
-| DB connection count | At max (pool ceiling) | May be low (DB rejecting or unreachable) |
-| DB response time | Normal (DB healthy) | Elevated or no response |
+**H5 vs H6** — see the **Discriminators** table in Phase 2.
 
 **Confirmed if**: pool exhaustion log messages predate probe failures + DB server logs clean + DB connection count at configured max
 **Ruled out if**: no pool exhaustion messages in app logs, DB connection count has headroom, DB logs show errors (→ H6)
@@ -626,13 +649,8 @@ using WI; auto-discovers the deployment's `serviceAccountName`).
 **Confirmed if**: `permission denied` / `403` / `token expired` in app logs pointing at GCP API + IAM policy change or key expiry in audit log predating errors, OR WI annotation present but GCP SA binding missing
 **Ruled out if**: no auth/permission errors in app logs, IAM policy unchanged in T-2h window
 
-**H8 vs H6 distinction:**
-| Signal | H8 (IAM failure) | H6 (dep failure) |
-|--------|-----------------|-----------------|
-| Error message | `permission denied`, `403`, `token expired`, `PERMISSION_DENIED` | `connection refused`, `timeout`, `ECONNREFUSED` |
-| Target | GCP API (Cloud SQL, GCS, Pub/Sub, Secret Manager) | Internal service or non-GCP dep |
-| Other pods | Same if they share the SA | May be isolated to this service |
-| IAM audit log | Policy change or key deletion present | No IAM events |
+**H8 vs H6** — see the **Discriminators** table in Phase 2. One extra tell: if the failure is IAM,
+every pod sharing that ServiceAccount fails identically; a dependency failure may be isolated.
 
 ---
 
@@ -648,12 +666,7 @@ CoreDNS ConfigMap (upstream forwarder / rewrite rule changed?).
 **Confirmed if**: `no such host` / `SERVFAIL` errors across multiple pods + CoreDNS pod restarts or CPU spike in the window
 **Ruled out if**: DNS errors limited to one pod/service (likely H6), CoreDNS pods healthy with no restarts, errors persist after CoreDNS recovery
 
-**H9 vs H6:**
-| Signal | H9 (DNS degraded) | H6 (dep failure) |
-|--------|------------------|-----------------|
-| Scope | Multiple pods and services fail DNS | Single downstream service unreachable |
-| CoreDNS | Restarts, CPU throttling, or SERVFAIL logs | Healthy |
-| Error type | `no such host`, `SERVFAIL`, `NXDOMAIN` | `connection refused`, `timeout` after successful DNS |
+**H9 vs H6 vs H12** — see the **Discriminators** table in Phase 2.
 
 ---
 
@@ -682,14 +695,7 @@ Values >0.8 sustained = strong H10 signal.
 **Confirmed if**: CPU `limit_utilization` >0.8 sustained before probe failures + probe `timeoutSeconds` ≤ 1 + no OOMKill, memory flat + Unhealthy events present
 **Ruled out if**: CPU headroom available, timeoutSeconds generous (≥5), exit codes are 137 (→ H1 instead)
 
-**H10 vs H1:**
-| Signal | H10 (CPU throttle) | H1 (OOMKill) |
-|--------|--------------------|--------------|
-| Exit code | 0, 1, 143 (probe kill) | 137 |
-| Memory | Flat | Spike to limit |
-| OOMKilling event | Absent | Present |
-| CPU limit_utilization | >0.8 sustained | Variable |
-| Probe timeout | Yes, tight timeoutSeconds | Not primary |
+**H10 vs H1 vs H2** — see the **Discriminators** table in Phase 2.
 
 ---
 
@@ -729,8 +735,6 @@ grace (`$PENDING_GRACE_MIN`m, default 10), whether a stockout is present, the `T
 
 **Confirmed if**: unschedulable pods with `TriggeredScaleUp` + oldest Pending age ≥ `$PENDING_GRACE_MIN`m + **no** `ZONE_RESOURCE_POOL_EXHAUSTED`
 **Ruled out if**: Pending within grace (expected), a stockout is present (→ H11), the autoscaler logged `NotTriggerScaleUp`/max-nodes (→ H4), or no pods are Pending
-
-**Tuning:** lower `PENDING_GRACE_MIN` to flag slow scale-ups sooner (risks firing on normal-but-slow provisioning — large images, NAP node creation, cold MIG); raise it to reduce false positives at the cost of slower detection.
 
 ---
 
@@ -796,9 +800,9 @@ Complete all before RCA.
 | # | Check | Rule |
 |---|-------|------|
 | 1 | Timestamp order | Root cause < all downstream. Out-of-order = invalid |
-| 2 | Two signals | Each confirmed H needs ≥2 independent signals. Examples — H1: oom_kill + exit 137. H2: Unhealthy + endpoint flap. H3: Evicted + node pressure. H4: HPA at max + FailedScheduling. H5: pool error + DB conn at max. H6: Redis error + instance-side signal (failover/OOM/maxclients). H7: deploy event + new-pod failure state. H8: permission-denied + IAM/key change. H9: cluster-wide DNS errors + CoreDNS restarts. H10: CPU>0.8 + tight probe timeout. H11: `ZONE_RESOURCE_POOL_EXHAUSTED` + autoscaler target>count gap (quota clear). H16: pods Pending ≥ `$PENDING_GRACE_MIN`m + `TriggeredScaleUp` with no stockout (quota/IP clear). H12: network change or NAT/IP exhaustion + broad connectivity loss with healthy pods. B1/H13/H14/H15 family: B1 `BILLING_DISABLED`/billing account change + H15 node count below pool minimum + H14 MIG delete burst + H13 `REPAIR_CLUSTER`/`UPGRADE_*` op (B1 alone is enough to confirm the critical root cause). |
+| 2 | Two signals | Each confirmed H needs ≥2 **independent** signals that correlate in time with symptom onset — see that H's **Confirmed if** line in Phase 3. Independent means different sources (e.g. node syslog + `kubectl`), not the same fact twice. B1 alone is enough to confirm the critical root cause |
 | 3 | Parsimony | One H explains all signals? Don't force-fit a second |
-| 4 | Required signal | H1: 137. H2: Unhealthy. H3: Evicted. H4: HPA max or quota hit. H5: pool msg. H6: Redis error + instance-side signal. H7: deploy event. H8: permission-denied in logs. H9: no-such-host cluster-wide. H10: CPU throttle >0.8 + tight probe timeout. H11: `ZONE_RESOURCE_POOL_EXHAUSTED` in GCE audit. H16: oldest Pending age ≥ `$PENDING_GRACE_MIN`m with `TriggeredScaleUp` and no stockout. H12: network infra change OR NAT/`IP_SPACE_EXHAUSTED`/CNI failure. B1: in-window billing-disabled log (CRITICAL). H13: in-window `REPAIR_CLUSTER`/`UPGRADE_*` op. H14: MIG delete burst ≥ `$NODE_DELETE_BURST`. H15: node count below minimum / mass creation-age reset |
+| 4 | Required signal | The H's required signal must be **present**, not merely plausible — see the *Required Signal* column in Phase 2. Missing required signal = ruled out, however good the story |
 | 5 | User match | Data ≠ reported time? Real incident started earlier |
 | 6 | Traffic direction | A) spike < k8s event → traffic caused (H4/H1). B) k8s event < spike → retry storm. C) flat → pod-only |
 
@@ -841,8 +845,10 @@ MTTM:        <first alert → service fully restored>
 **Error Volume**
 | Metric | Value |
 |--------|-------|
-| Total 5xx errors in window | <n> |
-| Peak error rate (per min) | <n> |
+| Total 5xx in window | <n> |
+| Total requests in window | <n> |
+| Peak 5xx ratio (per min) | <n>% |
+| Window 5xx ratio | <n>% |
 | Dominant status code | 503 / 504 / 502 |
 | User-visible impact | Partial / Full outage |
 
@@ -883,15 +889,17 @@ MTTM:        <first alert → service fully restored>
 ---
 
 ### Traffic Analysis (GCP Load Balancer)
-| Metric                  | Incident Window       | Baseline (T-7d)       |
-|-------------------------|-----------------------|-----------------------|
-| Request rate (req/min)  | <n>                   | <n>                   |
-| Error rate (5xx %)      | <n>%                  | <n>%                  |
-| Dominant status code    | 503 / 504 / 502       | —                     |
-| Dominant statusDetails  | <value>               | —                     |
-| Traffic spike?          | Yes / No (Δ <n>x)     | —                     |
-| Spike vs pod failure    | Spike before / after  | —                     |
-| Causality direction     | A / B / C (see above) | —                     |
+| Metric                    | Pre-onset (in-window) | Peak / Incident       |
+|---------------------------|-----------------------|-----------------------|
+| Request rate (req/min)    | <n>                   | <n>                   |
+| 5xx ratio (5xx ÷ total)   | <n>%                  | <n>%                  |
+| Onset minute (ratio step) | —                     | <HH:MM UTC>           |
+| Dominant status code      | —                     | 503 / 504 / 502       |
+| Dominant statusDetails    | —                     | <value>               |
+| Worst backend (5xx ratio) | —                     | <backend> @ <n>%      |
+| Traffic spike?            | —                     | Yes / No (Δ <n>x)     |
+| Spike vs pod failure      | —                     | Spike before / after  |
+| Causality direction       | —                     | A / B / C (see above) |
 
 ---
 
@@ -910,6 +918,7 @@ MTTM:        <first alert → service fully restored>
 | H9  | DNS / CoreDNS degradation           | RULED OUT | CoreDNS pods healthy, no SERVFAIL logs             |
 | H10 | CPU throttling → probe timeout      | RULED OUT | CPU headroom available, exit codes not probe-kill  |
 | H11 | Cloud capacity stockout             | RULED OUT | no ZONE_RESOURCE_POOL_EXHAUSTED, nodes provisioned  |
+| H16 | Scale-up pending latency            | RULED OUT | no pods Pending past $PENDING_GRACE_MIN grace       |
 | H12 | Network infra / VPC                  | RULED OUT | no network change, NAT/subnet headroom, pods healthy|
 | H13 | Repair/upgrade op (WARNING)         | RULED OUT | no in-window REPAIR_CLUSTER/UPGRADE_* op |
 | H14 | Node VM delete burst (WARNING)      | RULED OUT | in-window MIG deletes below $NODE_DELETE_BURST |
@@ -945,6 +954,9 @@ inside it stays within the Allowed list above, and the only state-mutating step
 
 ## Common Pitfalls
 
+Mechanical traps only — things that make a query lie or hide evidence. For "is it H*x* or H*y*?"
+see the **Discriminators** table in Phase 2.
+
 | Area | Pitfall | Fix |
 |------|---------|-----|
 | Logs | K8s events expire ~1h in etcd | Query Cloud Logging, not `kubectl get events` |
@@ -971,18 +983,11 @@ inside it stays within the Allowed list above, and the only state-mutating step
 | Node | Spot/preempt 30s warning | `terminationGracePeriodSeconds > 30` → SIGKILL |
 | HPA | Scale-down cascade | Fewer pods → overload → more die |
 | HPA | Scale-up thundering herd | All pods connect DB at once → H5 |
-| H8 | WI looks like H6 | Check error message: `403`/`permission denied` = H8, `ECONNREFUSED` = H6 |
-| H9 | DNS isolated to one pod misread as H6 | H9 requires multi-pod/multi-service scope; single-pod = H6 |
-| H10 | Throttle looks like H2 | H10: CPU >80% + tight timeout. H2: CPU normal, app logic slow |
 | H10 | No CPU limit = no throttle | Throttling only occurs when `.resources.limits.cpu` is set |
-| H11 | Stockout misread as quota | `ZONE_RESOURCE_POOL_EXHAUSTED` = H11 (capacity). `QUOTA_EXCEEDED` = H4-quota. Check region quota usage vs limit |
 | H11 | Autoscaler "works" but no nodes | Scale-up *decision* ≠ node created; watch `autoscaledNodesTarget` > `autoscaledNodesCount` gap and create/delete churn by `container-engine-robot` |
 | H11 | Single-zone pool hides fallback | A zone stockout fully blocks a single-zone pool; multi-zone or NAP would have fallback |
-| H16 | Pending ≠ instant incident | Pods Pending during a scale-up is EXPECTED for the first few minutes; only CRITICAL once oldest Pending age ≥ `$PENDING_GRACE_MIN`m AND no stockout (else H11). `NotTriggerScaleUp`/max-nodes = H4, not H16 |
-| H12 | Network infra looks like H6/H9 | H12 = broad blast radius + healthy pods/CoreDNS + network change/NAT/IP exhaustion. H6 = one dep. H9 = CoreDNS itself degraded |
 | H12 | Healthy pods but LB UNHEALTHY | Firewall change blocking GKE health-check ranges (35.191.0.0/16, 130.211.0.0/22) flips backends down while k8s readiness passes |
 | H12 | `IP_SPACE_EXHAUSTED` ≠ capacity | Subnet/pod-CIDR exhaustion is a network (H12) problem, not a machine stockout (H11) |
-| H15 | Nodes gone read as eviction | A reclaimed node vanishes from `kubectl get nodes` — it is NOT `NotReady`. Count below pool `minNodeCount` = H15 count-loss, not H3 |
 | H13 | `REPAIR_CLUSTER`/`UPGRADE_*` invisible in logs | They only appear in `gcloud container operations list` (operations API), never in Cloud Logging |
 | H14 | MIG deletes missed by 1f filter | The MIG deletes VMs as `<projnum>@cloudservices.gserviceaccount.com` (UA "GCE Managed Instance Group for GKE") — not `system:/gke-/container-engine`; match it explicitly |
 | B1 | `BILLING_DISABLED` global search empty | The real payload is "…requires billing to be enabled…", not the token `BILLING_DISABLED`; field-scope `textPayload:"requires billing to be enabled"` (a bare `"BILLING_DISABLED"` search misses it) |
