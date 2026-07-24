@@ -36,13 +36,15 @@ export GCP_PROJECT_ID=... GKE_CLUSTER=... GKE_REGION=... GKE_NAMESPACE=... GKE_S
 #           AGE_RESET_FRAC, PENDING_GRACE_MIN, LB_LOG_LIMIT
 ```
 
-**Query-window tiers:** queries deliberately use different lookbacks by hypothesis class — a symptom is point-in-time, but a slow root cause can predate it by hours:
+**Query-window tiers:** queries deliberately use different lookbacks by hypothesis class — a symptom is point-in-time, but a slow root cause can predate it by hours. Each tier span is tunable via its env var (default in parentheses); all accept the duration grammar `\d+(s|m|h|d)`:
 
-| Tier | Variable | Span | Used by |
-|------|----------|------|---------|
-| Symptom | `T_START` | **T−30m → T_END** | H1, H2, H3, H4, H5, H6, H9, H10, H11, H14, H15, H16 + events/endpoints/LB |
-| Change lookback | `T_START_MINUS_2H` | **T−2h → T_END** | H7 (deploy), H12 (network), GKE upgrade / node-pool resize |
-| Critical root-cause | `T_START_CRITICAL` | **T−6h → T_END** (`$T_CRITICAL_LOOKBACK`) | **B1** (billing disable→reclaim propagation), **H13** (long-running repair/upgrade ops), **H8** (credential change → token-expiry delay) |
+| Tier | Span (tunable) | Env var | Used by |
+|------|----------------|---------|---------|
+| Symptom | **T−30m → T_END** | `$T_SYMPTOM_LOOKBACK` (30m) | H1, H2, H3, H4, H5, H6, H9, H10, H11, H14, H15, H16 + G1 signal + events/endpoints/LB |
+| Change lookback | **T−2h → T_END** | `$T_CHANGE_LOOKBACK` (2h) | H7 (deploy), H12 (network), GKE upgrade / node-pool resize |
+| Critical root-cause | **T−6h → T_END** | `$T_CRITICAL_LOOKBACK` (6h) | **B1** (billing disable→reclaim propagation), **H13** (long-running repair/upgrade ops), **H8** (credential change → token-expiry delay) |
+
+**Lookback env vars:** `T_SYMPTOM_LOOKBACK`, `T_CHANGE_LOOKBACK`, and `T_CRITICAL_LOOKBACK` tune the three tier spans for early alerting — set them to widen a tier (e.g. `T_CRITICAL_LOOKBACK=12h` to catch a slow billing-disable propagation) or tighten it (e.g. `T_SYMPTOM_LOOKBACK=15m` for fresher symptom alerts). `T_END` is always the run anchor (now in monitor mode). The tier spans apply in both monitor (scheduled early-alert) and investigate modes.
 
 **Multi-service note:** app-log queries filter on `pod_name=~"'$SVC_RE'"` (the regex expanded from `SERVICES` in Pre-Flight), so they cover every affected service at once. Endpoint, NEG, and single-target `kubectl` commands use the primary `$SERVICE`/`$DEPLOYMENT` — repeat them per service when `SERVICES` lists more than one. If an exact (non-wildcard) service name is itself a prefix of a sibling (e.g. `api` vs `api-order`), verify ownership via the label selector in 1b rather than the pod-name regex.
 
@@ -87,6 +89,12 @@ grep -nE '\{HYP:[^}]*[{ ]H14[ }]' "$REPORT"                        # just the st
 
 Read the whole file once for the overall picture; use the tag slice when drilling into a single
 hypothesis. The tag matcher is word-safe (`H1` never matches `H14`).
+
+**G1/5xx-ratio signal.** The 5xx ratio is a retrievable **symptom signal**, not a scored hypothesis
+— it appears as `[VERDICT: …] {HYP: G1}` in console output and `signals.G1` in the report
+(`backends[]` with per-backend `scope`, `ratio`, `fiveXx`, `totalRequests`, plus a window rollup and
+`onsetMinute`). Grep `-F '{HYP: G1}'` to retrieve it. The ratio is the investigation trigger, not a
+root cause — score the underlying hypotheses that caused the errors, not the error ratio itself.
 
 **Verdicts & confidence — avoiding false negatives and false positives.** Each detector emits a
 one-line `[VERDICT: …]` (grep `-F '[VERDICT:'` for all of them at once). There are **five** states,
@@ -209,6 +217,11 @@ See `===== 1d.5 — LB statusDetails =====` in the script output.
 | `backend_timeout` | H4/H5/H6 (overload/dep) |
 | `backend_early_response` | H2/H5/H6 (app rejection) |
 | `handled_by_identity_aware_proxy` or `forbidden` | H8 (IAM/auth rejection) |
+
+**G1 signal vs hypothesis.** The 5xx ratio is carried as a retrievable symptom signal (`signals.G1`),
+not a scored hypothesis. The runtime exposes per-backend ratios and a window rollup alongside
+the hypothesis ledger; grep `-F '{HYP: G1}'` for its verdict line. The ratio triggers investigation
+— score the underlying root-cause hypotheses (H1–H16, B1), not the error ratio itself.
 
 **LB Decision Matrix:** "Spike" here means `total` rising sharply *within* the window (1d.2) — the
 pre-onset minutes are the comparison, not a T−1d baseline. Every row assumes the 5xx *ratio* rose,
