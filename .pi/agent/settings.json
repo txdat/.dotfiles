@@ -1,6 +1,6 @@
 {
-  "lastChangelogVersion": "0.83.0",
-  "theme": "dark",
+  "lastChangelogVersion": "0.84.0",
+  "theme": "2026-dark",
   "enableInstallTelemetry": false,
   "defaultProvider": "opencode-go",
   "defaultModel": "deepseek-v4-flash",

@@ -107,7 +107,10 @@ export PATH="$HOME/fvm/bin:$HOME/fvm/default/bin:$PATH"
 export PATH="$HOME/.local/share/fnm:$PATH"
 eval "`fnm env`"
 
-export CHROME_EXECUTABLE=/usr/bin/google-chrome
+# opencode
+export PATH=/home/txdat/.opencode/bin:$PATH
+
+export CHROME_EXECUTABLE=/usr/bin/chromium-browser
 
 # gcloud
 export PATH="$HOME/.google-cloud-sdk/bin:$PATH"
