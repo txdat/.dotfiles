@@ -21,17 +21,17 @@ new_repo() {
 
 # A schema-valid plan carries a closed AC/TC/Step graph; gate-check now blocks
 # without one, so the default fixture has to be a real plan, not a header stub.
-# Pass $8 to substitute a broken graph for the traceability cases.
+# Pass argument 7 to substitute a broken graph for traceability cases.
 #
 # Parser fixture, NOT an authoring exemplar — the checker reads only IDs and
 # Proves: targets, so everything else here is filler chosen to keep the graph
 # closed. For what an AC, TC, or Source should actually look like, see the
-# filled examples in skills/dev/design-feature.md.
+# schema in skills/dev/design-feature.md.
 valid_graph() {
   cat <<'EOF'
 ## Acceptance Criteria
 AC-1 — the gate blocks an unapproved plan
-  Source: PROCESS #9
+  Source: user requirement
   Success: execution is refused
   Failure: execution proceeds
 
@@ -73,8 +73,8 @@ run_gate() {
     (cd "$repo" && "$GATE")
 }
 
-# Same-session variant: pinning is keyed by session_id, so exercising pin
-# reuse/staleness needs two calls sharing one session.
+# Same-session variant verifies that earlier calls cannot override the
+# explicit artifact named by a later call.
 run_gate_session() {
   local repo="$1" session="$2" skill="$3" args="$4"
   jq -cn --arg session "$session" --arg skill "$skill" --arg args "$args" \
@@ -106,9 +106,7 @@ make_registered_plan() {
   local graph="${6-$(valid_graph)}"
   local worktree="$repo-worktree"
   git -C "$repo" worktree add -q -b "$type/gate-test" "$worktree" main
-  write_plan "$repo/docs/plans/gate.md" planning "$type" "$issue" "$worktree" "$pattern" "$graph"
-  mkdir -p "$worktree/docs/plans"
-  write_plan "$worktree/docs/plans/gate.md" "$status" "$type" "$issue" "$worktree" "$pattern" "$graph"
+  write_plan "$repo/docs/plans/gate.md" "$status" "$type" "$issue" "$worktree" "$pattern" "$graph"
   printf '%s\n' "$worktree"
 }
 
@@ -163,7 +161,7 @@ assert_pass "$output" 'code review enters with no Code Rounds counter in the hea
 
 repo=$(new_repo)
 worktree=$(make_registered_plan "$repo" feature implemented '#12' '## PR Pattern (provisional)')
-sed -i 's/ | Worktree:/ | Code Rounds: 9 | Worktree:/' "$worktree/docs/plans/gate.md"
+sed -i 's/ | Worktree:/ | Code Rounds: 9 | Worktree:/' "$repo/docs/plans/gate.md"
 wt_commit "$worktree" 'test(red): gate' tests/gate_test.py
 wt_commit "$worktree" 'feat(gate): implement' src/gate.py
 output=$(run_gate "$repo" dev-review-code 'docs/plans/gate.md')
@@ -185,19 +183,22 @@ assert_pass "$output" 'reviewed plan permits create-pr'
 
 repo=$(new_repo)
 output=$(run_gate "$repo" dev-fix-bug 'broken behavior')
-assert_block "$output" 'explicit mode' 'planless fix mutation cannot use request as approval'
-output=$(run_gate "$repo" dev-fix-bug 'diagnose broken behavior')
-assert_pass "$output" 'planless diagnose mode remains read-only and allowed'
+assert_pass "$output" 'a plain symptom enters diagnosis without a mode or plan'
 output=$(run_gate "$repo" dev-fix-bug 'please diagnose and then fix the crash')
-assert_block "$output" 'explicit mode' 'the word diagnose inside a symptom does not grant read-only mode'
-output=$(run_gate "$repo" dev-fix-bug 'execute')
-assert_block "$output" 'approved fix plan' 'execute mode without a plan is blocked'
+assert_pass "$output" 'a requested fix enters diagnosis and routing'
+output=$(run_gate "$repo" dev-fix-bug 'execute fails when the queue is empty')
+assert_pass "$output" 'symptom wording is not parsed as an execution mode'
+output=$(run_gate "$repo" dev-execute-feature '')
+assert_block "$output" 'none was named' 'implementation still requires an explicit plan'
+write_plan "$repo/docs/plans/gate.md" planning fix '#12' '' '## PR Pattern (provisional)'
+output=$(run_gate "$repo" dev-execute-feature 'docs/plans/gate.md')
+assert_block "$output" 'not approved' 'diagnostic entry does not approve implementation'
 
 repo=$(new_repo)
 fake_worktree=$(mktemp -d "$TMP_ROOT/diagnose-stale.XXXXXX")
 write_plan "$repo/docs/plans/gate.md" approved fix '#12' "$fake_worktree" '## PR Pattern (provisional)'
-output=$(run_gate "$repo" dev-fix-bug 'diagnose broken behavior')
-assert_pass "$output" 'diagnose ignores stale active execution state'
+output=$(run_gate "$repo" dev-fix-bug 'broken behavior mentioned in docs/plans/gate.md')
+assert_pass "$output" 'diagnosis ignores stale execution state even when a plan is mentioned'
 
 # 'reviewed' is the sole entry status for create-pr; an unreviewed plan must
 # not reach a PR.
@@ -276,13 +277,13 @@ write_plan "$repo/docs/plans/gate.md" archived feature '#12' '' '## PR Pattern (
 output=$(run_gate "$repo" dev-ship-feature 'docs/plans/gate.md from execute')
 assert_block "$output" 'already shipped' 'ship-feature resume names its plan and still sees terminal status'
 
-# fix-bug diagnose stays planless and read-only; execute still cannot fall back.
+# Diagnosis never adopts an application plan; implementation names its own.
 repo=$(new_repo)
 write_plan "$repo/docs/plans/gate.md" approved feature '#12' '' '## PR Pattern (provisional)'
-output=$(run_gate "$repo" dev-fix-bug 'diagnose uploads return 502 under load')
+output=$(run_gate "$repo" dev-fix-bug 'uploads return 502 under load')
 assert_pass "$output" 'diagnose remains planless beside an active plan'
-output=$(run_gate "$repo" dev-fix-bug 'execute')
-assert_block "$output" 'requires an approved fix plan' 'fix-bug execute cannot adopt the lone active plan'
+output=$(run_gate "$repo" dev-execute-feature '')
+assert_block "$output" 'none was named' 'implementation cannot adopt the lone active plan'
 
 # ── AC <-> TC <-> Step referential closure ──
 # The hook reads identifiers, never prose. Closure proves every ID is
@@ -293,16 +294,14 @@ write_plan "$repo/docs/plans/gate.md" planning feature '#12' '' '## PR Pattern (
 output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
 assert_pass "$output" 'closed AC/TC/Step graph enters review-feature'
 
-# ── AC budget ──
-# review-feature is the cap's enforcement point: design-feature may draft past
-# it, but nothing downstream reviews an unsplit Goal.
+# ── Plan size does not replace traceability or requirement checks ──
 
 # A closed graph of exactly $1 ACs, one TC and one step each.
 graph_with_acs() {
   awk -v n="$1" 'BEGIN {
     print "## Acceptance Criteria"
     for (i = 1; i <= n; i++) {
-      printf "AC-%d — outcome %d\n  Source: PROCESS #9\n  Success: it holds\n  Failure: it does not\n", i, i
+      printf "AC-%d — outcome %d\n  Source: user requirement\n  Success: it holds\n  Failure: it does not\n", i, i
     }
     print ""
     print "## Test Cases"
@@ -321,24 +320,22 @@ assert_pass "$output" 'seven ACs enter review-feature'
 repo=$(new_repo)
 write_plan "$repo/docs/plans/gate.md" planning feature '#12' '' '## PR Pattern (provisional)' "$(graph_with_acs 8)"
 output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
-assert_block "$output" 'review-feature reviews at most 7' 'eight ACs are refused at review entry'
+assert_pass "$output" 'eight coherent ACs enter review without an arbitrary cap'
 
-# The cap reports ahead of the Open Question gate: an over-cap plan is about to
-# be split, so answering questions for ACs that are leaving is wasted work.
+# Larger plans still need resolved requirements.
 repo=$(new_repo)
 write_plan "$repo/docs/plans/gate.md" planning feature '#12' '' '## PR Pattern (provisional)' "$(graph_with_acs 8)"
 printf '\n## Assumptions & Open Questions\nOpen Questions: which store owns the balance?\n' >> "$repo/docs/plans/gate.md"
 output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
-assert_block "$output" 'review-feature reviews at most 7' 'the AC cap reports before unresolved Open Questions'
+assert_block "$output" 'unresolved Open Question' 'larger plans still block unresolved requirements'
 
-# The cap belongs to review-feature alone: an approved plan is not re-litigated
-# at execution or code review, where splitting is no longer available.
+# Size does not block implemented work with valid proof.
 repo=$(new_repo)
 worktree=$(make_registered_plan "$repo" feature implemented '#12' '## PR Pattern (provisional)' "$(graph_with_acs 8)")
 wt_commit "$worktree" 'test(red): gate' tests/gate_test.py
 wt_commit "$worktree" 'feat(gate): implement' src/gate.py
 output=$(run_gate "$repo" dev-review-code 'docs/plans/gate.md')
-assert_pass "$output" 'the AC cap does not gate code review'
+assert_pass "$output" 'larger plans with proof enter code review'
 
 # No review carries a round counter: a plan with no counter enters, and a stale
 # plan still holding an exhausted one is not judged on its value.
@@ -628,13 +625,62 @@ git -C "$repo" commit -qm 'feat: existing parent work'
 git -C "$repo" checkout -q main
 worktree=$(make_registered_plan "$repo" fix implemented '#12' '## PR Pattern (provisional)')
 git -C "$worktree" merge -q --ff-only feat/parent
-sed -i 's/| fix\/gate-test | main |/| fix\/gate-test | feat\/parent |/' "$worktree/docs/plans/gate.md"
+sed -i 's/| fix\/gate-test | main |/| fix\/gate-test | feat\/parent |/' "$repo/docs/plans/gate.md"
 git -C "$worktree" commit --allow-empty -qm 'test(red): regression'
 git -C "$worktree" commit --allow-empty -qm 'fix: regression'
 output=$(run_gate "$repo" dev-review-code 'docs/plans/gate.md')
 assert_pass "$output" 'follow-up proof starts at its recorded parent instead of the integration base'
-sed -i 's/| fix\/gate-test | feat\/parent |/| fix\/gate-test | |/' "$worktree/docs/plans/gate.md"
+sed -i 's/| fix\/gate-test | feat\/parent |/| fix\/gate-test | |/' "$repo/docs/plans/gate.md"
 output=$(run_gate "$repo" dev-review-code 'docs/plans/gate.md')
 assert_block "$output" 'Parent' 'review does not silently default when the first slice parent is missing'
+
+# Phase entry reads only the root plan, even from inside the worktree.
+repo=$(new_repo)
+worktree=$(make_registered_plan "$repo" feature reviewed '#12' '## PR Pattern')
+output=$(run_gate "$repo" dev-create-pr 'docs/plans/gate.md')
+assert_pass "$output" 'publication requires no plan file in the worktree'
+output=$(run_gate "$worktree" dev-create-pr 'docs/plans/gate.md')
+assert_pass "$output" 'relative plan paths resolve to the root from a worktree'
+output=$(run_gate "$worktree" dev-create-pr "$repo/docs/plans/gate.md")
+assert_pass "$output" 'absolute root plan paths resolve from a worktree'
+
+# Only the root plan controls phase entry; other copies are ignored.
+mkdir -p "$worktree/docs/plans"
+cp "$repo/docs/plans/gate.md" "$worktree/docs/plans/gate.md"
+sed -i 's/Status: reviewed/Status: implemented/' "$repo/docs/plans/gate.md"
+output=$(run_gate "$repo" dev-create-pr 'docs/plans/gate.md')
+assert_block "$output" 'run review-code first' 'a stale reviewed worktree copy cannot override the root status'
+output=$(run_gate "$worktree" dev-create-pr 'docs/plans/gate.md')
+assert_block "$output" 'run review-code first' 'worktree invocation also uses the changed root status without syncing'
+sed -i 's/Status: implemented/Status: reviewed/' "$repo/docs/plans/gate.md"
+printf '\nWorktree-only note\n' >> "$worktree/docs/plans/gate.md"
+output=$(run_gate "$repo" dev-create-pr 'docs/plans/gate.md')
+assert_pass "$output" 'a differing worktree copy does not impose a sync gate'
+output=$(run_gate "$worktree" dev-create-pr "$worktree/docs/plans/gate.md")
+assert_block "$output" 'not found' 'absolute worktree plan paths are not accepted as root artifacts'
+mv "$repo/docs/plans/gate.md" "$repo/docs/plans/gate.saved"
+output=$(run_gate "$worktree" dev-create-pr 'docs/plans/gate.md')
+assert_block "$output" 'not found' 'a worktree copy cannot replace a missing root plan'
+
+# Linked-worktree review must read root metadata and use worktree proof history.
+repo=$(new_repo)
+worktree=$(make_registered_plan "$repo" feature implemented '#12' '## PR Pattern (provisional)')
+wt_commit "$worktree" 'test(red): gate' tests/gate_test.py
+wt_commit "$worktree" 'feat(gate): implement' src/gate.py
+output=$(run_gate "$worktree" dev-review-code 'docs/plans/gate.md')
+assert_pass "$output" 'linked-worktree review combines the root plan with worktree proof commits'
+
+# Failed root discovery must not fall back to a plan in the current tree.
+mkdir -p "$worktree/docs/plans"
+write_plan "$worktree/docs/plans/gate.md" approved feature '#12' '' '## PR Pattern (provisional)'
+output=$(
+  git() {
+    if [[ "${1:-}" == worktree && "${2:-}" == list ]]; then return 1; fi
+    command git "$@"
+  }
+  export -f git
+  run_gate "$worktree" dev-execute-feature 'docs/plans/gate.md'
+)
+assert_block "$output" 'main working-tree root' 'failed root discovery cannot adopt a linked-worktree plan'
 
 printf 'All gate-check tests passed. Temporary fixtures: %s\n' "$TMP_ROOT"

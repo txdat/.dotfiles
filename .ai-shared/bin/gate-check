@@ -10,18 +10,13 @@
 #   execute-feature → approved → in-progress → implemented
 #   review-code     → implemented → reviewed
 #   create-pr       → reviewed → archived
-#   fix-bug diagnose → read-only, plan optional
-#   fix-bug execute  → approved fix plan
+#   fix-bug          → read-only diagnosis and routing, no plan gate
 #   (human abandon) → abandoned (terminal; any non-archived status)
 #
 # Each skill's entry gate is the prerequisite status.
 # archived and abandoned are the two terminal statuses: both leave the active
 # set, and neither is an entry status for any skill, so an abandoned plan
 # blocks at whatever gate it is aimed at.
-# Feature review entry also enforces the AC budget (at most 7) — a decision
-# still cheap to act on while the plan is unapproved. Review authorization and
-# non-convergence follow skills/dev/independence.md `Re-review`; header counters
-# do not govern readiness.
 # Review-code additionally requires proof-commit sequencing for every slice.
 #
 # Approval is a human decision recorded as `Status: approved`, set at the
@@ -31,7 +26,7 @@
 # for referential closure (see traceability_report) — identifiers only. Whether
 # the ACs are right, whether a TC can admit a wrong implementation, and whether
 # a step actually satisfies the TC it cites are judgment calls owned by
-# review-feature's self-check, not by a parser.
+# review-feature's judgment, not by a parser.
 #
 # Plan resolution is by explicit path only (see resolve_plan). Governance binds
 # to a named artifact: a plan-consuming skill either names its
@@ -39,12 +34,8 @@
 # pin, no lone-plan adoption — a dormant plan can never capture unrelated work,
 # and a gate never fires merely because some plan exists in the repository.
 #
-# Worktree model (skills/dev/worktree.md): the main-tree plan is only the
-# locator — its Status goes stale once execution starts. When its header
-# records "Worktree:", live Status/Issue/PR-Pattern are read from the
-# worktree's untracked plan copy, and proof-commit checks run against the
-# worktree's HEAD (the slice branch). The plan file is never committed
-# anywhere; at cleanup, create-pr posts it as an issue comment.
+# Plan storage and archive rules: skills/dev/plan.md. Gates read the live
+# main-tree plan; proof checks use the worktree HEAD (the slice branch).
 
 set -euo pipefail
 
@@ -117,10 +108,20 @@ RAW_SKILL=$(
 SKILL_SLUG=$(extract_skill_slug "$RAW_SKILL")
 [[ -n "$SKILL_SLUG" ]] || exit 0
 STATUS=""
+PLAN=""
 ACTIVE_WORKTREE=""
 
-REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
-cd "$REPO_ROOT"
+block() {
+  local reason="$1"
+  jq -cn --arg reason "$reason" \
+    '{continue:false, stopReason:$reason, decision:"block", reason:$reason}'
+  exit 0
+}
+
+# Share root resolution with phase skills; never substitute the linked tree.
+GATE_DIR=$(dirname -- "$(realpath -- "${BASH_SOURCE[0]}")")
+REPO_ROOT=$(bash "$GATE_DIR/dev-utils.sh" main-root 2>/dev/null) || block "Cannot resolve the main working-tree root. Follow skills/dev/plan.md; do not substitute the current linked worktree."
+cd "$REPO_ROOT" || block "Cannot access the main working-tree root: $REPO_ROOT"
 # Tree that git history checks run against — repointed to the plan's worktree
 # when one is recorded (see "Worktree model" above).
 GIT_TREE="$REPO_ROOT"
@@ -310,24 +311,6 @@ open_questions_count() {
   ' "$1" 2>/dev/null
 }
 
-# Distinct AC IDs declared under ## Acceptance Criteria — the same declaration
-# shape traceability_report parses, and identifiers only, for the same reason.
-# A count is all the budget needs: whether five criteria are the *right* five
-# is review-feature's judgment, not a parser's.
-ac_count() {
-  awk '
-    /^## / { sec = "" }
-    /^## Acceptance Criteria/ { sec = "ac"; next }
-    sec != "ac" { next }
-    /^[[:space:]]*([-*][[:space:]]*)?AC-[0-9]+/ {
-      match($0, /AC-[0-9]+/)
-      id = substr($0, RSTART, RLENGTH)
-      if (!(id in seen)) { seen[id] = 1; n++ }
-    }
-    END { print n+0 }
-  ' "$1" 2>/dev/null
-}
-
 # Referential closure of the AC <-> TC <-> Step ID graph. This reads
 # identifiers, never prose: it proves every ID is referenced, never that any
 # edge is *true* (whether a Proves: names the right AC, whether a step
@@ -489,18 +472,6 @@ require_traceability() {
   block "$(printf "Plan's AC/TC/Step graph is not closed — every AC needs a TC, every TC a Proves: and a step, every step a TC:\n%s\n\nClosure is shape, not correctness: fixing these does not mean an edge is right." "$report")"
 }
 
-# fix-bug has exactly two documented modes: `diagnose <symptom>` (read-only) and
-# `execute <fix-plan>`. Read the mode from the leading argument token only — a
-# substring search would hand read-only status to any request that merely says
-# the word ("diagnose this and fix it"), reopening planless mutation. Anything
-# that is not one of the two modes is not read-only, and is gated as mutation.
-fix_bug_mode() {
-  local args first
-  args=$(printf '%s' "$1" | sed -E 's#^[[:space:]]*/?(dev[:-])?fix-bug([[:space:]]+|$)##')
-  read -r first _ <<<"$args" || true
-  printf '%s' "${first:-}"
-}
-
 red_commit_count() {
   local base="$1"
   git -C "$GIT_TREE" log --format=%s "${base}..HEAD" 2>/dev/null | grep -Ec '^test\(red\):' || true
@@ -595,46 +566,29 @@ parentless_row_count() {
   plan_parents "$1" | grep -c '^[[:space:]]*$' || true
 }
 
-block() {
-  local reason="$1"
-  jq -cn --arg reason "$reason" \
-    '{continue:false, stopReason:$reason, decision:"block", reason:$reason}'
-  exit 0
-}
-
 # ── gate dispatch ─────────────────────────────────────────────────────
 
 # Resolve the named plan only for skills that consume one. Entry skills
-# (frame-goal, design-*, explore, create-issue) never take one — they
-# create the artifact that later phases must name.
+# (frame-goal, design-*, explore, create-issue, fix-bug) do not bind to an
+# application plan, even if their context mentions one.
 case "$SKILL_SLUG" in
   review-feature|execute-feature|review-code|create-pr|ship-feature)
     PLAN=$(resolve_plan 2>/dev/null || true) ;;
-  fix-bug)
-    FIX_BUG_MODE=$(fix_bug_mode "$HOOK_TEXT")
-    if [[ "$FIX_BUG_MODE" == "diagnose" ]]; then
-      PLAN=""
-    else
-      PLAN=$(resolve_plan 2>/dev/null || true)
-    fi ;;
   *)
     PLAN="" ;;
 esac
-# Worktree model: the main-tree plan is only the locator. When it records a
-# Worktree:, repoint at the live plan copy there and run git checks in it.
+# Keep PLAN bound to the root source; only Git checks move into the worktree.
 if [[ -n "$PLAN" ]]; then
   WT=$(plan_worktree "$PLAN")
   case "${WT,,}" in ""|none|n/a|"<"*">") WT="" ;; esac
   if [[ -n "$WT" ]]; then
-    WT_COPY="$WT/docs/plans/$(basename "$PLAN")"
     if ! is_registered_worktree "$WT"; then
-      block "Plan records 'Worktree: $WT', but that path is not a registered non-main Git worktree. Recreate it per skills/dev/worktree.md or clear the stale field."
-    elif [[ -d "$WT" && -f "$WT_COPY" ]]; then
-      PLAN="$WT_COPY"
+      block "Plan records 'Worktree: $WT', but that path is not a registered non-main Git worktree. Preserve the plan and resolve registration per skills/dev/plan.md#worktree-operations before retrying."
+    elif [[ -d "$WT" ]]; then
       GIT_TREE="$WT"
       ACTIVE_WORKTREE="$WT"
     else
-      block "Plan records 'Worktree: $WT' but the worktree or its plan copy is missing. Recreate it per skills/dev/worktree.md resume, or clear the plan's Worktree: field to start over."
+      block "Plan records 'Worktree: $WT' but the worktree directory is missing. Preserve the root plan and restore the worktree per skills/dev/plan.md#worktree-operations before continuing."
     fi
   fi
   STATUS=$(plan_status "$PLAN")
@@ -669,17 +623,6 @@ case "$SKILL_SLUG" in
         archived)              block "Plan is shipped. Nothing to review." ;;
         *)                                block "Plan status is '$STATUS' — expected 'planning'. Run design-feature first." ;;
       esac
-      # Review History records findings and evidence; readiness is independent
-      # of historical round counters.
-      # Ahead of the traceability and Open Question gates on purpose: an
-      # over-cap plan is about to be split, and repairing a graph or answering
-      # questions for ACs that are moving to another plan is wasted work. An ID
-      # range can undercount here, but require_traceability rejects ranges
-      # outright, so the cap is re-applied on the enumerated plan that follows.
-      ACS=$(ac_count "$PLAN")
-      if [[ "$ACS" -gt 7 ]]; then
-        block "Plan declares $ACS acceptance criteria; review-feature reviews at most 7. Return to design-feature and narrow the Goal, or split it into separate plans (frame-goal) and review each on its own. Merging outcomes into one AC to fit the cap is not a fix."
-      fi
       OQ=$(open_questions_count "$PLAN")
       if [[ "$OQ" -gt 0 ]]; then
         block "Plan has $OQ unresolved Open Question(s). Resolve them in design-feature before review."
@@ -801,37 +744,11 @@ case "$SKILL_SLUG" in
     fi
     ;;
 
-  # ── fix-bug: planless diagnosis; mutation requires an approved fix plan ──
-  fix-bug)
-    git rev-parse --git-dir >/dev/null 2>&1 || block "Not in a git repository. fix-bug requires version control."
-    # Diagnosis is read-only and may run without a plan. Any invocation that can
-    # mutate code requires the normal reviewed + human-approved fix plan.
-    if [[ "$FIX_BUG_MODE" == "diagnose" ]]; then
-      :
-    elif [[ "$FIX_BUG_MODE" != "execute" ]]; then
-      block "fix-bug takes an explicit mode: 'fix-bug diagnose <symptom>' (read-only) or 'fix-bug execute <fix-plan>' (approved plan). A bare symptom is not a mutation authorization."
-    elif [[ -z "$PLAN" ]]; then
-      block "fix-bug execute requires an approved fix plan. Run 'fix-bug diagnose <symptom>', then design-feature/review-feature, then approve the plan."
-    else
-      case "$STATUS" in
-        approved|in-progress) ;;
-        planning) block "Active plan '$PLAN' is '$STATUS' — not approved. Run review-feature, then have the user approve the spec (see approval.md)." ;;
-        implemented) block "Active plan '$PLAN' is implemented. Do not append behavior after execution; return through design-feature/review-feature and renewed human approval." ;;
-        reviewed) block "Active plan '$PLAN' already passed review. Diagnose read-only or create and approve a separate fix plan." ;;
-        archived) block "Active plan '$PLAN' is already shipped. Diagnose read-only or create a separate fix plan." ;;
-        *) block "Active plan status is '$STATUS' — complete the normal fix-plan workflow before mutation." ;;
-      esac
-      if ! has_issue "$PLAN"; then
-        block "Active plan '$PLAN' has no linked issue — the 'Issue:' field is empty. Link an existing issue or create one ('gh issue create'), record it as 'Issue: #<n>', then re-run."
-      fi
-    fi
-    ;;
-
   # ── planning and read-only entry points: no entry gate ──
-  design-feature|design-system|review-system|design-infra|review-infra|explore|create-issue)
+  design-feature|design-system|review-system|design-infra|review-infra|explore|create-issue|fix-bug)
     # Entry-point skills: read-only, or they produce a plan/issue/architecture
     # doc rather than touching application code. Nothing that mutates
-    # application code reaches this branch — that is what makes PROCESS #8's
+    # application code reaches this branch — that is what makes PROCESS.md's
     # "no planless mutation" true. The architecture lane (design-system,
     # review-system) works on docs/architecture/ and has no plan state; the
     # infra lane (design-infra, review-infra) works on docs/runbooks/ and has

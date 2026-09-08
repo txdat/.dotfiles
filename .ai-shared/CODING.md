@@ -1,47 +1,43 @@
-# AI — Coding
+# Engineering Standards
 
-Universal rules for every agent that reads or writes code. Loaded before the first code read or write — by the main session and every subagent (per its role doc).
+## Changes and evidence
 
-## Code
-**Match before inventing.** Mirror existing patterns and style.
+Follow project patterns. Keep changes within the request; avoid speculative abstractions and unrelated cleanup. Prefer root-cause fixes. Label a temporary mitigation with its limits and removal condition.
 
-**Minimal footprint.** Every change traces to the request. No adjacent fixes or abstractions. Refactor only when explicitly asked. Remove only what you introduce; leave existing dead code alone. Spotted cleanup → note it, do not apply.
+Duplication is cheaper than the wrong abstraction: extract an established shared concept, not an anticipated one.
 
-**Address causes.** Prefer a fix supported by root-cause evidence. An authorized mitigation may reduce impact while diagnosis continues; label it as temporary, explain its limits and removal condition, and preserve evidence of the underlying failure.
+Verify changed calls, fields, imports, and assumptions against actual definitions or focused runtime evidence. Design failure paths deliberately, preserve error causes, and comment only non-obvious reasons or invariants.
 
-**Comment the why, not the what.** A comment states what the code cannot: a non-obvious invariant, constraint, or reason. Never narrate the next line or restate a name. Verify every comment you write or touch is true.
+Tests should assert required observable behavior. Never special-case test inputs or replace required behavior with canned results. Distinguish inspected facts, inference, and unrun checks; report decisive file locations or command results without exposing secrets.
 
-**Clean code.** Write code that is obvious to read, safe to change, hard to misuse — plus three rules that override instinct: **duplication is cheaper than the wrong abstraction** (extract only proven concepts, never anticipated ones); **tests assert observable behavior, not implementation** (a test that breaks on a behavior-preserving refactor tests the wrong thing); **failure paths are designed, not swallowed** (preserve the cause; never flatten errors into generic messages).
+Start verification with affected tests and callers, plus required project checks. Broaden to the full suite when requested, required, inexpensive, or necessary to cover the impact. Report incomplete checks and their implications. Development-specific proof and coverage rules live in [verification.md](skills/dev/verification.md).
 
-**Verify symbols.** Before introducing or changing a call, access, or import, confirm it against the actual type or module using `Code navigation cascade` below. Correct an invalid reference when the intended behavior and valid replacement are clear. Ask only when resolving it requires a contract, scope, or material design decision. For dynamic or generated APIs, use declarations, generation sources, or focused runtime evidence; do not invent members.
+## Critical work
 
-**Authorize destructive actions.** Confirm the target and consequences before an irreversible or destructive action outside existing authorization. Explicit authorization for that same action and scope persists; ask again only when the target, consequences, or scope materially change. Respect platform approval controls.
+Before changing security, concurrency, data-integrity, or performance-critical behavior:
 
-**Git ownership.** Main agent: mutate Git. Subagents: only the scope their task assigns — read-only Git (`status`/`diff`/`log`/`show`) unless explicitly granted write; never claim unproduced results.
+1. State the invariants and relevant failure modes: races, partial failure, ordering, retries, resource exhaustion, and security boundaries.
+2. Inspect the affected contracts and existing pattern against those conditions. If the pattern cannot preserve the required behavior or a material decision is unresolved, stop the affected implementation and report the conflict; do not silently change the contract.
+3. Implement and verify against those obligations, including failure paths. Report any residual risk or missing evidence.
 
-**Match verification to impact.** Start with targeted tests and affected callers/dependents, plus required project checks. Run the full suite when requested, required, known to be inexpensive, or necessary because affected tests cannot be isolated. For unknown cost, inspect test configuration and available timing evidence first; use a bounded run when safe. Report skipped or incomplete checks and their implications. Passing targeted tests does not prove unrelated behavior.
+## Impact
 
-## Discipline (non-negotiable)
+For changed contracts, inspect callers, consumers, and tests, including dependencies on errors, defaults, ordering, timing, and side effects beyond documented signatures. For shared state used as a decision input or signal, check writers and readers together: meaning, ownership, initialization, transitions, concurrency, and cleanup.
 
-**No fake implementations.** Never special-case test inputs (`if input == test_value: return expected`) or substitute canned answers for required behavior. If you catch this, correct the implementation and rerun meaningful tests before claiming success. Ask when the intended behavior is unresolved.
+Record decisive evidence with the design or verification results. Resolve broken consumers within scope; material compatibility uncertainty or additional work needs a decision before the change is ready. Plan-backed decisions follow [approval.md](skills/dev/approval.md).
 
-**Evidence, not memory.** Ground claims about repository contents, behavior, test results, and coverage in inspected files or actual tool output. Distinguish inference from observation and unrun checks from passing checks. Cite relevant file locations or commands and summarize the decisive result; quote exact output when its wording matters. Never expose secrets in evidence. Review findings need a concrete location, failure mechanism, and consequence; label unverified concerns as questions.
+## Tools
 
-**Report, don't decide.** Preserve agreed behavior, scope, and constraints. Resolve routine implementation details with evidence. For plan-backed work, record deviations under PROCESS #4; new scope follows #6. Pause the affected action for a contract conflict, material risk change, or decision outside authorization, and continue independent work. Coverage: report the real number; add tests for meaningful missing behavior, never merely to raise it. If no meaningful assertion is possible, report the gap.
+Use the tool that answers the question: semantic navigation for definitions and callers, `rg` for text and files, source reads to verify results. Batch independent reads; keep dependent actions and mutations sequential. Reuse evidence until its inputs change.
 
-## Tooling
-**File I/O:** Prefer platform-native file read/edit tools over shell equivalents (`cat`, `sed`, `head`, `tail`, `echo`).
+For Sverklo, use read-only `overview`, `search`, or `lookup`; exploration does not use memory or management operations. Verify returned source belongs to the intended repository and use another navigation method when the index is stale or inconclusive.
 
-**Code navigation cascade.** For semantic navigation, use LSP → Sverklo → shell search/tracing. Move to the next tier when the current tier is unavailable, unsupported, stale, or inconclusive for the query:
+Shared shell helpers live in `~/.dotfiles/.ai-shared/bin/`; invoke them by full path with Bash. Python helpers use Python 3. Follow the owning skill's arguments and invocation conditions.
 
-1. **LSP** — definitions, callers, implementations, types. Load it once if deferred before concluding unavailable. Navigate via `goToDefinition`, `findReferences`, `goToImplementation`, `hover`, `incomingCalls`/`outgoingCalls`.
-2. **Sverklo** (`mcp__sverklo__*`) — code exploration and symbol lookup, limited to `overview`, `search`, and `lookup`. When this tier is needed and its tools are available, read `~/.dotfiles/.ai-shared/skills/dev/sverklo.md` once before use.
-3. **Shell search/tracing** — `rg` over `grep`, `fd` over `find`. Use directly for literals, comments, and config; otherwise follow the cascade above. Explain a fallback only when it limits confidence in the result.
+## Ownership
 
-**Blast-radius.** Start with LSP references/call hierarchy for callers, dependents, affected tests, and impact checks. If LSP cannot resolve the query, use Sverklo only where `overview`, `search`, or `lookup` can help; skip unsupported operations and continue to shell tracing. Do not switch to another code-index or dependency-graph provider.
+Preserve unrelated work. The main agent owns Git mutations unless a task explicitly delegates them. Confirm destructive actions only when they exceed existing authorization.
 
-**Project commands:** `dev-check <cmd>` means `~/.dotfiles/.ai-shared/bin/dev-check` — not on PATH; invoke by full path.
+Default to direct work. Delegate a substantial, independent chunk only when permitted and useful concurrent work exists. Use a platform-provided general-purpose subagent, instructed to read this file and the owning skill. Assign exclusive file ownership, required inputs, verification, and off-limits actions; tell workers they share the codebase and must preserve others' edits. The main agent integrates and verifies the result. Review isolation is owned by [independence.md](skills/dev/independence.md).
 
-**Spend tool calls well.** Batch independent reads and searches; keep dependent actions and mutations sequential. Reuse results while their inputs remain unchanged. Repeat checks after relevant changes or when evidence is stale or incomplete.
-
-**Subagent context:** Delegate only when the owning workflow permits. Write the minimal task packet to `/tmp/ai-ctx/<slug>.md`, start the agent **without conversation inheritance**: "Read `/tmp/ai-ctx/<slug>.md` first, then…" Context must start empty except for its packet. If isolation is unavailable, stay in the main session. Never spawn multiple agents to reread the same diff.
+For an explicitly requested code audit without a plan, inspect the supplied scope directly under those review rules. Report located findings with failure mechanism, consequence, and verification limits; do not invent a plan or phase transition.

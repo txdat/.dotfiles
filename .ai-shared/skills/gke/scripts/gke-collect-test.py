@@ -8,7 +8,7 @@ import tempfile
 import unittest
 
 
-COLLECTOR = Path(__file__).with_name("gke-collect.sh")
+COLLECTOR = Path(__file__).resolve().parents[3] / "bin" / "gke-collect.sh"
 FAKES = r'''
 gcloud() {
   case "$*" in

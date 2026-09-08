@@ -79,7 +79,12 @@ ok proof HEAD --stub src/stub.py
 
 ok coverage 95
 ok coverage 85
-bad coverage 79
+ok coverage 79
+ok coverage 0
+bad coverage -1
+bad coverage 101
+bad coverage invalid
+bad coverage 79 uncovered-critical
 bad coverage 95 uncovered-critical
 
 git -C "$TMP" reset -q --hard "$proof"

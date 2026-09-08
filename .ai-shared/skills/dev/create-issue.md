@@ -1,19 +1,7 @@
-# /create-issue — Standalone GitHub Issue
+# /create-issue — Capture a Standalone Issue
 
-For plan-linked issues, use the design-feature skill instead.
+For plan-linked issues, use [design-feature.md](design-feature.md).
 
-Collect from $ARGUMENTS or ask: title, problem/context, and expected outcome (required); labels and milestone (optional). Build the body from the required problem/context and expected outcome.
+Build a specific title and body from the supplied problem, context, and expected outcome. Ask only for missing essentials; apply requested labels and milestone.
 
-Before the command below, read PROCESS `Git credentials`, the single source for the identity `gh` uses.
-
-```bash
-gh issue create --title "..." --body "..." [--label "..."] [--milestone "..."]
-```
-
-## Self-Check (BLOCKING)
-
-- [ ] **Standalone:** not plan-linked — otherwise this is design-feature's job.
-- [ ] **Content:** specific title under 72 chars; body carries problem, expected outcome, context; requested labels/milestone applied.
-- [ ] **Auth:** `gh auth status` shows the account PROCESS requires.
-
-All checked → create the issue and emit its URL.
+Use [PROCESS.md](../../PROCESS.md)'s Git identity rules. Write the exact body to a temporary file, then run [dev-github.sh](../../bin/dev-github.sh) `issue-create <title> <body-file> [gh options]`. Verify the created issue and return its URL.

@@ -1,34 +1,12 @@
-# /ielts-reading — Reading Reasoning and Practice
+# /ielts-reading — Explain Answers and Practise
 
-Read [README.md](README.md) for provenance, conversions, voice, and archive rules.
+Read [README.md](README.md) for marking provenance, diagnosis certainty, scoring, and saving. Establish the passage, questions, instructions, learner answers, and available key. Missing-key answers inferred from the passage remain provisional.
 
-## Modes and input
+## Analysis
 
-- **Error analysis:** passage, questions/instructions, learner answers, and key if available.
-- **Guided practice:** passage and unanswered questions; use hints before revealing answers.
-- **Focused drill:** work on a named question type. Use a supplied task or generate a short original passage and questions.
+For each wrong or uncertain answer, locate the decisive passage evidence and explain the reasoning, distractor, and useful paraphrase relationship. Mark spelling/form/word-limit issues against the instructions. Describe the observed mismatch; infer a mental cause only with supporting learner evidence.
 
-Use Academic passages and conversions. Ask for missing passage/question text rather than inventing it from a book title. If a key is missing, derive provisional answers from the supplied passage and label them `model_inference`. If a key conflicts with the evidence, preserve both and flag the exact discrepancy.
-
-## Analyze answers
-
-1. Identify question types and their instructions, including word limits and whether multiple answers are required.
-2. Mark against the available key or clearly labeled provisional answers. Check spelling, answer form, and accepted variants where relevant. Report unresolved items separately.
-3. For each incorrect or uncertain answer, show the learner answer, expected/proposed answer and source, passage location, minimal evidence excerpt, and reasoning.
-4. Explain why the distractor fails. A diagnosis of the learner's thought process is a hypothesis unless they supplied their reasoning.
-5. Extract useful paraphrases **in context**. Similar words need not be interchangeable elsewhere. End with one correction to the learner's method.
-
-Suggested breakdown:
-
-```text
-Q: question and type
-Learner answer:
-Expected/proposed answer: [source and key location, if available]
-Evidence: paragraph/sentence + short excerpt
-Reasoning: how the evidence settles the whole statement
-Distractor: what fails or remains unstated
-Next check: the specific habit to practice
-```
+Report the checked raw count and unresolved items, useful explanations, and a priority exercise. Apply only the relevant question guidance below.
 
 ## True / False / Not Given
 
@@ -73,29 +51,9 @@ These are coaching methods, not answer-order guarantees. Start with the printed 
 
 Show the gist and why the closest alternative fails. Never reduce paragraph meaning to first + last sentences alone.
 
-## Guided practice and drills
 
-Ask for an attempt, then reveal hints progressively: relevant idea → paragraph location → decisive phrase → full explanation after the answer or an explicit request to reveal it. Honor a direct request for the solution.
+## Guided practice
 
-Without supplied material, generate a short original drill. Label it AI-created, not a Cambridge/official item. Check privately that each question has one defensible answer from the passage, then withhold the key until the learner attempts it. Do not require buying or opening a book to practice.
+Invite an attempt before revealing the answer unless the learner requests it directly. Offer progressive hints from relevant idea to paragraph to decisive phrase. Generated drills must be labeled original practice, have defensible answers from their passage, and keep the key hidden until the attempt.
 
-## Report and archive
-
-For error analysis, complete this minimum report in order:
-
-1. Question range, instructions, marking source, checked/provisional count, and unresolved items. No passage-to-band conversion.
-2. Each incorrect/uncertain answer: evidence, reasoning, distractor, error tag and diagnosis status. Do not invent a mental cause.
-3. Contextual paraphrase pairs with passage locations, or “none identified”; one priority exercise.
-4. If saving is authorized, include every frontmatter field below and preserve answers/evidence. Otherwise finish in the conversation.
-
-For guided practice or a focused drill: (1) give the task and instructions, (2) obtain an attempt before hints/answers unless requested otherwise, (3) after the attempt, explain evidence, relevant tags and paraphrases, then one next check. Omit unneeded score/archive sections.
-
-Reading has a 60-minute limit; time allocation within it is a practice strategy. Adjust pacing to the learner's observed bottleneck. Do not quote a universal guessing percentage; the chance depends on answer format and remaining options.
-
-Save only on request, using README's collision rules:
-
-`reading/YYYY-MM-DD_<book-slug>_test<N>_passage<P>.md`
-
-Frontmatter fields: `type: reading-batch`, date, module, source_book, test_id, passage, total_questions, correct_count, score_source, key_source, unresolved_questions, errors, synonyms_extracted, open_verifications. Use `null` for a final correct_count when unresolved marking prevents an exact total; retain the checked subtotal in the report. Generated drills identify their source as AI-created.
-
-The body preserves learner answers, task/evidence references, and the report. Verify the new file before announcing its path.
+Adjust pacing to the observed bottleneck rather than a universal guessing or time-allocation formula. Saving follows README.

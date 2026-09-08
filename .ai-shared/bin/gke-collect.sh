@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # gke-collect.sh — single-pass, read-only evidence collector for the gke-inspect-incident skill.
 #
-# Runs the full Phase 1 broad sweep (1a-1i) plus every auto-discoverable Phase 3 deep-dive query,
-# and prints results under "===== <section> =====" headers that map 1:1 to the interpretation
-# tables in inspect-incident.md. Nothing here mutates cluster or project state.
+# Collects incident evidence under tagged section headers. Interpretation lives in
+# skills/gke/diagnostics.md; inspect-incident.md owns the investigation workflow.
+# Nothing here mutates cluster or project state.
 #
 # Usage:
 #   export GCP_PROJECT_ID=... GKE_CLUSTER=... GKE_REGION=... GKE_NAMESPACE=... GKE_SERVICES=...

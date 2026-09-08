@@ -1,6 +1,6 @@
 # IELTS Assessment — Evidence Before Bands
 
-Read [README.md](README.md) for provenance and calculation. This file supports provisional coaching estimates offline; full official descriptors remain authoritative.
+This file owns Writing/Speaking descriptors and assessment evidence limits. [README.md](README.md) owns shared scoring and provenance.
 
 ## Authoritative sources
 
@@ -9,7 +9,7 @@ Checked 2026-09-05:
 - [Writing band descriptors](https://ielts.org/cdn/ielts-guides/ielts-writing-band-descriptors.pdf), updated May 2023: use the Academic Task 1 or Task 2 criteria.
 - [Speaking band descriptors](https://ielts.org/cdn/ielts-guides/ielts-speaking-band-descriptors.pdf): use the Speaking tables, including their separate LR and GRA descriptors.
 
-Use the relevant official table or a verified supplied copy when accessible; reuse it within the session. When unavailable, use the local anchors below for provisional estimates within bands 5–8. Record `rubric_basis: local-summary`, cite this file, and state the adjacent-band uncertainty. PDF access is not a prerequisite for those coaching estimates. With the full table, record `rubric_basis: official-descriptors` and its reference. All AI estimates remain `model_inference`.
+Use the relevant official table or a verified supplied copy when accessible; reuse it within the session. When unavailable, use the local anchors below for provisional estimates within bands 5–8. Record `rubric_basis: local-summary`, cite this file, and state the adjacent-band uncertainty. PDF access is not a prerequisite for those coaching estimates. With the full table, record `rubric_basis: official-descriptors` and its reference.
 
 These abbreviated, paraphrased anchors omit finer distinctions. Compare neighboring rows for each criterion, then cite the response pattern supporting the choice and its limit. Do not convert isolated keywords or error counts into scores. If evidence falls outside these anchors, obtain the full scale or leave that criterion `null` with a qualitative explanation; never force a 5 or 8 boundary score.
 
@@ -37,7 +37,7 @@ Use only with the evidence allowed below. [Source: Speaking descriptors](https:/
 
 ## Writing evidence map
 
-The four criteria are equally weighted within each task. Assess them separately:
+Assess each criterion against its own evidence:
 
 | Criterion | Evidence to inspect |
 |---|---|
@@ -53,7 +53,7 @@ Do not assign a fixed deduction for a single mistake, short length, or a missing
 
 ## Speaking evidence map
 
-Speaking has four equally weighted criteria, but its descriptors differ from Writing:
+Use spoken-language evidence for the Speaking criteria:
 
 | Criterion | Evidence to inspect |
 |---|---|
@@ -70,8 +70,4 @@ Speaking has four equally weighted criteria, but its descriptors differ from Wri
 - Pronunciation stays `null` without accessible audio. A phonetic note may identify something to check, not prove stress or linking quality.
 - Overall/estimated Speaking band stays `null`. Do not average two or three available criteria into a substitute band.
 
-When audio is available and the environment can actually inspect it, tie observations to timestamps and distinguish a short sample from evidence across the test. Do not claim to have heard inaccessible audio. A model assessment remains `model_inference`.
-
-## Calibration
-
-Separate corrections from optional alternatives. A model rewrite demonstrates revisions, not measured improvement in independent performance. Apply README's provenance and disagreement rules.
+When audio is available and the environment can actually inspect it, tie observations to timestamps and distinguish a short sample from evidence across the test. Do not claim to have heard inaccessible audio.
