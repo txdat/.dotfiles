@@ -132,10 +132,7 @@ claude() {
         CLAUDE_CODE_DISABLE_AUTO_MEMORY=1
         CLAUDE_CODE_SIMPLE_SYSTEM_PROMPT=1
         CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
-        ANTHROPIC_DEFAULT_OPUS_MODEL=claude-opus-4-6
-        ANTHROPIC_DEFAULT_SONNET_MODEL=claude-sonnet-4-6
-        ANTHROPIC_DEFAULT_HAIKU_MODEL=claude-haiku-4-5
-        CLAUDE_CODE_SUBAGENT_MODEL=claude-sonnet-4-6
+        CLAUDE_CODE_SUBAGENT_MODEL=sonnet
         ENABLE_LSP_TOOL=1
         ENABLE_CLAUDEAI_MCP_SERVERS=false
     )
@@ -147,13 +144,15 @@ claude() {
                 env_vars+=("ANTHROPIC_AUTH_TOKEN=$CLAUDE1_API_KEY")
                 ;;
             --ds)
+                PRO_MODEL="deepseek-v4-pro"
+                FLASH_MODEL="deepseek-v4.1-flash"
                 env_vars+=(
                     "ANTHROPIC_BASE_URL=https://api.deepseek.com/anthropic"
                     "ANTHROPIC_AUTH_TOKEN=$DEEPSEEK_API_KEY"
-                    "ANTHROPIC_DEFAULT_OPUS_MODEL=deepseek-v4-pro[1m]"
-                    "ANTHROPIC_DEFAULT_SONNET_MODEL=deepseek-v4-flash-vision-exp[1m]"
-                    ANTHROPIC_DEFAULT_HAIKU_MODEL=deepseek-v4-flash
-                    CLAUDE_CODE_SUBAGENT_MODEL=deepseek-v4-flash
+                    "ANTHROPIC_DEFAULT_OPUS_MODEL=$PRO_MODEL[1m]"
+                    "ANTHROPIC_DEFAULT_SONNET_MODEL=$FLASH_MODEL[1m]"
+                    "ANTHROPIC_DEFAULT_HAIKU_MODEL=$FLASH_MODEL"
+                    "CLAUDE_CODE_SUBAGENT_MODEL=$FLASH_MODEL"
                 )
                 ;;
             -d)
@@ -168,6 +167,8 @@ claude() {
 }
 
 agy() {
+    local env_vars=()
+
     local args=()
     for arg in "$@"; do
         case "$arg" in
@@ -179,10 +180,12 @@ agy() {
                 ;;
         esac
     done
-    command agy "${args[@]}"
+    env "${env_vars[@]}" command agy "${args[@]}"
 }
 
 codex() {
+    local env_vars=()
+
     local args=()
     for arg in "$@"; do
         case "$arg" in
@@ -194,7 +197,7 @@ codex() {
                 ;;
         esac
     done
-    command codex "${args[@]}"
+    env "${env_vars[@]}" command codex "${args[@]}"
 }
 
 xc() {
@@ -255,11 +258,18 @@ update_sys() {
 }
 
 md2pdf() {
-  npx prettier --write "$1"
-  pandoc "$1" -o "${1%.md}.pdf" \
-    --pdf-engine=xelatex \
+  npx prettier "$1" > "/tmp/temp.md"
+  pandoc "/tmp/temp.md" -o "${1%.md}.pdf" \
+    --pdf-engine=lualatex \
     --template=eisvogel \
     -V mainfont='Maple Mono NF CN' \
     -V monofont='Maple Mono NF CN' \
-    -V fontsize=8pt
+    -V fontsize=8pt \
+    -V header-includes='
+\directlua{luaotfload.add_fallback("fb", {"[NotoSans-Regular.ttf]", "[NotoSansMono-Regular.ttf]"})}
+\AtBeginDocument{%
+  \setmainfont[RawFeature={fallback=fb}]{Maple Mono NF CN}%
+  \setmonofont[RawFeature={fallback=fb}]{Maple Mono NF CN}%
+}
+'
 }
