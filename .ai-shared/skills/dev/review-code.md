@@ -12,6 +12,8 @@ Reference verified existing evidence instead of duplicating output. Include revi
 
 Trace each distinct AC obligation to reachable assertions, including required side effects and unchanged-state conditions. Confirm the test's arrangement reaches the relevant production boundary: a helper test below authorization, routing, or transaction handling cannot prove that omitted behavior. Inspect whether copied implementation expressions, mock-call checks, or broad no-error assertions could pass for a wrong result; apply [verification.md](verification.md)'s assertion-quality requirements.
 
+Compare each executable arrangement, action, and assertion with its approved TC, resolving shared fixtures and overrides. Verify that setup helpers and mocks preserve the fixture's distinguishing conditions under [verification.md — Test-first proof](verification.md#test-first-proof). Check expected results against the resolved contract, including permitted variability. Simplified data that erases a required distinction or assertions that weaken an approved expectation require repair, even when tests pass. Record material mismatches in the TC evidence map; changing the approved obligation follows [approval.md](approval.md).
+
 For each AC, challenge plausible incorrect behavior against the actual assertions. Record material gaps or non-obvious defeating evidence. Conclude whether each AC and the Goal hold; passing tests cannot override a violated obligation. Implementation defects require repair; uncertain or conflicting intended behavior follows [approval.md](approval.md).
 
 ## Affected-path review
