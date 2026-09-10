@@ -1,21 +1,30 @@
 # /create-pr — Publish Reviewed Work
 
-Read [PROCESS.md](../../PROCESS.md) and resolve the named plan under [plan.md](plan.md). Entry is `reviewed` with a finalized PR Pattern. Publication runs in its [worktree](plan.md#worktree-operations). Default to draft unless `ready` is requested.
+Read [PROCESS.md](../../PROCESS.md) and resolve the named plan under [plan.md](plan.md). Entry is `reviewed` with a finalized PR Pattern. Publication runs in the recorded [worktrees](plan.md#worktree-operations). Default to draft unless `ready` is requested. If publication is already verified and only cleanup remains, use [cleanup-only resume](plan.md#cleanup-only-resume).
 
 ## Publish
 
-1. Require a clean worktree before switching branches. For each PR row, verify its explicit Parent, nonempty diff, and `Slice N (<branch>): green at <sha>` record against the branch tip. Apply only [plan.md](plan.md)'s archive-commit exception. Changed code returns to review.
-2. Run `~/.dotfiles/.ai-shared/bin/dev-check artifacts <parent> <reviewed-code-tip>` for each slice.
-3. In pattern order, check out each row's Branch and verify it is current. Before pushing, query existing PRs for this repository and head; verify their base, state, and remote head against the reviewed slice, allowing step 1's archive exception. Conflicting, ambiguous, stale-head, or closed-unmerged matches require resolution before publication continues. Then push the branch and reuse a matching open PR, or create one in step 5.
-4. Describe the actual change, rationale, verification, and relevant limitations using the project template. Include `Refs #N` initially. For a chain, include the ordered branch/parent/PR table and fill all links once the PRs exist.
-5. Write multiline bodies to files. Create through [dev-github.sh](../../bin/dev-github.sh) `pr-create <title> <body-file> <parent> [--ready]`; update existing PRs with `gh pr edit --body-file`. Record all PR numbers and URLs in the live plan before archival.
+1. Resolve the publication inventory under [plan.md](plan.md). For each code slice, resolve its explicit Parent to a commit before checking ancestry or diffs. Fetch origin as needed; when the branch exists only there, use `refs/remotes/origin/<parent>` for Git checks and `<parent>` for the GitHub base. Record the resolved SHA and confirm the local/remote refs and ancestry agree with the reviewed scope; resolve drift before proceeding.
+2. Verify each slice's nonempty diff and `Slice N (<branch>): green at <sha>` against its branch tip, allowing only [plan.md](plan.md)'s archive-only exception. Changed code returns to review. Verify both endpoints and a successful `git diff <parent-sha> <reviewed-code-tip>`, then run `~/.dotfiles/.ai-shared/bin/dev-check artifacts <parent-sha> <reviewed-code-tip>`. The helper can report PASS for invalid refs; its result alone is insufficient.
+3. Publish each code row in pattern order using the PR operations below. Require a clean worktree before switching branches; preserve unrelated dirty root files. Record PR numbers/URLs in every affected live plan as they become available.
+4. Follow [plan.md — Archive and cleanup](plan.md#archive-and-cleanup): prepare the archive, create its separate PR if used, synchronize all bodies, verify the final archives, then clean up. Use the PR operations below for the archive PR too; its diff and verification follow plan.md.
 
-## Issue closure
+## PR operations
 
-For a shared parent issue, mark this goal's checklist item complete and attach its PR numbers only after all its PRs exist. Preserve other goals. Partial publication leaves the item unchecked; retries reuse existing PRs.
+Before pushing, query all PR states for the repository and head. Reuse a matching open PR after checking its base and remote head against the reviewed branch and permitted archive commits. Allow expected fast-forward updates; resolve ambiguous matches or unexpected divergence.
 
-Fetch the issue again. Use `Closes #N` only when [dev-utils.sh](../../bin/dev-utils.sh) `issue-claimants <number>` identifies this plan as the sole active claimant and no deferred goal remains unchecked. Otherwise retain `Refs #N`. Only the final chain PR may close the issue. Verify the updated bodies and chain links; an ambiguous goal entry requires clarification before editing.
+For closed-unmerged work still required by the authorized scope, create a replacement after checking for an existing replacement on retries. Preserve the old PR and record its number/URL as `Supersedes` history in the replacement body and live plans. Active chain entries use the replacement. For merged PRs, verify what is already delivered before deciding further publication. If a replacement changes branches, reconcile downstream Parents under [review-code.md](review-code.md) before continuing.
+
+Describe the change, rationale, verification, and limitations using the project template, initially with `Refs #N`. Write multiline bodies to files. Push the verified branch and create through [dev-github.sh](../../bin/dev-github.sh) `pr-create <title> <body-file> <parent> [--ready]`; edit existing bodies with `gh pr edit --body-file`.
+
+## Synchronize bodies and issue links
+
+After all PR numbers exist, update every active PR body, including earlier/reused PRs and the archive PR, with the complete ordered branch/parent/PR table. Keep superseded links separately. Repeat after any later creation or replacement, and fetch all bodies to verify bases, order, links, and absence of placeholders.
+
+For each represented issue, mark only the delivered goals' checklist items complete and attach their PR numbers after all their PRs exist. Preserve other goals; partial publication leaves the affected item unchecked. Resolve an ambiguous goal entry before editing.
+
+Fetch the issue again and run [dev-utils.sh](../../bin/dev-utils.sh) `issue-claimants <number>` before deleting live plans. Use `Closes #N` only when every active claimant belongs to this explicitly inventoried publication, all its goals have published PRs, and no deferred goal remains unchecked. Otherwise retain `Refs #N`. Only the final chain PR may close an issue; remove closing keywords from earlier active PRs and verify the updated bodies.
 
 ## Complete
 
-Follow [plan.md](plan.md)'s archive and cleanup procedure. Return PR URLs and state publication/cleanup completion only after it succeeds; publication does not mean merged or deployed. Follow-up work uses a new plan and the parent-selection rules in [design-feature.md](design-feature.md).
+Return PR URLs and any remaining cleanup. Claim completion only after [plan.md](plan.md)'s verification and cleanup succeed; publication does not mean merged or deployed. Follow-up work uses a new plan and [design-feature.md](design-feature.md)'s parent-selection rules.
