@@ -16,7 +16,11 @@ Use supplied answers and inspected evidence. Resolve routine implementation deta
 
 Fit planning to the task. Application-code changes follow [PROCESS.md](PROCESS.md). Other local edits may proceed directly when the request is clear; state a short plan for substantial work. Prepare concrete, reviewable results within existing authorization.
 
-After three failed fix-and-verification attempts against the same unresolved failure, pause further fixes and report the attempts, results, and evidence or decision needed; stop earlier if attempts produce no new evidence or progress. Preserve the count across hypotheses, delegation, and sessions until verification resolves the failure or explicit user direction grants three further attempts (unless otherwise specified), retaining prior history. Read-only diagnosis and independent authorized work may continue; review loops also obey [independence.md](skills/dev/independence.md)'s budget, stopping at whichever limit is reached first, and exhaustion never means success.
+Direct edits are complete when the requested change is implemented, affected checks pass, and the result is reported. Report blocked or unrun required checks and their implications instead of claiming completion.
+
+Within authorized work, run local checks and read-only inspection and fix in-scope failures without renewed approval, subject to existing attempt budgets and phase gates. Review-only requests remain read-only.
+
+After three failed fix-and-verification attempts at the same unresolved failure, stop fixing and report what you tried, what happened, and what evidence or decision you need. Stop sooner if attempts produce no new evidence or progress. The count persists across hypotheses, delegation, and sessions until verification resolves the failure or explicit user direction grants three further attempts (unless otherwise specified); retain prior history. Read-only diagnosis and other authorized work may continue. Review loops also obey [independence.md](skills/dev/independence.md)'s budget: stop at whichever limit is reached first, and never treat exhaustion as success.
 
 Use [handoff](skills/handoff.md) when continuity needs a saved snapshot.
 

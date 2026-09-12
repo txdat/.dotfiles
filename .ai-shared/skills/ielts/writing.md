@@ -10,12 +10,9 @@ A focused question gets focused feedback. Prompt-only input or an explicit plann
 
 Use the complete prompt and any supplied target band. If the prompt is missing, ask for it. If the target is missing or invalid, continue qualitative planning while clarifying it; do not assume the learner's level. Task 1 needs the actual visual or complete data.
 
-Build the response plan in this order, scaling detail to the request:
+Build a response plan covering every prompt obligation, each paragraph's purpose and development route, relevant target-band guidance, and likely task-specific errors. Scale detail to the request. Separate required coverage from optional development; preserve the learner's position or label a proposed position as a choice. Develop main points beyond topic labels with explanation, comparison, supplied detail, or a clearly illustrative example. Check coverage, support, and consistency with the supplied material.
 
-1. **Prompt obligations:** identify instruction words, scope qualifiers, and every required response. Separate what the prompt requires from optional development; preserve the learner's position or label a proposed position as a choice.
-2. **Paragraph purposes:** map each obligation to a possible outline and explain what each paragraph contributes. Give a development route for each main point: explanation, comparison, supplied detail, or a clearly illustrative example. Do not stop at topic labels.
-3. **Target guidance:** when a target is supplied or requested, connect the outline and development to the relevant criteria in [rubric.md](rubric.md). Distinguish desired qualities from evidence of current ability; a planned outline cannot establish a score. Half-band bridges are coaching, not separate official descriptors.
-4. **Task-specific checks:** identify the likely omissions or reasoning errors for this prompt and show how to check them before drafting. Check that every obligation has a place, development supports its paragraph's purpose, and the overview or position remains consistent with the supplied material.
+When a target is supplied or requested, connect the plan to [rubric.md](rubric.md). Desired qualities are not evidence of current ability: a planned outline cannot establish a score. Half-band bridges are coaching, not separate official descriptors.
 
 Task 2 follows its exact questions: both views means both; outweigh requires a justified comparison; causes, effects, and solutions are distinct obligations. Task 1 instead needs an accurate overview and grouped features, comparisons, stages, or map changes from supplied material. Do not invent data.
 

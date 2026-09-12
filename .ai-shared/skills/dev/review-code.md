@@ -1,6 +1,6 @@
 # /review-code — Review Implemented Work
 
-Read [plan.md](plan.md) and [independence.md](independence.md). Entry is `implemented`. Review the recorded worktree from the first PR row's Parent through the final implementation tip, excluding inherited work from an unmerged parent.
+Read [plan.md](plan.md) and [independence.md](independence.md). Entry is `implemented`. Review code in the recorded worktree from the first numbered code row's Parent through the final implementation tip, excluding inherited work from an unmerged parent. Review the leading docs entry separately below.
 
 ## Behavioral evidence
 
@@ -10,11 +10,9 @@ Derive the required outcome from the Goal and source contracts before treating t
 
 Reference verified existing evidence instead of duplicating output. Include revision and command references with results; inspect proof and per-test results under [verification.md — Test-first proof](verification.md#test-first-proof). Independently run TC and affected tests, reusing unchanged evidence only under the independence rules.
 
-Trace each distinct AC obligation to reachable assertions, including required side effects and unchanged-state conditions. Confirm the test's arrangement reaches the relevant production boundary: a helper test below authorization, routing, or transaction handling cannot prove that omitted behavior. Inspect whether copied implementation expressions, mock-call checks, or broad no-error assertions could pass for a wrong result; apply [verification.md](verification.md)'s assertion-quality requirements.
+Trace each AC to assertions at the relevant production boundary, including side effects and unchanged-state conditions; a helper test cannot prove omitted authorization, routing, or transaction behavior. Compare executable setup, actions, and assertions with the approved TC, resolving shared fixtures and overrides and preserving distinguishing conditions. Independently check expected results against the resolved contract, including permitted variability.
 
-Compare each executable arrangement, action, and assertion with its approved TC, resolving shared fixtures and overrides. Verify that setup helpers and mocks preserve the fixture's distinguishing conditions under [verification.md — Test-first proof](verification.md#test-first-proof). Check expected results against the resolved contract, including permitted variability. Simplified data that erases a required distinction or assertions that weaken an approved expectation require repair, even when tests pass. Record material mismatches in the TC evidence map; changing the approved obligation follows [approval.md](approval.md).
-
-For each AC, challenge plausible incorrect behavior against the actual assertions. Record material gaps or non-obvious defeating evidence. Conclude whether each AC and the Goal hold; passing tests cannot override a violated obligation. Implementation defects require repair; uncertain or conflicting intended behavior follows [approval.md](approval.md).
+Check that assertions defeat plausible incorrect behavior: copied implementation expressions, mock-call checks, and broad no-error assertions may pass despite a defect. Apply [verification.md](verification.md)'s proof and assertion-quality rules. Record material mismatches or non-obvious defeating evidence in the TC map and conclude whether each AC and the Goal hold. Passing tests cannot override a violated obligation; implementation defects and weakened fixtures or expectations require repair. Changes to approved obligations or conflicting intended behavior follow [approval.md](approval.md).
 
 ## Affected-path review
 
@@ -31,6 +29,8 @@ Report the Goal/AC conclusions, decisive test/proof evidence, and located findin
 The main agent handles repairs and re-review under [independence.md](independence.md). Implementation defects leave status `implemented`; spec amendments follow [approval.md](approval.md).
 
 On a passing review, reconcile actual slices with [design-feature.md](design-feature.md)'s PR Pattern. Changed parents or TC/slice ownership require a revised pattern and approval. Remove `(provisional)` only when it matches the verified work.
+
+For a chain, verify the leading docs entry separately under [plan.md — Approved snapshots](plan.md#approved-snapshots): its diff owns only the recorded plan paths, preserves the approved snapshots, passes documentation checks, and is inherited by every code branch. It is not a numbered code slice and requires no code-test proof.
 
 For every slice, record `Slice N (<branch>): green at <sha>` in the finalized pattern. Verify lint, build, and that slice's tests at its own tip; reuse results only when the tip and verification inputs are unchanged. The main agent performs required checkouts in a clean worktree. A final green tip does not prove earlier slices.
 
