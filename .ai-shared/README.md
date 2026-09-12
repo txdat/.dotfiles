@@ -75,6 +75,10 @@ Symlink `~/.pi/agent/themes` → `~/.dotfiles/.pi/agent/themes`
 
 **skills** — reuses Claude skills; set `"skills": ["~/.claude/skills"]` in `settings.json`
 
+**phase loading and gates** — to enter a development phase, use Pi's `read` tool on its Claude `SKILL.md` wrapper or the shared `.ai-shared/skills/dev/<phase>.md` instructions. The [gate extension](../.pi/agent/extensions/gate-check.ts) checks that read using the latest user message as the phase arguments, including the exact plan path where required. A shell read does not invoke this check and is not a substitute for gated phase loading.
+
+The extension gates recognized reads, not phase execution: it cannot distinguish an audit read from invocation, and shell reads or previously loaded instructions are outside its interception. For documentation-only inspection, source may be read without invoking a phase; this grants no authority to execute it. The extension also permits reads on timeout, process failure, or invalid output, so it is a workflow aid rather than comprehensive enforcement. Agents must still establish the phase prerequisites under PROCESS.md. Stronger enforcement would require a separate phase-entry operation.
+
 **mcp** — reuses Claude mcp; set `"imports": ["claude-code"]` in `mcp.json`
 
 ## references

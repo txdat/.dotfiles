@@ -4,7 +4,7 @@ A review-only request returns findings without edits. Authorized delivery or rev
 
 ## Reviewer
 
-If this session authored the artifact, delegate one whole review to a fresh general-purpose subagent without inherited conversation when available. Supply only [CODING.md](../../CODING.md), the artifact path, project configuration, reviewing skill, and necessary worktree/base refs. For an ad-hoc audit, supply the requested scope instead of a plan or phase skill. If isolation is unavailable, review directly from artifacts and disclose that limitation. A session that did not author the artifact reviews directly.
+If this session authored the artifact, delegate one whole review to a fresh general-purpose subagent without inherited conversation when available, so the reviewer evaluates the artifact without adopting the author's prior reasoning. Supply only [CODING.md](../../CODING.md), the artifact path, project configuration, reviewing skill, and necessary worktree/base refs. For an ad-hoc audit, supply the requested scope instead of a plan or phase skill. If isolation is unavailable, review directly from artifacts and disclose that limitation. A session that did not author the artifact reviews directly.
 
 The reviewer applies the supplied review criteria, spawns nothing, and returns findings and a verdict. It may inspect sources and Git and run local verification, but must not edit source/artifacts, mutate Git, change status, or perform external mutations. Tests may create normal disposable output. The main agent owns fixes and artifact updates during authorized delivery; a standalone review leaves artifacts unchanged.
 

@@ -9,12 +9,12 @@
 #   (human approve) → approved (manual, or confirmed at ship-feature's plan-phase PAUSE)
 #   execute-feature → approved → in-progress → implemented
 #   review-code     → implemented → reviewed
-#   create-pr       → reviewed → archived
+#   create-pr       → reviewed (live plan stays reviewed; only the published archive copy → archived)
 #   fix-bug          → read-only diagnosis and routing, no plan gate
 #   (human abandon) → abandoned (terminal; any non-archived status)
 #
 # Each skill's entry gate is the prerequisite status.
-# archived and abandoned are the two terminal statuses: both leave the active
+# Archived copies and abandoned live plans are the two terminal states: both leave the active
 # set, and neither is an entry status for any skill, so an abandoned plan
 # blocks at whatever gate it is aimed at.
 # Review-code additionally requires proof-commit sequencing for every slice.

@@ -10,7 +10,7 @@ Architecture approval follows a READY system review: present the recommendation,
 
 ## Changes
 
-- **Editorial:** meaning and verification obligations are unchanged. Correct the text and record the correction in `## Review History`; retain approval. Missing or stale review evidence returns a reviewed plan to `implemented` until verified and reviewed again.
+- **Editorial:** meaning and verification obligations are unchanged. Correct the text and record the correction in `## Review History`; retain spec approval and still-applicable review evidence. An editorial correction alone does not invalidate code review. If required review evidence is missing or stale, return a reviewed plan to `implemented` until verified and reviewed again; the unchanged spec remains approved.
 - **Deviation:** implementation means change while approved behavior and scope remain intact. Record `Plan said / Doing instead / Why / Tradeoff` in `## Deviations`. Proceed with routine changes; obtain a decision for material dependency, cost, security, data-integrity, external-effect, or reversibility changes.
 - **Semantic amendment:** an outcome, scenario, constraint, or verification obligation changes. Set the plan to `planning`, record affected IDs and why, revise, and repeat feature review and approval for the affected spec and dependencies. Architecture amendments similarly return to `draft` for review and approval.
 - **New scope:** record the work in `## Discovered Scope` and ask whether to include, separate, or skip it before implementing it.

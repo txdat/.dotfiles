@@ -43,14 +43,7 @@ These are coaching methods, not answer-order guarantees. Start with the printed 
 
 ## Matching headings
 
-1. Read the whole paragraph. Note what each sentence does: introduces, explains, exemplifies, contrasts, or concludes.
-2. Draft a short gist: subject + main claim/purpose. First and last sentences are clues; check the middle for the actual focus.
-3. Track pivots such as “however.” Decide whether the paragraph develops the opening claim or shifts to a different main point.
-4. Compare the gist with candidate headings. Reject headings that are too broad, too narrow, contradicted, or only keyword matches.
-5. Between close options, name the difference and cite the sentence(s) that settle it. Eliminate used options only when instructions disallow reuse; revisit unresolved choices after other matches.
-
-Show the gist and why the closest alternative fails. Never reduce paragraph meaning to first + last sentences alone.
-
+For each paragraph, state its main purpose by weighing the whole paragraph, including shifts in focus, rather than relying on first/last sentences or repeated keywords. Justify the heading against the closest wrong option with decisive passage evidence; check whether that option is too broad, too narrow, or contradicted. Eliminate used options only when instructions disallow reuse; revisit unresolved choices after other matches.
 
 ## Guided practice
 

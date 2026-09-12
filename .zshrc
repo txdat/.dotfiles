@@ -124,6 +124,8 @@ export PATH="$HOME/fvm/bin:$PATH"
 
 export CHROME_EXECUTABLE=/usr/bin/google-chrome
 
+alias dsh="npx @deepseek-ai/dsh web --no-open"
+
 claude() {
     local env_vars=(
         CLAUDE_CODE_ENABLE_TELEMETRY=0
@@ -140,19 +142,16 @@ claude() {
     local args=()
     for arg in "$@"; do
         case "$arg" in
-            --a1)
-                env_vars+=("ANTHROPIC_AUTH_TOKEN=$CLAUDE1_API_KEY")
-                ;;
             --ds)
                 PRO_MODEL="deepseek-v4-pro"
-                FLASH_MODEL="deepseek-v4.1-flash"
+                FLASH_MODEL="deepseek-flash"
                 env_vars+=(
                     "ANTHROPIC_BASE_URL=https://api.deepseek.com/anthropic"
                     "ANTHROPIC_AUTH_TOKEN=$DEEPSEEK_API_KEY"
-                    "ANTHROPIC_DEFAULT_OPUS_MODEL=$PRO_MODEL[1m]"
-                    "ANTHROPIC_DEFAULT_SONNET_MODEL=$FLASH_MODEL[1m]"
-                    "ANTHROPIC_DEFAULT_HAIKU_MODEL=$FLASH_MODEL"
-                    "CLAUDE_CODE_SUBAGENT_MODEL=$FLASH_MODEL"
+                    "ANTHROPIC_DEFAULT_OPUS_MODEL=${PRO_MODEL}[1m]"
+                    "ANTHROPIC_DEFAULT_SONNET_MODEL=${FLASH_MODEL}[1m]"
+                    "ANTHROPIC_DEFAULT_HAIKU_MODEL=${FLASH_MODEL}"
+                    "CLAUDE_CODE_SUBAGENT_MODEL=${FLASH_MODEL}"
                 )
                 ;;
             -d)
@@ -191,6 +190,9 @@ codex() {
         case "$arg" in
             -d)
                 args+=("--yolo")
+                ;;
+            -r|--resume)
+                args+=("resume")
                 ;;
             *)
                 args+=("$arg")

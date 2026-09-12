@@ -24,6 +24,20 @@ TA applies only to Academic Task 1; TR only to Task 2. The other columns apply w
 | 7 | Clear overview, grouping and main comparisons | Developed position; support sometimes generalized | Logical progression; flexible connections | Some precision/flexibility; occasional inappropriate choices | Varied complex forms; many accurate sentences |
 | 8 | Requirements sufficiently covered; well-illustrated features | Developed position; ideas well supported | Easily followed; well-managed cohesion | Broad, precise, flexible vocabulary | Flexible range; mostly accurate sentences; occasional slips |
 
+### Illustrative Writing contrasts
+
+These original examples illustrate criterion-relevant improvements, not scored excerpts or official exemplars (`model_inference`). A sentence cannot establish a criterion band, grammatical range, or error frequency across a response. The [official Writing descriptors](https://ielts.org/cdn/ielts-guides/ielts-writing-band-descriptors.pdf) remain the assessment basis; compare whole-response patterns using the evidence map below.
+
+For TA, use this complete invented dataset: commuters using buses/cars were 20%/60% in 2000 and 40%/40% in 2020. For TR, the practice question is “Should cities prioritise bus services over new roads? Give your opinion and reasons.” For CC, assume bus infrequency is the stated reason commuters choose cars. The language examples and proposed development are illustrative, not a learner's stated view or an empirical finding.
+
+| Criterion | Less effective excerpt | Revision | What the contrast shows |
+|---|---|---|---|
+| TA | “Overall, transport use changed between the two years.” | “Overall, bus use rose while car use fell, leaving both modes equally common in 2020.” | Identifies the main changes and final comparison supported by the data; full feature coverage still needs assessment. |
+| TR | “Cities should prioritise buses because buses are better.” | “Cities should prioritise buses because frequent services could offer commuters an alternative to driving, reducing demand for road space.” | Develops the position through an explicit mechanism; the full response must support and sustain it. |
+| CC | “Buses are infrequent. Moreover, commuters choose cars.” | “Buses are infrequent, so commuters choose cars.” | Makes the intended causal relationship explicit; it does not establish paragraph or whole-response progression. |
+| LR | “The city should do improvements to bus services.” | “The city should improve bus services.” | Uses a natural, precise expression; uncommon vocabulary is unnecessary, and one correction does not establish range. |
+| GRA | “Although buses are cheaper, but many commuter drives.” | “Although buses are cheaper, many commuters drive.” | Corrects clause linking, plural form, and agreement while preserving the contrast; a band needs evidence of range and control across the response. |
+
 ## Offline Speaking anchors
 
 Use only with the evidence allowed below. [Source: Speaking descriptors](https://ielts.org/cdn/ielts-guides/ielts-speaking-band-descriptors.pdf), pages 1–2. Speaking LR/GRA assess spoken language, separately from Writing.

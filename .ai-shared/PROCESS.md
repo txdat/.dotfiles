@@ -2,6 +2,12 @@
 
 Main-session policy for application feature, fix, and refactor work. Read [CODING.md](CODING.md) and project configuration.
 
+## Scope
+
+Application-code changes implement or maintain executable logic or its tests, including behavior-preserving refactors and developer tooling. In this dotfiles repository, shell helper logic, installer scripts, and agent extensions follow this process. Documentation, agent/skill instructions, and declarative environment settings may use AGENTS.md's direct-edit path. Classify by the changed content, not the filename: changing a shell function inside a configuration file is executable work. Mixed changes follow this process for their executable scope.
+
+Project instructions may explicitly override these defaults for named areas. An explicitly requested plan-backed workflow also follows this process. If the boundary remains unclear, state the proposed classification and its reason before implementation; resolve any material workflow decision with the user.
+
 ## Delivery
 
 The required sequence is **design-feature → review-feature → spec approval → execute-feature → review-code → create-pr**. Exploration and goal framing are optional when the request is already clear. Architecture and infrastructure use the separate lanes in [the skill directory](skills/dev/README.md).
@@ -14,12 +20,15 @@ Delegated design tasks follow CODING.md's delegation rules and the selected desi
 
 | Concern | Source |
 |---|---|
+| Application-code boundary and delivery sequence | [Scope](#scope) and [Delivery](#delivery) |
 | Plan identity, lifecycle, worktree, archive and cleanup | [plan.md](skills/dev/plan.md) |
 | Plan schema and PR slicing | [design-feature.md](skills/dev/design-feature.md) |
 | Approval, amendments, deviations, new scope, abandonment | [approval.md](skills/dev/approval.md) |
-| Test-first proof, coverage and verification gaps | [verification.md](skills/dev/verification.md) |
+| Test-first proof and commit conventions, coverage and verification gaps | [verification.md](skills/dev/verification.md) |
+| Archive and live-plan cleanup commit conventions | [plan.md — Archive and cleanup](skills/dev/plan.md#archive-and-cleanup) |
 | Caller and shared-state impact | [CODING.md — Impact](CODING.md#impact) |
-| Review authority, isolation, and re-review | [independence.md](skills/dev/independence.md) |
+| Failed-fix budget and no-progress rule | [AGENTS.md — Work](AGENTS.md#work) |
+| Review authority, isolation, repair/re-review budget and renewal | [independence.md](skills/dev/independence.md) |
 
 ## Repository conventions
 
@@ -29,4 +38,4 @@ Use the configured Git identity and active `gh` account. Do not invent authors, 
 
 Plan-bound commands use the plan's concrete `Base:` and each PR row's explicit `Parent`. For diagnosis without a plan, [dev-utils.sh](bin/dev-utils.sh) `diagnostic-base` resolves a read-only comparison base. If resolution fails, ask for the base; never pass an empty ref to Git.
 
-Load the current phase through the platform's skill mechanism, or read its file when no skill tool exists. [ship-feature.md](skills/dev/ship-feature.md) owns resume routing.
+Load the current phase through the platform's skill mechanism, or its documented gated load path when no skill tool exists; platform setup owns that path and its enforcement limits. Where no mechanical gate is available, read the phase file and verify its prerequisites explicitly before acting. Reading instructions for an audit is documentation inspection, not phase invocation, and does not advance workflow state. A read alone never establishes readiness or authorization. [ship-feature.md](skills/dev/ship-feature.md) owns resume routing.

@@ -1,6 +1,6 @@
 # /execute-feature — Implement an Approved Plan
 
-Read [PROCESS.md](../../PROCESS.md), [plan.md](plan.md), and the named plan. Entry is `approved` or `in-progress`. Use [plan.md — Worktree operations](plan.md#worktree-operations) to create or reuse the worktree with the PR Pattern's explicit branch and Parent; then set `in-progress`.
+Read [PROCESS.md](../../PROCESS.md), [plan.md](plan.md), and the named plan. Entry is `approved` or `in-progress`. For a chain, prepare or verify the [approved snapshots](plan.md#approved-snapshots) before creating implementation branches. Create or reuse the first implementation slice's worktree under [plan.md — Worktree operations](plan.md#worktree-operations), using its explicit branch and Parent, then set `in-progress`. Prepare later branches and create or reuse worktrees as their slices begin, after their parent slices pass verification. On resume, continue from the current slice and its recorded worktree.
 
 Execute dependency-ordered slices. Follow [verification.md — Test-first proof](verification.md#test-first-proof) for proof, implementation, and BLUE; fill each TC's test reference and record proof/results. On resume, inspect commits and evidence to find unfinished work. A requested starting step does not waive its prerequisites.
 
