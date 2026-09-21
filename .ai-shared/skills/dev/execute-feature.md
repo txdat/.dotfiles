@@ -10,6 +10,6 @@ Delegation follows [CODING.md](../../CODING.md): the main agent owns RED tests a
 
 Workers return changed files, implemented TC/AC IDs, verification results, and unresolved concerns. Critical work also reports invariant/failure-path evidence and residual risks under CODING.md's critical-work procedure.
 
-Run required lint/build, TC tests, and affected existing tests at each slice's tip before starting a dependent slice. Apply [verification.md — Coverage](verification.md#coverage) and [CODING.md — Impact](../../CODING.md#impact). Resolve Open Risks through their approved TCs. Use [approval.md](approval.md) for spec changes, deviations, or new scope.
+Run [verification.md — Local checks](verification.md#local-checks), TC tests, and affected existing tests at each slice's tip before starting a dependent slice. Apply [verification.md — Coverage](verification.md#coverage) and [CODING.md — Impact](../../CODING.md#impact). Resolve Open Risks through their approved TCs. Use [approval.md](approval.md) for spec changes, deviations, or new scope.
 
 Run `~/.dotfiles/.ai-shared/bin/dev-check artifacts <first-slice-parent> HEAD`. Once required behavior and checks pass, evidence is recorded, and no required verification gap remains, set `implemented` and hand off to [review-code.md](review-code.md).

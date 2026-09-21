@@ -1,4 +1,4 @@
-# ai-shared setup
+# ai-shared
 
 Install the skills below. Delegation uses platform-provided general-purpose subagents with the owning skill; no custom agent definitions or registrations are needed.
 

@@ -9,13 +9,19 @@ Owns test-first proof, coverage measurement, and verification gaps for approved 
 3. **GREEN:** implement the approved behavior and run the tests. If behavioral sensitivity remains uncertain, make a focused check that the assertion fails when its required behavior is broken. Restore any temporary mutation and rerun tests. Once the checks pass, commit implementation separately.
 4. **BLUE:** inspect for worthwhile simplification; no refactor is required. Verify any changes preserve behavior and rerun affected tests and coverage.
 
+The `test(red): <scope>` and `test: baseline <scope>` subjects are fixed: [gate-check](../../bin/gate-check) counts them to verify proof sequencing. Implementation commits follow the project's commit-message convention; use Conventional Commits when the project defines none.
+
 A targeted batch is sufficient when its output identifies each test and result. Inspect evidence on resume; commit titles alone prove nothing. If a fixture cannot be constructed or its expectation requires inventing semantics, stop the affected work and resolve it through [approval.md](approval.md); do not substitute an easier scenario or derive the expectation from production output.
 
 Before GREEN and during review, run `~/.dotfiles/.ai-shared/bin/dev-check proof <commit> [--test <in-source-test-path>] [--stub <throwing-stub-path>]`. The helper checks paths and obvious stub violations. Read the diff too: a recognized test path can still hide implementation, and a tool pass does not prove assertion quality.
 
+## Local checks
+
+Run the required project checks that can execute locally — lint, build, and any other command CI runs against the change. Missing required AC/TC evidence or a failed required local check blocks readiness. For remote CI, follow [create-pr.md — Complete](create-pr.md#complete).
+
 ## Coverage
 
-Coverage measures exercise, not correctness. Required AC/TC behavior, critical paths, and project/CI checks must be verified regardless of percentage. Add tests for meaningful behavior, never to inflate a score.
+Coverage measures exercise, not correctness. Required AC/TC behavior, critical paths, and local checks must be verified regardless of percentage. Add tests for meaningful behavior, never to inflate a score.
 
 ### Measure
 

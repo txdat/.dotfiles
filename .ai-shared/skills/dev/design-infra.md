@@ -8,6 +8,8 @@ This lane is **design → review → human execution → optional post-execution
 
 Write `docs/runbooks/<date>_<slug>.md` with `Status: draft | Date: <date> | Issue: #N | Review:`. Link the supplied tracking issue or create one under [PROCESS.md](../../PROCESS.md)'s Git conventions.
 
+Before drafting, select the runbook language under [language.md](language.md).
+
 ## Runbook
 
 Record the source, target, constraints, and measurable success criteria with read-only verification commands. Inspect live state relevant to the operation. For each material claim, record its value, source/command, observation time, and status: verified, assumed, or requiring revalidation before execution. Assumptions need a verification action and a gate before any phase relies on them; changing live state may invalidate earlier evidence.

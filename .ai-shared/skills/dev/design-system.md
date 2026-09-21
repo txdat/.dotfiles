@@ -2,6 +2,8 @@
 
 Use for changed service boundaries, communication patterns, or cross-system integrations. Ordinary application features belong in [design-feature.md](design-feature.md). Read [PROCESS.md](../../PROCESS.md), project context, and [CODING.md — Impact](../../CODING.md#impact).
 
+Before drafting, select the design language under [language.md](language.md).
+
 Write `docs/architecture/<date>_<slug>.md` with `Status: draft`. Include:
 
 - **Goal and constraints:** current pain, affected boundaries, measurable success, and baseline or a phase to establish it.

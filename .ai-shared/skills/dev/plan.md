@@ -2,6 +2,8 @@
 
 Owns application plan identity, location, ownership, lifecycle, worktree operations, and archival. [design-feature.md](design-feature.md) owns schema; [approval.md](approval.md) owns consent and changes.
 
+Use [language.md](language.md) for plan prose and subsequent updates.
+
 ## Live artifact
 
 Every consumer names one exact `docs/plans/<file>.md`; design creates a new artifact. Do not select by slug, recency, or whichever plan happens to exist. Ask for an exact path when identity is missing or ambiguous.
@@ -48,7 +50,7 @@ Keep each plan at its own `docs/plans/<file>.md` path. Preserve and link histori
 
 Root cleanup commits stay local unless pushing that branch and its outgoing commits is explicitly authorized. Report their SHA, branch, and pushed/unpushed state; an unpushed cleanup commit blocks completion only when its push is part of the task.
 
-On failure, retain remaining live files/worktrees and report per-item progress. Completion requires verified publication, removal of all inventoried live files/worktrees, and required cleanup commits. Finish the handoff when cleanup succeeds.
+On publication verification or cleanup failure, retain remaining live files/worktrees and report per-item progress. Completion requires verified publication, removal of all inventoried live files/worktrees, and required cleanup commits. For CI handling, follow [create-pr.md — Complete](create-pr.md#complete). Finish the handoff when cleanup succeeds.
 
 ### Cleanup-only resume
 

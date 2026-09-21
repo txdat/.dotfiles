@@ -4,6 +4,8 @@ Read [PROCESS.md](../../PROCESS.md) and [plan.md](plan.md). Design proposes beha
 
 Inspect the relevant code, contracts, and project conventions. Confirm a concrete base branch. Complete the ambiguity gate below before drafting or creating a new `docs/plans/<basename>_<date>_<type>_<slug>.md`, where type is `feature`, `fix`, or `refactor`.
 
+Before drafting, select the plan language under [language.md](language.md).
+
 ## Resolve ambiguity before writing
 
 Resolve ambiguities that materially affect the requested outcome, an affected contract, or the chosen design before writing the plan. Establish **why each factor exists, what problem it resolves, and how it is obtained or derived**. Identify the source and meaning of requirements, domain terms, values, and proposed mechanisms; define data meaning, derivation, and edge cases that meet [Scope and evidence](#scope-and-evidence). For example, “rank by percentage” must define both the entity being ranked and the percentage's numerator and denominator.
@@ -90,6 +92,8 @@ Use a focused set of scenarios that distinguish materially different required be
 
 Establish readiness from the completed AC/TC mapping, material challenge evidence, and impact-appropriate complexity assessment, with delivery steps and PR slices matching the selected approach. Keep each fact in one place.
 
+For worked illustrations of fixture coverage and ambiguity resolution, see [design examples](reference/design-feature-examples.md).
+
 ### Complexity and simpler alternatives
 
 Scale analysis to the change's impact across feature, fix, and refactor plans. When neither computational/resource cost nor implementation complexity changes meaningfully, a one-sentence explanation suffices. Otherwise record the relevant analysis in Design Decisions.
@@ -100,48 +104,9 @@ Analytical estimates do not require running code. Use measurements, query plans,
 
 Assess changes to abstractions, dependencies, state, and coordination separately from runtime cost. Warn with a concrete cause and consequence when cost threatens required limits or implementation complexity is disproportionate to its benefit. Compare a simpler viable alternative's affected costs and maintenance tradeoffs, including typical/worst-case estimates where relevant, and recommend one; explain when no simpler approach preserves the requirements. Record the selected approach and rationale. Changes to agreed behavior follow [approval.md](approval.md).
 
-### Example: partial refunds
-
-This abbreviated illustration covers balance behavior; an actual plan derives any other obligations from its own contracts.
-
-```text
-Goal: Support partial refunds without refunding more than the captured amount.
-AC-1 — a positive refund up to the remaining balance succeeds
-  Source: Goal — support partial refunds
-  Success: accept the refund and debit exactly its amount
-  Failure: reject a valid amount or debit a different amount
-AC-2 — a refund above the remaining balance is rejected without changing the ledger
-  Source: Goal — never refund more than captured
-  Success: reject the refund and leave the ledger unchanged
-  Failure: accept the refund or make any ledger change
-TC-1 — refund 30 from a remaining 50; accept and leave 20
-  Proves: AC-1
-  Fixture: captured = 50; prior refunds = []; remaining = 50
-  Action: request refund of 30
-  Expected: accepted; append one refund of 30; remaining = 20
-TC-2 — refund exactly the remaining 20; accept and leave 0
-  Proves: AC-1
-  Fixture: captured = 50; prior refunds = [30]; remaining = 20
-  Action: request refund of 20
-  Expected: accepted; refunds = [30, 20]; remaining = 0
-TC-3 — after refunding 30 from a captured 50, another 30 is rejected and the ledger stays unchanged
-  Proves: AC-2
-  Fixture: captured = 50; prior refunds = [30]; remaining = 20
-  Action: request another refund of 30
-  Expected: rejected; refunds = [30]; remaining = 20; no ledger mutation
-```
-
-Rejecting every request satisfies rejection-only tests but violates AC-1. Checking against the original capture instead of the remaining balance fails TC-3. Checking only TC-3's rejection result would miss an erroneous ledger mutation.
-
-### Example: discount ranking ambiguity
-
-“Rank by percentage” leaves open whether the ranked entity is a record, an occurrence, or a `(record, product)` pair. Percentage-only fixtures can hide this difference. Resolve the identity and discount derivation before writing ACs; do not infer them from this example.
-
-Suppose the confirmed contract ranks eligible `(record, product)` pairs by descending `100 × discount amount / product price`, breaking ties by ascending record ID, then product ID. A distinguishing fixture has products A = 100 and B = 200 (same currency, quantity one each), fixed-discount record F = 30 per eligible product, and percentage record P = 20%, both eligible for A and B. Ranking these pairs must yield `[F/A, P/A, P/B, F/B]`, with scores `[30%, 20%, 20%, 15%]`. This fixture exposes reusing one percentage for F across products; a fixture containing only P would not. It does not distinguish pair identity from occurrence identity; if repeated occurrences are relevant, derive a separate fixture for that distinction.
-
 ## PR slicing
 
-Apply these rules within each scope sub-plan after [scope separation](#split-scope-before-splitting-work). Assess work slices by behavior and dependencies, not by repeating the FE/BE/API split inside each plan.
+Apply these rules within each scope sub-plan after [scope separation](#split-scope-before-splitting-work). Assess work slices by behavior and dependencies, not by repeating the FE/BE/API split inside each plan; scope separation forces neither one PR per scope nor a BE-to-FE branch chain.
 
 Use one branch when the change is small enough to review as a coherent unit. When review would require reasoning about several separable changes at once, use `Type: chain` with a focused review purpose for each slice. Assess review burden from distinct behaviors, affected contracts, and migration risks; line count alone is insufficient. Each slice must be correct and safe to merge after its recorded parent without later slices, but need not deliver the complete user-facing outcome. Keep incomplete behavior unexposed and preserve compatibility between slices. Plan reverts in reverse dependency order, accounting for persistent state where affected. If a large change cannot be split safely, record the coupling that requires it to stay together.
 

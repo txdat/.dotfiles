@@ -3,20 +3,11 @@
 # Reads PreToolUse hook JSON from stdin, validates gate conditions per skill,
 # and outputs blocking JSON if a gate fails.
 #
-# Valid transitions:
-#   design-feature  → planning
-#   review-feature  → planning (self-correction, no status flip)
-#   (human approve) → approved (manual, or confirmed at ship-feature's plan-phase PAUSE)
-#   execute-feature → approved → in-progress → implemented
-#   review-code     → implemented → reviewed
-#   create-pr       → reviewed (live plan stays reviewed; only the published archive copy → archived)
-#   fix-bug          → read-only diagnosis and routing, no plan gate
-#   (human abandon) → abandoned (terminal; any non-archived status)
-#
-# Each skill's entry gate is the prerequisite status.
-# Archived copies and abandoned live plans are the two terminal states: both leave the active
-# set, and neither is an entry status for any skill, so an abandoned plan
-# blocks at whatever gate it is aimed at.
+# Plan states and terminal handling: ../skills/dev/plan.md#lifecycle.
+# Required delivery phases: ../PROCESS.md#delivery.
+# Each skill's entry gate checks its prerequisite status.
+# review-feature requires planning and leaves that status unchanged (../skills/dev/review-feature.md).
+# fix-bug has no plan gate; it diagnoses and routes (../skills/dev/fix-bug.md).
 # Review-code additionally requires proof-commit sequencing for every slice.
 #
 # Approval is a human decision recorded as `Status: approved`, set at the

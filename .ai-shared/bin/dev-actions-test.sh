@@ -29,11 +29,13 @@ git -C "$repo" config user.email dev-actions@example.test
 git -C "$repo" config user.name dev-actions-test
 git -C "$repo" commit --allow-empty -qm seed
 cd "$repo"
-[[ "$(bash "$SCRIPT_DIR/handoff-path.sh")" == /tmp/ai-handoff/repo.md ]] || fail 'planless handoff path'
-[[ "$(bash "$SCRIPT_DIR/handoff-path.sh" task)" == /tmp/ai-handoff/repo-task.md ]] || fail 'main-tree handoff slug'
-git worktree add -q -b feature/task "$TEST_ROOT/repo-task" main
-[[ "$(cd "$TEST_ROOT/repo-task" && bash "$SCRIPT_DIR/handoff-path.sh" task)" == /tmp/ai-handoff/repo-task.md ]] || fail 'linked-worktree handoff repeats slug'
-reject bash "$SCRIPT_DIR/handoff-path.sh" ../escape
-(cd "$TEST_ROOT" && reject bash "$SCRIPT_DIR/handoff-path.sh")
+[[ "$(CLAUDE_CODE_SESSION_ID=env-session bash "$SCRIPT_DIR/handoff-path.sh")" == "$HOME/work/ai-handoff/env-session.md" ]] || fail 'session id from environment'
+[[ "$(CLAUDE_CODE_SESSION_ID=env-session bash "$SCRIPT_DIR/handoff-path.sh" arg-session)" == "$HOME/work/ai-handoff/arg-session.md" ]] || fail 'explicit session id overrides environment'
+# The path depends on the session only, not on the repository or worktree.
+[[ "$(cd "$TEST_ROOT" && CLAUDE_CODE_SESSION_ID= bash "$SCRIPT_DIR/handoff-path.sh" 0a1b-2c3d)" == "$HOME/work/ai-handoff/0a1b-2c3d.md" ]] || fail 'outside a repository'
+reject env CLAUDE_CODE_SESSION_ID= bash "$SCRIPT_DIR/handoff-path.sh"
+reject env CLAUDE_CODE_SESSION_ID= bash "$SCRIPT_DIR/handoff-path.sh" ../escape
+reject env CLAUDE_CODE_SESSION_ID=../escape bash "$SCRIPT_DIR/handoff-path.sh"
+reject bash "$SCRIPT_DIR/handoff-path.sh" one two
 printf 'PASS: handoff path identity and invalid inputs\n'
 printf 'All dev action tests passed. Temporary fixtures: %s\n' "$TEST_ROOT"

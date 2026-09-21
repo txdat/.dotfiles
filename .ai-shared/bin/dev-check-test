@@ -98,4 +98,28 @@ git -C "$TMP" revert -n HEAD
 git -C "$TMP" commit -qm 'remove debug'
 ok artifacts HEAD~1 HEAD
 
+# An unresolvable ref must block, not scan an empty diff and pass.
+bad artifacts nonexistent-ref HEAD
+bad artifacts HEAD nonexistent-ref
+bad artifacts '' HEAD
+
+# `print(` inside a longer identifier is not a debug print.
+mkdir -p "$TMP/src"
+printf 'pprint(x)\nbuild_blueprint(y)\n' > "$TMP/src/names.py"
+git -C "$TMP" add . && git -C "$TMP" commit -qm 'identifiers containing print'
+ok artifacts HEAD~1 HEAD
+printf 'print(x)\n' > "$TMP/src/debug.py"
+git -C "$TMP" add . && git -C "$TMP" commit -qm 'bare print'
+bad artifacts HEAD~1 HEAD
+msg=$(cd "$TMP" && "$CHECK" artifacts HEAD~1 HEAD 2>&1 || true)
+[[ "$msg" != *'\n'* && "$msg" == *$'\n'* ]] || { printf 'FAIL block message renders newlines\n'; exit 1; }
+printf 'PASS block message renders newlines\n'
+
+# Scanned code is echoed verbatim: a `\c` must not truncate the report.
+printf 'print("a\\cb")\n' > "$TMP/src/escape.py"
+git -C "$TMP" add . && git -C "$TMP" commit -qm 'escape in finding'
+msg=$(cd "$TMP" && "$CHECK" artifacts HEAD~1 HEAD 2>&1 || true)
+[[ "$msg" == *'a\cb'* ]] || { printf 'FAIL finding printed verbatim\n'; exit 1; }
+printf 'PASS finding printed verbatim\n'
+
 printf 'All dev-check tests passed.\n'

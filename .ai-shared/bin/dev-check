@@ -69,9 +69,13 @@ case "${1:-}" in
     ;;
   artifacts)
     [[ $# -ge 2 && $# -le 3 ]] || usage
-    range="$2..${3:-HEAD}"
-    findings=$(git diff "$range" | sed -n '/^+++ /d; /^+/p' | rg -n 'System\.out|console\.log|// DEBUG|print\(|^\+[<>]{7}|^\+={7}' || true)
-    [[ -z "$findings" ]] || block "artifacts in $range\n$findings"
+    [[ -n "$2" ]] || block "invalid ref: empty base"
+    git rev-parse --verify --quiet "${2}^{commit}" >/dev/null 2>&1 || block "invalid ref: $2"
+    end="${3:-HEAD}"
+    git rev-parse --verify --quiet "${end}^{commit}" >/dev/null 2>&1 || block "invalid ref: $end"
+    range="$2..$end"
+    findings=$(git diff "$range" | sed -n '/^+++ /d; /^+/p' | rg -n 'System\.out|console\.log|// DEBUG|\bprint\(|^\+[<>]{7}|^\+={7}' || true)
+    [[ -z "$findings" ]] || block "artifacts in $range"$'\n'"$findings"
     pass "artifact scan $range"
     ;;
   coverage)

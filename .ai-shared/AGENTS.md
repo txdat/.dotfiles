@@ -20,6 +20,8 @@ Direct edits are complete when the requested change is implemented, affected che
 
 Within authorized work, run local checks and read-only inspection and fix in-scope failures without renewed approval, subject to existing attempt budgets and phase gates. Review-only requests remain read-only.
 
+For background jobs that inject completion results as follow-ups, use those notifications instead of polling status or logs, running sleep/check loops, or holding the turn open. Continue independent work; when none remains, report the pending job and yield. Resume dependent work from its result. Pending is not success or completion.
+
 After three failed fix-and-verification attempts at the same unresolved failure, stop fixing and report what you tried, what happened, and what evidence or decision you need. Stop sooner if attempts produce no new evidence or progress. The count persists across hypotheses, delegation, and sessions until verification resolves the failure or explicit user direction grants three further attempts (unless otherwise specified); retain prior history. Read-only diagnosis and other authorized work may continue. This failed-fix counter is independent of [independence.md](skills/dev/independence.md)'s repair/re-review counter per artifact and review phase. Both limits apply during review loops; stop when either is exhausted, and never treat exhaustion as success.
 
 Use [handoff](skills/handoff.md) when continuity needs a saved snapshot.

@@ -1,0 +1,7 @@
+# Plan/PR and review-output language
+
+Write plan prose and PR titles and bodies in the linked issue's primary language unless the user explicitly requests another language. Determine it from the issue's title and body, ignoring code and technical identifiers. Use English when no issue is linked or no primary language is clear. For multiple issues, use the primary tracking issue's language — the artifact's linked or `Issue:`-named tracking issue when one exists. Without an identifiable primary, use their common language or English if they differ.
+
+This rule covers feature plans, architecture designs, infrastructure runbooks, their PRs (including docs, reused, and replacement PRs), and review output prose. Select the language before drafting and use it for subsequent updates. If an issue is linked or created after drafting, align the artifact's language before approval. Approved artifacts retain their language; a user-requested change follows [approval.md](approval.md)'s editorial path. Review output follows the reviewed artifact's retained language, not a fresh derivation from its issue.
+
+Translate descriptive prose; preserve required schema/template headings, field names, status values, AC/TC IDs, code, commands, paths, and GitHub keywords such as `Refs` and `Closes`. Commit messages follow [verification.md](verification.md)'s commit conventions, in English unless the project convention sets another language. English structural labels do not determine the prose language.

@@ -14,7 +14,7 @@ The required sequence is **design-feature → review-feature → spec approval �
 
 A phase advances when its owning skill's completion conditions hold. Mechanical gates check artifact shape and Git history; they do not establish correctness or user consent. Correct a failed prerequisite before dependent work. Continue independent authorized work.
 
-Delegated design tasks follow CODING.md's delegation rules and the selected design skill. The subagent returns draft content and unresolved decisions; the main agent writes the artifact and handles approval. Drafting subagents do not implement, mutate Git or infrastructure, or delegate further.
+Delegated design tasks follow [CODING.md — Ownership](CODING.md#ownership) and the selected design skill. The subagent returns draft content and unresolved decisions; the main agent writes the artifact and handles approval. Drafting subagents do not implement, mutate Git or infrastructure, or delegate further.
 
 ## Rule owners
 
@@ -23,9 +23,11 @@ Delegated design tasks follow CODING.md's delegation rules and the selected desi
 | Application-code boundary and delivery sequence | [Scope](#scope) and [Delivery](#delivery) |
 | Plan identity, lifecycle, worktree, archive and cleanup | [plan.md](skills/dev/plan.md) |
 | Plan schema and PR slicing | [design-feature.md](skills/dev/design-feature.md) |
+| Plan/PR and review-output language | [language.md](skills/dev/language.md) |
 | Approval, amendments, deviations, new scope, abandonment | [approval.md](skills/dev/approval.md) |
 | Test-first proof and commit conventions, coverage and verification gaps | [verification.md](skills/dev/verification.md) |
 | Archive and live-plan cleanup commit conventions | [plan.md — Archive and cleanup](skills/dev/plan.md#archive-and-cleanup) |
+| Publication completion and CI boundary | [create-pr.md — Complete](skills/dev/create-pr.md#complete) |
 | Caller and shared-state impact | [CODING.md — Impact](CODING.md#impact) |
 | Failed-fix budget and no-progress rule | [AGENTS.md — Work](AGENTS.md#work) |
 | Review authority, isolation, repair/re-review budget and renewal | [independence.md](skills/dev/independence.md) |
