@@ -17,7 +17,7 @@ Before GREEN and during review, run `~/.dotfiles/.ai-shared/bin/dev-check proof 
 
 ## Local checks
 
-Run the required project checks that can execute locally — lint, build, and any other command CI runs against the change. Missing required AC/TC evidence or a failed required local check blocks readiness. For remote CI, follow [create-pr.md — Complete](create-pr.md#complete).
+Run the required project checks that can execute locally — lint, build, and any other command CI runs against the change. Missing required AC/TC evidence or a failed required local check blocks readiness. For remote CI after any commit push, follow [AGENTS.md — Work](../../AGENTS.md#work). PR publication also follows [create-pr.md — Complete](create-pr.md#complete).
 
 ## Coverage
 

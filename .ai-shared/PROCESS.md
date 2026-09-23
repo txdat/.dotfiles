@@ -27,7 +27,8 @@ Delegated design tasks follow [CODING.md — Ownership](CODING.md#ownership) and
 | Approval, amendments, deviations, new scope, abandonment | [approval.md](skills/dev/approval.md) |
 | Test-first proof and commit conventions, coverage and verification gaps | [verification.md](skills/dev/verification.md) |
 | Archive and live-plan cleanup commit conventions | [plan.md — Archive and cleanup](skills/dev/plan.md#archive-and-cleanup) |
-| Publication completion and CI boundary | [create-pr.md — Complete](skills/dev/create-pr.md#complete) |
+| CI boundary after any commit push | [AGENTS.md — Work](AGENTS.md#work) |
+| Publication completion | [create-pr.md — Complete](skills/dev/create-pr.md#complete) |
 | Caller and shared-state impact | [CODING.md — Impact](CODING.md#impact) |
 | Failed-fix budget and no-progress rule | [AGENTS.md — Work](AGENTS.md#work) |
 | Review authority, isolation, repair/re-review budget and renewal | [independence.md](skills/dev/independence.md) |

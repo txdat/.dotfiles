@@ -35,6 +35,8 @@ After every inventoried PR exists, including the leading docs PR, and issue chec
 
 ## Complete
 
-After PR creation, finish [plan.md](plan.md)'s publication verification and cleanup, return the PR URLs, and stop. Do not poll or watch CI, wait for remote checks, or start a CI repair loop. Remote CI status, whether pending or failed, is not a publication or cleanup gate; local verification prerequisites still apply. Report remote-only checks separately using already-known results, or mark them unverified; do not fetch results solely for the handoff. Monitoring or repairing CI requires an explicit user request beyond PR publication.
+After PR creation, agents must finish [plan.md](plan.md)'s publication verification and cleanup, return the PR URLs in the final response, and end the turn. CI and background jobs follow [AGENTS.md — Work](../../AGENTS.md#work).
+
+Remote CI status, whether pending or failed, must not gate publication or cleanup; local verification prerequisites still apply. Separately authorized CI work does not reopen or extend the publication phase.
 
 Claim completion only after publication verification and safe cleanup succeed; otherwise report what remains. Publication does not establish CI success, merge, or deployment. Follow-up application changes use a new plan and [design-feature.md](design-feature.md)'s parent-selection rules.

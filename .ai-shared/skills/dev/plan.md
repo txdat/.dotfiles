@@ -50,7 +50,7 @@ Keep each plan at its own `docs/plans/<file>.md` path. Preserve and link histori
 
 Root cleanup commits stay local unless pushing that branch and its outgoing commits is explicitly authorized. Report their SHA, branch, and pushed/unpushed state; an unpushed cleanup commit blocks completion only when its push is part of the task.
 
-On publication verification or cleanup failure, retain remaining live files/worktrees and report per-item progress. Completion requires verified publication, removal of all inventoried live files/worktrees, and required cleanup commits. For CI handling, follow [create-pr.md — Complete](create-pr.md#complete). Finish the handoff when cleanup succeeds.
+On publication verification or cleanup failure, retain remaining live files/worktrees and report per-item progress. Completion requires verified publication, removal of all inventoried live files/worktrees, and required cleanup commits. For CI handling, follow [AGENTS.md — Work](../../AGENTS.md#work). Finish the handoff when cleanup succeeds.
 
 ### Cleanup-only resume
 

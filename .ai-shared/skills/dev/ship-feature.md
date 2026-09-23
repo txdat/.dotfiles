@@ -12,4 +12,6 @@ Read [PROCESS.md](../../PROCESS.md). Start from the supplied requirement or reso
 
 Pass the exact plan path to each phase and verify its completion conditions before advancing. State transitions and terminal handling belong to [plan.md — Lifecycle](plan.md#lifecycle); required phases belong to [PROCESS.md — Delivery](../../PROCESS.md#delivery). An explicit starting phase cannot bypass prerequisites.
 
+Delivery ends at [create-pr.md — Complete](create-pr.md#complete); CI handling belongs to [AGENTS.md — Work](../../AGENTS.md#work).
+
 Handle corrections and re-review under [approval.md](approval.md) and [independence.md](independence.md). For split requirements, deliver one confirmed goal at a time; deferred goals remain in the parent issue.
