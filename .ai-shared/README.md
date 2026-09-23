@@ -87,9 +87,9 @@ The extension gates recognized reads, not phase execution: it cannot distinguish
 
 | claude | chatgpt | gemini |
 | ------ | ------- | ------ |
-| haiku | gpt-5.6-luna | flash |
-| sonnet | gpt-5.6-terra | flash |
-| opus | gpt-5.6-sol | pro |
+| haiku | gpt-6-luna | flash |
+| sonnet | gpt-6-luna | flash |
+| opus | gpt-6-sol | pro |
 | fable | gpt-6-astra | pro |
 
 ### skills
@@ -103,7 +103,7 @@ The extension gates recognized reads, not phase execution: it cannot distinguish
 | dev-design-feature | Design an issue-backed feature, fix, or refactor plan before implementation, including scope, test cases, impact, ordered steps, and provisional PR slicing. | skills/dev/design-feature.md | medium | opus |
 | dev-design-infra | Design a runnable infrastructure operations plan from live-state evidence, verification gates, and rollback requirements. | skills/dev/design-infra.md | high | sonnet |
 | dev-design-system | Design cross-cutting architecture changes such as new communication patterns, service boundaries, or integrations, with options, contracts, migration, rollback, and decomposition. | skills/dev/design-system.md | high | opus |
-| dev-execute-feature | Execute approved application work with test-first commits and per-slice verification. | skills/dev/execute-feature.md | medium | sonnet |
+| dev-execute-feature | Execute approved application work with test-first commits and per-slice verification. | skills/dev/execute-feature.md | high | sonnet |
 | dev-explore | Read-only exploration of a codebase area to identify entry points, key files, data flow, established patterns, gotchas, and planning questions. | skills/dev/explore.md | medium | haiku |
 | dev-fix-bug | Diagnose a bug from evidence and route a requested fix through the application delivery flow. | skills/dev/fix-bug.md | high | sonnet |
 | dev-frame-goal | Clarify ambiguous requirements or split independently useful goals before design. | skills/dev/frame-goal.md | medium | opus |

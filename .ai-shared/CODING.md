@@ -30,8 +30,6 @@ Record decisive evidence with the design or verification results. Resolve broken
 
 Use the tool that answers the question: semantic navigation for definitions and callers, `rg` for text and files, source reads to verify results. Batch independent reads; keep dependent actions and mutations sequential. Reuse evidence until its inputs change.
 
-For Sverklo, use read-only `overview`, `search`, or `lookup`; exploration does not use memory or management operations. Verify returned source belongs to the intended repository and use another navigation method when the index is stale or inconclusive.
-
 Shared shell helpers live in `~/.dotfiles/.ai-shared/bin/`; invoke them by full path with Bash. Python helpers use Python 3. Follow the owning skill's arguments and invocation conditions.
 
 ## Ownership
