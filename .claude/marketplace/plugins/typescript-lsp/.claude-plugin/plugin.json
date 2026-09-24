@@ -1,13 +1,13 @@
 {
   "name": "typescript-lsp",
-  "description": "TypeScript/JavaScript language server via tsgo (typescript-go native preview)",
+  "description": "TypeScript/JavaScript language server",
   "version": "1.0.0",
   "author": {
     "name": "txdat"
   },
   "lspServers": {
-    "tsgo": {
-      "command": "tsgo",
+    "tsc": {
+      "command": "tsc",
       "args": [
         "--lsp",
         "--stdio"

@@ -8,7 +8,7 @@
     {
       "name": "typescript-lsp",
       "source": "./plugins/typescript-lsp",
-      "description": "TypeScript/JavaScript language server via tsgo (typescript-go native preview)"
+      "description": "TypeScript/JavaScript language server"
     },
     {
       "name": "pyright-lsp",

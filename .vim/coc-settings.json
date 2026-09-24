@@ -89,8 +89,8 @@
         }
       }
     },
-    "tsgo": {
-      "command": "tsgo",
+    "tsc": {
+      "command": "tsc",
       "args": ["--lsp", "--stdio"],
       "filetypes": [
         "javascript",
