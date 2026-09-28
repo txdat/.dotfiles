@@ -6,9 +6,10 @@ Read [PROCESS.md](../../PROCESS.md). Start from the supplied requirement or reso
 |---|---|
 | No plan | design-feature |
 | planning | Resolve requirements, review-feature, then approval.md |
-| approved / in-progress | execute-feature |
+| approved / in-progress | execute-feature; a documentation-only contract plan instead waits for its consumer's publication |
 | implemented | review-code |
 | reviewed | create-pr |
+| published / abandoned | Stop: delivery has ended; report the recorded state |
 
 Pass the exact plan path to each phase and verify its completion conditions before advancing. State transitions and terminal handling belong to [plan.md — Lifecycle](plan.md#lifecycle); required phases belong to [PROCESS.md — Delivery](../../PROCESS.md#delivery). An explicit starting phase cannot bypass prerequisites.
 

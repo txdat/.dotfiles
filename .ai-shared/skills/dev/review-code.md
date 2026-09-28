@@ -28,10 +28,10 @@ Report the Goal/AC conclusions, decisive test/proof evidence, and located findin
 
 The main agent handles repairs and re-review under [independence.md](independence.md). Implementation defects leave status `implemented`; spec amendments follow [approval.md](approval.md).
 
-On a passing review, reconcile actual slices with [design-feature.md](design-feature.md)'s PR Pattern. Changed parents or TC/slice ownership require a revised pattern and approval. Remove `(provisional)` only when it matches the verified work.
+On a passing review, reconcile actual slices with [design-feature.md](design-feature.md)'s PR Pattern. Changed parents or TC/slice ownership require a revised pattern, decided as a PR Pattern change under [approval.md](approval.md). Remove `(provisional)` only when it matches the verified work.
 
 For a chain, verify the leading docs entry separately under [plan.md — Approved snapshots](plan.md#approved-snapshots): its diff owns only the recorded plan paths, preserves the approved snapshots, passes documentation checks, and is inherited by every code branch. It is not a numbered code slice and requires no code-test proof.
 
-For every slice, record `Slice N (<branch>): green at <sha>` in the finalized pattern. At each slice's own tip, run [verification.md — Local checks](verification.md#local-checks) and that slice's tests; reuse results only when the tip and verification inputs are unchanged. The main agent prepares required checkouts in a clean worktree; the reviewer confirms the checked-out SHA and independently runs required verification before the main agent switches again. The reviewer does not mutate Git. A final green tip does not prove earlier slices.
+For every slice, record `Slice N (<branch>): green at <sha>` in the finalized pattern. At each slice's own tip, run [verification.md — Local checks](verification.md#local-checks) and that slice's tests; reuse results only when the tip and verification inputs are unchanged. Each slice keeps its own worktree ([plan.md — Worktree operations](plan.md#worktree-operations)); give the reviewer every slice's worktree path and expected tip. The reviewer confirms each checked-out SHA and runs verification there without switching branches or otherwise mutating Git. A final green tip does not prove earlier slices.
 
 Record review evidence and disposition of notes, set `reviewed`, and hand off to [create-pr.md](create-pr.md). A standalone review returns the report without changing artifacts.

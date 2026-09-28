@@ -99,13 +99,13 @@ The extension gates recognized reads, not phase execution: it cannot distinguish
 | skill | description | md file | effort | model |
 | ----- | ----------- | ------- | ------ | ----- |
 | dev-create-issue | Create a standalone GitHub issue with a specific problem, expected outcome, and requested metadata. Use for unplanned issue capture; use dev-design-feature for implementation-plan-linked issues. | skills/dev/create-issue.md | medium | haiku |
-| dev-create-pr | Publish reviewed plan work as draft or ready pull request(s), verify committed scope, archive the plan safely, and clean up its worktree. | skills/dev/create-pr.md | medium | haiku |
+| dev-create-pr | Publish reviewed plan work as draft or ready pull request(s), verify committed scope, archive the plan safely, and clean up its worktree. | skills/dev/create-pr.md | medium | sonnet |
 | dev-design-feature | Design an issue-backed feature, fix, or refactor plan before implementation, including scope, test cases, impact, ordered steps, and provisional PR slicing. | skills/dev/design-feature.md | medium | opus |
 | dev-design-infra | Design a runnable infrastructure operations plan from live-state evidence, verification gates, and rollback requirements. | skills/dev/design-infra.md | high | sonnet |
 | dev-design-system | Design cross-cutting architecture changes such as new communication patterns, service boundaries, or integrations, with options, contracts, migration, rollback, and decomposition. | skills/dev/design-system.md | high | opus |
 | dev-execute-feature | Execute approved application work with test-first commits and per-slice verification. | skills/dev/execute-feature.md | high | sonnet |
 | dev-explore | Read-only exploration of a codebase area to identify entry points, key files, data flow, established patterns, gotchas, and planning questions. | skills/dev/explore.md | medium | haiku |
-| dev-fix-bug | Diagnose a bug from evidence and route a requested fix through the application delivery flow. | skills/dev/fix-bug.md | high | sonnet |
+| dev-fix-bug | Diagnose a bug from evidence and route a requested fix: plan-backed delivery when asked, otherwise a direct edit. | skills/dev/fix-bug.md | high | sonnet |
 | dev-frame-goal | Clarify ambiguous requirements or split independently useful goals before design. | skills/dev/frame-goal.md | medium | opus |
 | dev-review-code | Review implemented plan changes for TDD proof, independent test results, correctness, security, architecture, scope, hygiene, and final PR slicing before create-pr. | skills/dev/review-code.md | high | sonnet |
 | dev-review-feature | Review a planning-stage feature/fix/refactor plan for approach, system fit, test completeness, impact, scope, and independently mergeable PR slices before human approval. | skills/dev/review-feature.md | medium | opus |

@@ -2,7 +2,7 @@
 
 Read [PROCESS.md](../../PROCESS.md) and [plan.md](plan.md). Design proposes behavior; [approval.md](approval.md) owns approval. Use [frame-goal.md](frame-goal.md) for material ambiguity, [design-system.md](design-system.md) for changed system boundaries, and [frontend-design.md](frontend-design.md) for UI work.
 
-Inspect the relevant code, contracts, and project conventions. Confirm a concrete base branch. Complete the ambiguity gate below before drafting or creating a new `docs/plans/<basename>_<date>_<type>_<slug>.md`, where type is `feature`, `fix`, or `refactor`.
+Inspect the relevant code, contracts, and project conventions. Confirm a concrete base branch. Complete the ambiguity gate below before drafting or creating a new `docs/plans/<area>_<date>_<type>_<slug>.md`, where area is a short label grouping related plans (repository, module, or issue number) and type is `feature`, `fix`, or `refactor`.
 
 Before drafting, select the plan language under [language.md](language.md).
 
@@ -28,7 +28,9 @@ Each sub-plan has its own scoped Goal, ACs, TCs, ordered steps, and provisional 
 
 Check that the union of scopes covers the overall outcome without conflicting ownership. Assign cross-scope integration verification to an explicit owning sub-plan and TC, with concrete prerequisite state and expected results. Record development, merge, and release dependencies where they differ: contract-based mocks may unblock FE work but do not prove integration with BE. Each plan retains its own review and approval; overall readiness requires coherent coverage across the required plans.
 
-Only after scope separation, split work within each sub-plan using the existing dependency ordering and [PR slicing](#pr-slicing) rules. Each may use one PR or a chain; three scopes do not imply exactly three PRs. Plan prerequisites are not Git parents: record actual branch ancestry and exact plan ownership under [plan.md](plan.md). Documentation-only contract deliverables use [PROCESS.md — Scope](../../PROCESS.md#scope)'s documentation route with explicit validation and publication ownership, not fabricated executable tests or code-green claims.
+Only after scope separation, split work within each sub-plan using the existing dependency ordering and [PR slicing](#pr-slicing) rules. Each may use one PR or a chain; three scopes do not imply exactly three PRs. Plan prerequisites are not Git parents: record actual branch ancestry and exact plan ownership under [plan.md](plan.md).
+
+A documentation-only API-contract sub-plan ends at spec approval. Its TCs name documentation validation such as schema lint or example checks, its steps write the contract artifact, and its PR Pattern holds only a `docs` row; it has no execute-feature or review-code phase, fabricated tests, or code-green claims. The first dependent code plan to start execution adds it to its publication inventory and uses a leading docs entry even with one code slice, so the approved snapshot and contract artifact ship in that docs entry and the archive in its final code PR. When no code plan depends on it, publish it as a standalone docs PR through [PROCESS.md — Scope](../../PROCESS.md#scope)'s direct-edit route, archiving the plan in that PR.
 
 ## Plan schema
 
@@ -58,6 +60,18 @@ Type: single
 | # | Branch | Parent | Steps | Summary |
 |---|---|---|---|---|
 | 1 | feat/example | <base> | 1 | <outcome> |
+```
+
+A chain adds a leading `docs` row; gates count only numbered rows as code slices:
+
+```text
+## PR Pattern (provisional)
+Type: chain
+| # | Branch | Parent | Steps | Summary |
+|---|---|---|---|---|
+| docs | docs/example-plans | <base> | — | plans: <plan paths>; checks: <documentation checks> |
+| 1 | feat/example-1 | docs/example-plans | 1 | <outcome> |
+| 2 | feat/example-2 | feat/example-1 | 2 | <outcome> |
 ```
 
 Each TC names exactly one AC, includes a concrete fixture, action, and expected result, and belongs to an implementation step. Shared fixtures may live in `## Test Fixtures` with explicit IDs; each TC names its fixture and any overrides and states its own expected result. Fixtures are language-neutral example data, not executable setup code. Use explicit IDs rather than ID ranges in traceability references. Item counts follow the behavior the Goal requires; there are no quotas.
@@ -112,9 +126,9 @@ Apply these rules within each scope sub-plan after [scope separation](#split-sco
 
 Use one branch when the change is small enough to review as a coherent unit. When review would require reasoning about several separable changes at once, use `Type: chain` with a focused review purpose for each slice. Assess review burden from distinct behaviors, affected contracts, and migration risks; line count alone is insufficient. Each slice must be correct and safe to merge after its recorded parent without later slices, but need not deliver the complete user-facing outcome. Keep incomplete behavior unexposed and preserve compatibility between slices. Plan reverts in reverse dependency order, accounting for persistent state where affected. If a large change cannot be split safely, record the coupling that requires it to stay together.
 
-Every row records its explicit Parent and owned steps. Assign each TC to one code slice that includes its tests and the implementation needed to pass them without later slices. Shared fixtures may be inherited from a parent.
+Every row records its explicit Parent and owned steps. Assign each TC to one code slice that includes its tests and the implementation needed to pass them without later slices; a documentation-only contract plan's TCs have no code slice. Shared fixtures may be inherited from a parent.
 
-For `Type: chain`, record a leading docs publication entry alongside the numbered code rows: branch, explicit Parent, owned plan paths, and documentation checks. Its Parent is Base, or the unmerged branch this work extends; the first code row parents on the docs branch. Later code rows normally parent on the previous code branch. The docs entry has no implementation steps or code-green claim. [plan.md — Approved snapshots](plan.md#approved-snapshots) owns its contents and preparation.
+For `Type: chain`, record the leading docs entry as the `docs` row in the [schema](#plan-schema): branch, explicit Parent, and in Summary its owned plan paths and documentation checks. Its Parent is Base, or the unmerged branch this work extends; the first code row parents on the docs branch. Later code rows normally parent on the previous code branch. The docs entry has no implementation steps or code-green claim. [plan.md — Approved snapshots](plan.md#approved-snapshots) owns its contents and preparation.
 
 For a single code PR, its Parent normally equals Base, or the unmerged branch this work extends. Review and publication use the recorded parents. Chain order is dependency, PR creation, and the intended maintainer merge order; [create-pr.md](create-pr.md) publishes docs first, then code slices from first to last.
 

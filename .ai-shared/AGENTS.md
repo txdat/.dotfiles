@@ -14,7 +14,7 @@ Use supplied answers and inspected evidence. Resolve routine implementation deta
 
 ## Work
 
-Fit planning to the task. Application-code changes follow [PROCESS.md — Scope](PROCESS.md#scope). Other local edits may proceed directly when the request is clear; state a short plan for substantial work. Prepare concrete, reviewable results within existing authorization.
+Fit planning to the task. Local edits, including application code, proceed directly when the request is clear; state a short plan for substantial work. The development workflow in [PROCESS.md](PROCESS.md) applies only when a dev skill is invoked or the user asks for plan-backed work. Prepare concrete, reviewable results within existing authorization.
 
 Direct edits are complete when the requested change is implemented, affected checks pass, and the result is reported. Report blocked or unrun required checks and their implications instead of claiming completion.
 
@@ -28,7 +28,7 @@ CI monitoring or repair requires an explicit user request covering that work; an
 
 Plan-backed PR publication ends under [create-pr.md — Complete](skills/dev/create-pr.md#complete).
 
-After three failed fix-and-verification attempts at the same unresolved failure, stop fixing and report what you tried, what happened, and what evidence or decision you need. Stop sooner if attempts produce no new evidence or progress. The count persists across hypotheses, delegation, and sessions until verification resolves the failure or explicit user direction grants three further attempts (unless otherwise specified); retain prior history. Read-only diagnosis and other authorized work may continue. This failed-fix counter is independent of [independence.md](skills/dev/independence.md)'s repair/re-review counter per artifact and review phase. Both limits apply during review loops; stop when either is exhausted, and never treat exhaustion as success.
+After three failed fix-and-verification attempts at the same unresolved failure, stop fixing and report what you tried, what happened, and what evidence or decision you need. Stop sooner if attempts produce no new evidence or progress. The count persists across hypotheses, delegation, and sessions until verification resolves the failure or explicit user direction grants three further attempts (unless otherwise specified). Record it where the work is tracked — the active plan's `## Review History`, otherwise a [handoff](skills/handoff.md) — as `Failed fixes: <n>/3 — <failure>`, and retain prior history. Read-only diagnosis and other authorized work may continue. This failed-fix counter is independent of [independence.md](skills/dev/independence.md)'s repair/re-review counter per artifact and review phase. Both limits apply during review loops; stop when either is exhausted, and never treat exhaustion as success.
 
 Use [handoff](skills/handoff.md) when continuity needs a saved snapshot.
 

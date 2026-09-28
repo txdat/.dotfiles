@@ -1,16 +1,16 @@
 # Development Process
 
-Main-session policy for application feature, fix, and refactor work. Read [CODING.md](CODING.md) and project configuration.
+Main-session policy for plan-backed feature, fix, and refactor work. Read [CODING.md](CODING.md) and project configuration.
 
 ## Scope
 
-Application-code changes implement or maintain executable logic or its tests, including behavior-preserving refactors and developer tooling. In this dotfiles repository, shell helper logic, installer scripts, and agent extensions follow this process. Documentation, agent/skill instructions, and declarative environment settings may use AGENTS.md's direct-edit path. Classify by the changed content, not the filename: changing a shell function inside a configuration file is executable work. Mixed changes follow this process for their executable scope.
+This process applies only when a dev skill is invoked or the user asks for plan-backed work. Everything else, including application code, uses [AGENTS.md — Work](AGENTS.md#work)'s direct-edit path.
 
-Project instructions may explicitly override these defaults for named areas. An explicitly requested plan-backed workflow also follows this process. If the boundary remains unclear, state the proposed classification and its reason before implementation; resolve any material workflow decision with the user.
+Within the workflow, the phases below govern application code: executable logic or its tests, including behavior-preserving refactors and developer tooling. Classify by the changed content, not the filename: changing a shell function inside a configuration file is executable work. Documentation, agent/skill instructions, and declarative settings take the direct-edit path even inside plan-backed work; mixed changes follow this process for their executable scope. Project instructions may override these defaults for named areas. If the boundary is unclear, state the proposed classification and its reason before implementation.
 
 ## Delivery
 
-The required sequence is **design-feature → review-feature → spec approval → execute-feature → review-code → create-pr**. Exploration and goal framing are optional when the request is already clear. Architecture and infrastructure use the separate lanes in [the skill directory](skills/dev/README.md).
+The required sequence is **design-feature → review-feature → spec approval → execute-feature → review-code → create-pr**. Exploration and goal framing are optional when the request is already clear. A documentation-only API-contract sub-plan stops at spec approval and ships with its consumer's publication ([design-feature.md — Split scope](skills/dev/design-feature.md#split-scope-before-splitting-work)). Architecture and infrastructure use the separate lanes in [the skill directory](skills/dev/README.md).
 
 A phase advances when its owning skill's completion conditions hold. Mechanical gates check artifact shape and Git history; they do not establish correctness or user consent. Correct a failed prerequisite before dependent work. Continue independent authorized work.
 
@@ -20,7 +20,7 @@ Delegated design tasks follow [CODING.md — Ownership](CODING.md#ownership) and
 
 | Concern | Source |
 |---|---|
-| Application-code boundary and delivery sequence | [Scope](#scope) and [Delivery](#delivery) |
+| Workflow entry, application-code boundary, and delivery sequence | [Scope](#scope) and [Delivery](#delivery) |
 | Plan identity, lifecycle, worktree, archive and cleanup | [plan.md](skills/dev/plan.md) |
 | Plan schema and PR slicing | [design-feature.md](skills/dev/design-feature.md) |
 | Plan/PR and review-output language | [language.md](skills/dev/language.md) |

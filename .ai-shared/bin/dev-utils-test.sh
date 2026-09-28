@@ -62,6 +62,7 @@ printf 'PASS: literal production search and path-based test exclusions\n'
 mkdir -p docs/plans
 printf 'Status: reviewed | Type: feature | Base: main | Issue: #12 | Worktree:\n' > docs/plans/live.md
 printf 'Status: abandoned | Type: feature | Base: main | Issue: #12 | Worktree:\n' > docs/plans/dropped.md
+printf 'Status: published | Type: feature | Base: main | Issue: #12 | Worktree: /tmp/leftover\n' > docs/plans/shipped.md
 printf 'Status: planning | Type: feature | Base: main | Issue: #123 | Worktree:\nIssue: #12 appears only in body\n' > docs/plans/other.md
 equal "$(bash "$UTILS" issue-claimants 12)" "$repo/docs/plans/live.md" 'exact issue header and terminal filter'
 reject bash "$UTILS" issue-claimants 0

@@ -683,4 +683,61 @@ output=$(
 )
 assert_block "$output" 'main working-tree root' 'failed root discovery cannot adopt a linked-worktree plan'
 
+# 'published' is terminal: once a PR exists the workflow never resumes, even
+# when cleanup failed and the live plan and worktree remain.
+repo=$(new_repo)
+make_registered_plan "$repo" feature published '#12' '## PR Pattern' >/dev/null
+output=$(run_gate "$repo" dev-create-pr 'docs/plans/gate.md')
+assert_block "$output" 'terminal' 'published plan cannot re-enter create-pr'
+output=$(run_gate "$repo" dev-ship-feature 'docs/plans/gate.md')
+assert_block "$output" 'terminal' 'ship-feature stops at a published plan'
+
+repo=$(new_repo)
+write_plan "$repo/docs/plans/gate.md" published feature '#12' '' '## PR Pattern'
+output=$(run_gate "$repo" dev-create-pr 'docs/plans/gate.md')
+assert_block "$output" 'terminal' 'terminal status is reported before the missing worktree'
+
+repo=$(new_repo)
+write_plan "$repo/docs/plans/gate.md" abandoned feature '#12' '' '## PR Pattern (provisional)'
+output=$(run_gate "$repo" dev-ship-feature 'docs/plans/gate.md')
+assert_block "$output" 'abandoned' 'ship-feature stops at an abandoned plan'
+output=$(run_gate "$repo" dev-ship-feature 'redo the work in docs/plans/gate.md')
+assert_block "$output" 'without the old plan path' 'a mentioned terminal plan tells the caller how to start new work'
+
+# A chain's leading docs entry is not a numbered code slice: it neither counts
+# toward required RED proof nor becomes the review base.
+repo=$(new_repo)
+git -C "$repo" checkout -qb docs/gate-plans
+printf 'plan\n' > "$repo/snapshot.md"
+git -C "$repo" add snapshot.md
+git -C "$repo" commit -qm 'docs(plan): approved snapshots'
+git -C "$repo" checkout -q main
+worktree=$(make_registered_plan "$repo" feature implemented '#12' '## PR Pattern (provisional)')
+git -C "$worktree" merge -q --ff-only docs/gate-plans
+sed -i 's/^| 1 | feature\/gate-test | main |/| docs | docs\/gate-plans | main | — | approved plans |\n| 1 | feature\/gate-test | docs\/gate-plans |/' "$repo/docs/plans/gate.md"
+wt_commit "$worktree" 'test(red): gate' tests/gate_test.py
+wt_commit "$worktree" 'feat(gate): implement' src/gate.py
+output=$(run_gate "$repo" dev-review-code 'docs/plans/gate.md')
+assert_pass "$output" 'docs entry is excluded from slice count and review base'
+
+# A documentation-only API-contract plan has only a docs row: it passes plan
+# review on that row's Parent and ends at approval, so no code phase admits it.
+repo=$(new_repo)
+write_plan "$repo/docs/plans/gate.md" planning feature '#12' '' '## PR Pattern (provisional)'
+sed -i 's/^| 1 | feature\/gate-test | main |.*/| docs | — | main | — | contract snapshot |/' "$repo/docs/plans/gate.md"
+output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
+assert_pass "$output" 'docs-only contract plan passes review on its docs row Parent'
+sed -i 's/^| docs | — | main |/| docs | — | |/' "$repo/docs/plans/gate.md"
+output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
+assert_block "$output" 'no Parent' 'docs-only contract plan still needs a docs row Parent'
+sed -i 's/^Status: planning/Status: approved/; s/^| docs | — | |/| docs | — | main |/' "$repo/docs/plans/gate.md"
+output=$(run_gate "$repo" dev-execute-feature 'docs/plans/gate.md')
+assert_block "$output" 'documentation-only' 'docs-only contract plan never enters execution'
+
+repo=$(new_repo)
+make_registered_plan "$repo" feature reviewed '#12' '## PR Pattern' >/dev/null
+sed -i 's/^| 1 | feature\/gate-test | main |.*/| docs | — | main | — | contract snapshot |/' "$repo/docs/plans/gate.md"
+output=$(run_gate "$repo" dev-create-pr 'docs/plans/gate.md')
+assert_block "$output" 'documentation-only' 'docs-only contract plan never enters create-pr'
+
 printf 'All gate-check tests passed. Temporary fixtures: %s\n' "$TMP_ROOT"

@@ -33,7 +33,7 @@ Record revision, command, metric, scope, exclusions, and result. Missing or fail
 
 ### Interpret
 
-Run `~/.dotfiles/.ai-shared/bin/dev-check coverage <percent> [uncovered-critical]`. The reporting bands are ≥90% PASS, 80–89% WARN, and <80% WARN below target. Uncovered critical behavior blocks. Separate project thresholds still apply.
+Run `~/.dotfiles/.ai-shared/bin/dev-check coverage <percent> [uncovered-critical]`. The reporting bands are ≥90% PASS, 80–89% WARN, and <80% WARN below the 80% target; neither WARN blocks. Uncovered critical behavior blocks. Separate project thresholds still apply.
 
 For a shortfall, record uncovered lines, their behavior, and the reason in `## Coverage Gaps`. An explained percentage alone does not block or require approval. Missing required behavior does: repair its existing TC, or use [approval.md](approval.md) when the obligation itself must change.
 

@@ -54,7 +54,7 @@ issue_claimants() {
           if (field ~ /^Status:/) { sub(/^Status:[[:space:]]*/, "", field); status = field }
           if (field ~ /^Issue:/) { sub(/^Issue:[[:space:]]*/, "", field); reference = field }
         }
-        if (reference == issue && status != "abandoned" && status != "archived") print FILENAME
+        if (reference == issue && status != "abandoned" && status != "archived" && status != "published") print FILENAME
         exit
       }
     ' "$plan"

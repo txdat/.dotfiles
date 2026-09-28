@@ -9,6 +9,9 @@
 # review-feature requires planning and leaves that status unchanged (../skills/dev/review-feature.md).
 # fix-bug has no plan gate; it diagnoses and routes (../skills/dev/fix-bug.md).
 # Review-code additionally requires proof-commit sequencing for every slice.
+# published, archived, and abandoned are terminal for every plan-consuming skill;
+# a published plan never re-enters create-pr (../skills/dev/plan.md#lifecycle).
+# A documentation-only contract plan (docs row only) ends at approval.
 #
 # Approval is a human decision recorded as `Status: approved`, set at the
 # spec-approval pause (see skills/dev/approval.md). The hook checks that the
@@ -549,6 +552,46 @@ plan_first_parent() {
   plan_parents "$1" | awk 'NR==1'
 }
 
+# The leading docs entry: a row whose "#" cell is "docs". It is never a code
+# slice, so slice_count and plan_parents skip it. A documentation-only
+# API-contract plan has only this row (design-feature.md, Split scope).
+has_docs_row() {
+  awk '
+    /^## PR Pattern/ { in_pattern=1; next }
+    /^## / && in_pattern { exit }
+    in_pattern && /^\|[[:space:]]*docs[[:space:]]*\|/ { found=1; exit }
+    END { exit !found }
+  ' "$1" 2>/dev/null
+}
+
+plan_docs_parent() {
+  awk '
+    function trim(s) {
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", s)
+      return s
+    }
+    /^## PR Pattern/ { in_pattern=1; next }
+    /^## / && in_pattern { exit }
+    in_pattern && /^\|/ {
+      n=split($0, cells, "|")
+      if (trim(cells[2]) == "docs") { if (parent_col) print trim(cells[parent_col]); exit }
+      for (i=2; i<=n; i++)
+        if (trim(cells[i]) == "Parent") parent_col=i
+    }
+  ' "$1" 2>/dev/null
+}
+
+is_docs_only_plan() {
+  [[ "$(slice_count "$1")" -eq 0 ]] && has_docs_row "$1"
+}
+
+# Documentation-only contract plans end at approval and ship with a consumer
+# plan's publication; no code phase may admit them.
+reject_docs_only() {
+  is_docs_only_plan "$PLAN" && block "Plan is a documentation-only contract (PR Pattern has only a docs row); it ends at approval and ships with its consumer plan's publication (design-feature.md, Split scope). ${SKILL_SLUG} does not apply."
+  return 0
+}
+
 # Rows whose Parent is missing. design-feature requires one on every row, and
 # create-pr targets each PR at it, so a gap anywhere is a defect.
 parentless_row_count() {
@@ -583,6 +626,13 @@ if [[ -n "$PLAN" ]]; then
     fi
   fi
   STATUS=$(plan_status "$PLAN")
+  # Terminal statuses end delivery for every plan-consuming skill, checked
+  # before worktree requirements: a published plan whose cleanup failed keeps
+  # its worktree, and publication must never resume (plan.md#lifecycle).
+  case "$STATUS" in
+    published|archived|abandoned)
+      block "Plan status is '$STATUS' — terminal (already shipped or abandoned); the workflow does not resume. For follow-up work, start a new plan with design-feature or ship-feature, without the old plan path." ;;
+  esac
 fi
 
 # A plan-consuming skill must name its artifact. The block never inspects how
@@ -611,7 +661,6 @@ case "$SKILL_SLUG" in
         planning) ;;
         approved) block "Plan is already approved. Run execute-feature next." ;;
         implemented|reviewed)             block "Plan status is '$STATUS' — too late for review-feature. Continue forward." ;;
-        archived)              block "Plan is shipped. Nothing to review." ;;
         *)                                block "Plan status is '$STATUS' — expected 'planning'. Run design-feature first." ;;
       esac
       OQ=$(open_questions_count "$PLAN")
@@ -628,7 +677,9 @@ case "$SKILL_SLUG" in
       # 'implemented' blocks a plan whose execution is already finished, over a
       # table cell design should have written. Row 1's is review-code's review
       # base; later rows are what create-pr targets each PR at.
-      if [[ -n "$(plan_first_parent "$PLAN")" ]]; then
+      if is_docs_only_plan "$PLAN"; then
+        [[ -n "$(plan_docs_parent "$PLAN")" ]] || block "Plan PR Pattern docs row has no Parent. Record the branch its snapshot will build on — normally the Base branch."
+      elif [[ -n "$(plan_first_parent "$PLAN")" ]]; then
         PARENTLESS=$(parentless_row_count "$PLAN")
         [[ "$PARENTLESS" -eq 0 ]] || block "Plan PR Pattern leaves $PARENTLESS slice row(s) without a Parent. Every row records its own (design-feature 'PR Pattern'): normally the preceding branch, or the Base branch for row 1."
       else
@@ -640,13 +691,13 @@ case "$SKILL_SLUG" in
   # ── execute-feature: plan must be approved (or in-progress for resume) ──
   execute-feature)
     require_plan
+    [[ -z "$PLAN" ]] || reject_docs_only
     if [[ -n "$PLAN" ]]; then
       case "$STATUS" in
         approved|in-progress) ;;
         planning) block "Plan status is '$STATUS' — not approved. Run review-feature, then have the user approve the spec (see approval.md)." ;;
         implemented)                      block "Plan is already implemented. Run review-code next." ;;
         reviewed)                         block "Plan status is '$STATUS' — already past execution. Run review-code or create-pr." ;;
-        archived)              block "Plan is shipped. Nothing to execute." ;;
         *)                                block "Plan status is '$STATUS' — expected 'approved' or 'in-progress'." ;;
       esac
       # Every plan (feature/fix/refactor) must be issue-backed before implementation.
@@ -659,6 +710,7 @@ case "$SKILL_SLUG" in
   # ── review-code: plan must be implemented + RED commit must exist ──
   review-code)
     require_plan
+    [[ -z "$PLAN" ]] || reject_docs_only
     require_worktree
     if [[ -n "$PLAN" ]]; then
       case "$STATUS" in
@@ -666,7 +718,6 @@ case "$SKILL_SLUG" in
         planning|approved|in-progress)
           block "Plan status is '$STATUS' — not yet implemented. Run the appropriate execute skill first." ;;
         reviewed)      block "Plan is already reviewed. Run create-pr next." ;;
-        archived) block "Plan is shipped. Nothing to review." ;;
         *)             block "Plan status is '$STATUS' — expected 'implemented'." ;;
       esac
       # Re-review authority and non-convergence belong to independence.md.
@@ -710,13 +761,13 @@ case "$SKILL_SLUG" in
   # ── create-pr: plan must be reviewed ──
   create-pr)
     require_plan
+    [[ -z "$PLAN" ]] || reject_docs_only
     require_worktree
     if [[ -n "$PLAN" ]]; then
       case "$STATUS" in
         reviewed) ;;
         implemented)           block "Plan status is 'implemented' — run review-code first." ;;
         planning|approved|in-progress) block "Plan status is '$STATUS' — not yet executed. Continue the workflow." ;;
-        archived)   block "PR already exists for this plan." ;;
         *)                     block "Plan status is '$STATUS' — expected 'reviewed'." ;;
       esac
       if ! has_final_pr_pattern "$PLAN"; then
@@ -728,19 +779,17 @@ case "$SKILL_SLUG" in
     fi
     ;;
 
-  # ── ship-feature: reject already-shipped ──
+  # ── ship-feature: terminal statuses are rejected at plan resolution ──
   ship-feature)
-    if [[ -n "$PLAN" ]]; then
-      [[ "$STATUS" == "archived" ]] && block "Plan is already archived — feature has already shipped."
-    fi
     ;;
 
   # ── planning and read-only entry points: no entry gate ──
   design-feature|design-system|review-system|design-infra|review-infra|explore|create-issue|fix-bug)
     # Entry-point skills: read-only, or they produce a plan/issue/architecture
     # doc rather than touching application code. Nothing that mutates
-    # application code reaches this branch — that is what makes PROCESS.md's
-    # "no planless mutation" true. The architecture lane (design-system,
+    # application code reaches this branch: plan-backed code changes happen
+    # only in gated phases, and direct edits outside a plan are ungated by
+    # design (PROCESS.md, Scope). The architecture lane (design-system,
     # review-system) works on docs/architecture/ and has no plan state; the
     # infra lane (design-infra, review-infra) works on docs/runbooks/ and has
     # none either. Both are listed rather than left to fall off the slug
