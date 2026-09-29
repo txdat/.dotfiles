@@ -17,7 +17,7 @@ Before GREEN and during review, run `~/.dotfiles/.ai-shared/bin/dev-check proof 
 
 ## Local checks
 
-Run the required project checks that can execute locally — lint, build, and any other command CI runs against the change. Missing required AC/TC evidence or a failed required local check blocks readiness. For remote CI after any commit push, follow [AGENTS.md — Work](../../AGENTS.md#work). PR publication also follows [create-pr.md — Complete](create-pr.md#complete).
+Run the required project checks that can execute locally — lint, build, and any other command CI runs against the change. Missing required AC/TC evidence or a failed required local check blocks readiness.
 
 ## Coverage
 
@@ -37,4 +37,4 @@ Run `~/.dotfiles/.ai-shared/bin/dev-check coverage <percent> [uncovered-critical
 
 For a shortfall, record uncovered lines, their behavior, and the reason in `## Coverage Gaps`. An explained percentage alone does not block or require approval. Missing required behavior does: repair its existing TC, or use [approval.md](approval.md) when the obligation itself must change.
 
-Assertions must distinguish the required result from a plausible incorrect one. Snapshots, mock calls, and type/no-error checks are useful only when they prove the actual contract.
+Assertions must distinguish the required result from a plausible incorrect one. Copied implementation expressions, snapshots, mock calls, and type/no-error checks can pass despite a defect; use them only when they prove the actual contract.

@@ -16,21 +16,17 @@ Carry resolved behavioral semantics into the ACs. Record decision rationale, sou
 
 ## Split scope before splitting work
 
-First separate the goal into API-contract, backend (BE/server), and frontend (FE/client) scopes. When all three are affected, create three separate sub-plan files; sections or PR slices inside one combined plan do not satisfy this separation. For narrower work, create only the affected sub-plans and reference unchanged contracts. Do not invent empty scopes.
-
-Design the API contract first, then derive BE and FE plans from its reviewed contract revision. BE and FE may be planned independently once that contract is settled; neither may silently redefine it. Contract changes reopen affected consumer decisions and review under [approval.md](approval.md).
+Separate the goal into API-contract, backend (BE/server), and frontend (FE/client) responsibilities before slicing work. Include only affected scopes; reference unchanged contracts.
 
 - **API contract** owns shared boundary semantics: relevant requests, responses, errors, authorization obligations, data meaning, compatibility, and contract examples/fixtures. Identify the authoritative contract artifact and how it will be validated.
 - **BE** owns server implementation, persistence, side effects, and verification of conformance to the contract.
 - **FE** owns client integration, user interactions and states, and verification of conformance to the same contract.
 
-Each sub-plan has its own scoped Goal, ACs, TCs, ordered steps, and provisional PR Pattern. Use distinct `api-contract`, `be`, and `fe` slug suffixes. In `## Related Plans`, record the overall user outcome, exact sibling paths, prerequisite contract source/revision, and dependency conditions. Use path-qualified IDs for cross-plan references and reference authoritative semantics/fixtures instead of copying competing definitions. A shared issue can connect the sub-plans; an executable umbrella plan is unnecessary.
+When BE and FE both change, give each its own plan with `be` and `fe` slug suffixes; sections or PR slices inside one plan do not satisfy this separation. A changed contract belongs to the plan that implements its producer, normally BE: define it there in Design Decisions or a referenced contract artifact, prove it through that plan's ACs/TCs, and ship artifact changes in the slice that implements them. A contract change with no implementing code is documentation under [PROCESS.md — Scope](../../PROCESS.md#scope). Design and review the contract first; the consumer plan derives from its reviewed revision and may not silently redefine it. Contract changes reopen affected consumer decisions under [approval.md](approval.md).
 
-Check that the union of scopes covers the overall outcome without conflicting ownership. Assign cross-scope integration verification to an explicit owning sub-plan and TC, with concrete prerequisite state and expected results. Record development, merge, and release dependencies where they differ: contract-based mocks may unblock FE work but do not prove integration with BE. Each plan retains its own review and approval; overall readiness requires coherent coverage across the required plans.
+In `## Related Plans`, record the overall outcome, exact sibling paths, the contract source and revision, and dependency conditions. Use path-qualified IDs for cross-plan references and reference authoritative semantics and fixtures instead of copying them. A shared issue can connect the plans; an executable umbrella plan is unnecessary.
 
-Only after scope separation, split work within each sub-plan using the existing dependency ordering and [PR slicing](#pr-slicing) rules. Each may use one PR or a chain; three scopes do not imply exactly three PRs. Plan prerequisites are not Git parents: record actual branch ancestry and exact plan ownership under [plan.md](plan.md).
-
-A documentation-only API-contract sub-plan ends at spec approval. Its TCs name documentation validation such as schema lint or example checks, its steps write the contract artifact, and its PR Pattern holds only a `docs` row; it has no execute-feature or review-code phase, fabricated tests, or code-green claims. The first dependent code plan to start execution adds it to its publication inventory and uses a leading docs entry even with one code slice, so the approved snapshot and contract artifact ship in that docs entry and the archive in its final code PR. When no code plan depends on it, publish it as a standalone docs PR through [PROCESS.md — Scope](../../PROCESS.md#scope)'s direct-edit route, archiving the plan in that PR.
+Check that the plans together cover the overall outcome without conflicting ownership. Assign cross-scope integration verification to an explicit owning plan and TC with concrete prerequisite state and expected results; contract-based mocks may unblock FE work but do not prove integration with BE. Record development, merge, and release dependencies where they differ. Each plan keeps its own review and approval.
 
 ## Plan schema
 
@@ -62,15 +58,14 @@ Type: single
 | 1 | feat/example | <base> | 1 | <outcome> |
 ```
 
-A chain adds a leading `docs` row; gates count only numbered rows as code slices:
+A chain lists one row per slice:
 
 ```text
 ## PR Pattern (provisional)
 Type: chain
 | # | Branch | Parent | Steps | Summary |
 |---|---|---|---|---|
-| docs | docs/example-plans | <base> | — | plans: <plan paths>; checks: <documentation checks> |
-| 1 | feat/example-1 | docs/example-plans | 1 | <outcome> |
+| 1 | feat/example-1 | <base> | 1 | <outcome> |
 | 2 | feat/example-2 | feat/example-1 | 2 | <outcome> |
 ```
 
@@ -99,38 +94,30 @@ Use a focused set of scenarios that distinguish materially different required be
 1. **Preserve the outcome.** Identify actors, triggers, required results, constraints, and prohibited outcomes from the Goal and inspected contracts. Make subjective requirements decidable through observable measures or concrete scenarios; ask when the intended threshold or behavior is unresolved.
 2. **Derive ACs before tests.** Give each AC one coherent, observable outcome and its source. Success and Failure must be decidable without consulting a TC. Specify implementation-independent behavior unless a particular mechanism is an explicit constraint.
 3. **Check Goal completeness.** Could every AC pass while the Goal remains unmet? Add or correct the missing obligation before deriving TCs. Do not let convenient tests determine the requirement.
-4. **Cover each obligation.** Derive TC intents with concrete fixtures, actions, and expected results for distinct required behavior, including required side effects and prohibited mutations. Select valid, invalid, boundary, failure, and interaction scenarios using Scope and evidence; these are candidate categories, not mandatory slots. Feature/fix TCs distinguish the requested change; refactor TCs preserve affected existing behavior. Compute expected results from the resolved contract, independently of the proposed implementation; show the calculation when it determines the outcome. Executable setup and assertion code belong to execution, but fixture data and expected results must be settled during design.
-5. **Challenge adequacy.** Check whether a plausible incorrect implementation could pass the TCs, or whether an AC would reject valid behavior. Use counterexamples that meet Scope and evidence, varying only inputs or modes relevant to the suspected gap. For material gaps or non-obvious safeguards, record the target, concrete incorrect behavior, and the AC/TC with a distinguishing fixture that defeats it or the correction needed. A test that merely repeats an AC's wording does not establish coverage. When existing fixtures already distinguish the failure, no additional TC is needed; no counterexample quota applies.
+4. **Cover each obligation.** Derive TC intents with concrete fixtures, actions, and expected results for distinct required behavior, including required side effects and prohibited mutations. Select scenarios under Scope and evidence. Feature/fix TCs distinguish the requested change; refactor TCs preserve affected existing behavior. Compute expected results from the resolved contract, independently of the proposed implementation; show the calculation when it determines the outcome. Executable setup and assertion code belong to execution, but fixture data and expected results must be settled during design.
+5. **Challenge adequacy.** Check whether a plausible incorrect implementation could pass the TCs, or whether an AC would reject valid behavior. Use counterexamples that meet Scope and evidence, varying only inputs or modes relevant to the suspected gap. For material gaps or non-obvious safeguards, record the target, concrete incorrect behavior, and the AC/TC with a distinguishing fixture that defeats it or the correction needed. A test that merely repeats an AC's wording does not establish coverage. When existing fixtures already distinguish the failure, no additional TC is needed.
 6. **Connect obligations to delivery.** Order steps by dependencies and map them to TCs. For new state or mechanisms, record the operational invariant, initialization/identity conditions, and relevant transition or boundary scenario under Design Decisions. Map performance, security, and other non-functional commitments to measurable ACs/TCs and steps; identify the owner and verification for any operational prerequisite outside application implementation.
 7. **Estimate complexity and justify the approach.** Apply [Complexity and simpler alternatives](#complexity-and-simpler-alternatives) before finalizing the design. If the selected approach changes, revisit steps 4–6 and reconcile affected fixtures, TCs, implementation steps, and PR slices with that approach. Changes to intended behavior or scope return to the ambiguity gate and affected ACs first.
-
-Establish readiness from the completed AC/TC mapping, material challenge evidence, and impact-appropriate complexity assessment, with delivery steps and PR slices matching the selected approach. Keep each fact in one place.
 
 For worked illustrations of fixture coverage and ambiguity resolution, see [design examples](reference/design-feature-examples.md).
 
 ### Complexity and simpler alternatives
 
-Scale analysis to the change's impact across feature, fix, and refactor plans. When neither computational/resource cost nor implementation complexity changes meaningfully, a one-sentence explanation suffices. Otherwise record the relevant analysis in Design Decisions.
+Scale analysis to impact. When neither computational/resource cost nor implementation complexity changes meaningfully, one sentence suffices; otherwise record the analysis in Design Decisions.
 
-For affected computational/resource costs, derive typical-case and worst-case time and space estimates from operations and their interactions. State input sizes, allocation scope, assumptions, and material I/O costs. Support the typical workload with evidence, or label it unknown and give conditional estimates; report an unbounded worst case where applicable. Do not invent workload limits.
+For affected computational/resource costs, derive typical- and worst-case time and space from operations, input sizes, allocation scope, and material I/O. Support the typical workload with evidence, or label it unknown and give conditional estimates; report an unbounded worst case and do not invent workload limits. Analytical estimates need no code. When practical limits need validation, use measurements, query plans, or targeted experiments, naming their workload and environment and whether they reproduce production selection such as query plans cached across inputs. Big-O does not establish latency or bytes, and a benchmark does not prove a worst-case bound. Justified measurement gaps may remain Open Risks with verification TCs; missing requirements return to the ambiguity gate.
 
-Analytical estimates do not require running code. Use measurements, query plans, or targeted experiments when practical limits need validation; identify their workload and environment, and whether they reproduce production selection mechanisms such as query plans cached across inputs. Big-O alone does not establish latency or memory usage in bytes, and a benchmark does not prove a worst-case bound. Justified measurement gaps may remain Open Risks with verification TCs when requirements are settled. Missing requirements return to the ambiguity gate; unknown workload observations alone are not unresolved product semantics.
+State cost criteria as the bound itself; for data access, name what limits the examined range and how work scales with it. A proxy such as an index name or plan shape qualifies only if it cannot pass while the bound is violated or fail while it holds; otherwise verify the bound directly and record the establishing evidence, such as index scan ranges. Before using a relative criterion ("no regression", "same plan"), check the baseline against the bound: a violating baseline is not a success reference. Report it and, unless the Goal already requires the fix, resolve its scope through the ambiguity gate.
 
-State cost criteria as the bound itself; for data access, name what limits the examined range and how work scales with it. A proxy such as an index name or plan shape may serve as a check only if it cannot pass while the bound is violated or fail while it holds; otherwise verify the bound directly and record the establishing evidence (e.g., index scan ranges), not only a summary label. A criterion relative to current behavior ("no regression", "same plan") first requires checking the baseline against the bound; a violating baseline is not a success reference. Report the violation and, unless the Goal already requires fixing it, resolve its scope through the ambiguity gate.
-
-Assess changes to abstractions, dependencies, state, and coordination separately from runtime cost. Warn with a concrete cause and consequence when cost threatens required limits or implementation complexity is disproportionate to its benefit. Compare a simpler viable alternative's affected costs and maintenance tradeoffs, including typical/worst-case estimates where relevant, and recommend one; explain when no simpler approach preserves the requirements. Record the selected approach and rationale. Changes to agreed behavior follow [approval.md](approval.md).
+Assess abstraction, dependency, state, and coordination complexity separately from runtime cost. When cost threatens required limits or complexity outweighs its benefit, warn with cause and consequence, compare a simpler viable alternative's costs and maintenance tradeoffs, and recommend one, or explain why none preserves the requirements. Record the selected approach and rationale; changes to agreed behavior follow [approval.md](approval.md).
 
 ## PR slicing
 
-Apply these rules within each scope sub-plan after [scope separation](#split-scope-before-splitting-work). Assess work slices by behavior and dependencies, not by repeating the FE/BE/API split inside each plan; scope separation forces neither one PR per scope nor a BE-to-FE branch chain.
+Slice each plan by behavior and dependencies after [scope separation](#split-scope-before-splitting-work); scope separation implies neither one PR per scope nor a BE-to-FE branch chain. Plan prerequisites are not Git parents.
 
 Use one branch when the change is small enough to review as a coherent unit. When review would require reasoning about several separable changes at once, use `Type: chain` with a focused review purpose for each slice. Assess review burden from distinct behaviors, affected contracts, and migration risks; line count alone is insufficient. Each slice must be correct and safe to merge after its recorded parent without later slices, but need not deliver the complete user-facing outcome. Keep incomplete behavior unexposed and preserve compatibility between slices. Plan reverts in reverse dependency order, accounting for persistent state where affected. If a large change cannot be split safely, record the coupling that requires it to stay together.
 
-Every row records its explicit Parent and owned steps. Assign each TC to one code slice that includes its tests and the implementation needed to pass them without later slices; a documentation-only contract plan's TCs have no code slice. Shared fixtures may be inherited from a parent.
-
-For `Type: chain`, record the leading docs entry as the `docs` row in the [schema](#plan-schema): branch, explicit Parent, and in Summary its owned plan paths and documentation checks. Its Parent is Base, or the unmerged branch this work extends; the first code row parents on the docs branch. Later code rows normally parent on the previous code branch. The docs entry has no implementation steps or code-green claim. [plan.md — Approved snapshots](plan.md#approved-snapshots) owns its contents and preparation.
-
-For a single code PR, its Parent normally equals Base, or the unmerged branch this work extends. Review and publication use the recorded parents. Chain order is dependency, PR creation, and the intended maintainer merge order; [create-pr.md](create-pr.md) publishes docs first, then code slices from first to last.
+Every row records its explicit Parent and owned steps. Row 1's Parent is Base, or the unmerged branch this work extends; later rows normally parent on the previous slice's branch. Assign each TC to one slice that includes its tests and the implementation needed to pass them without later slices; shared fixtures may be inherited from a parent. Chain order is dependency order, PR creation order, and the intended maintainer merge order.
 
 ## Issue and completion
 

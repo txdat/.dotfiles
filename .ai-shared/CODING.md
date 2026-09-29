@@ -10,7 +10,7 @@ Verify changed calls, fields, imports, and assumptions against actual definition
 
 Tests should assert required observable behavior. Never special-case test inputs or replace required behavior with canned results. Distinguish inspected facts, inference, and unrun checks; report decisive file locations or command results without exposing secrets.
 
-Start verification with affected tests and callers, plus required project checks. Broaden to the full suite when requested, required, inexpensive, or necessary to cover the impact. Report incomplete checks and their implications. Development-specific proof and coverage rules live in [verification.md](skills/dev/verification.md).
+Start verification with affected tests and callers, plus required project checks. Broaden to the full suite when requested, required, inexpensive, or necessary to cover the impact. Development-specific proof and coverage rules live in [verification.md](skills/dev/verification.md).
 
 ## Critical work
 
@@ -28,7 +28,7 @@ Record decisive evidence with the design or verification results. Resolve broken
 
 ## Tools
 
-Use the tool that answers the question: semantic navigation for definitions and callers, `rg` for text and files, source reads to verify results. Batch independent reads; keep dependent actions and mutations sequential. Reuse evidence until its inputs change.
+Prefer semantic navigation for definitions and callers. Reuse evidence until its inputs change.
 
 Shared shell helpers live in `~/.dotfiles/.ai-shared/bin/`; invoke them by full path with Bash. Python helpers use Python 3. Follow the owning skill's arguments and invocation conditions.
 
@@ -40,4 +40,4 @@ Do not bypass required checks or discard unfamiliar files to get past an obstacl
 
 Default to direct work. Delegate a substantial, independent chunk only when a platform-provided general-purpose subagent is available, delegation is permitted, and useful concurrent work exists; otherwise work directly. Instruct the subagent to read this file and the owning skill. Assign exclusive file ownership, required inputs, verification, and off-limits actions; tell workers they share the codebase and must preserve others' edits. The main agent integrates and verifies the result. Review isolation and disclosure of its limits are owned by [independence.md](skills/dev/independence.md).
 
-For an explicitly requested code audit without a plan, review the supplied scope under [independence.md](skills/dev/independence.md). Report located findings with failure mechanism, consequence, and verification limits; do not invent a plan or phase transition.
+An explicitly requested code audit without a plan follows [independence.md](skills/dev/independence.md).
