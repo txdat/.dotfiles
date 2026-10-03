@@ -31,4 +31,4 @@ After all PRs exist and issue checklists and links are verified, fetch the issue
 
 ## Complete
 
-After PR creation, finish [plan.md](plan.md#archive-and-cleanup)'s publication verification and cleanup, return the PR URLs, and end the turn. Claim completion only after they succeed; otherwise report what remains for manual handling. Either way the workflow ends and is never re-entered. Publication does not establish CI success, merge, or deployment. Follow-up changes use a new plan and [design-feature.md](design-feature.md)'s parent-selection rules.
+After PR creation, finish [plan.md](plan.md#archive-and-cleanup)'s publication verification and cleanup, return the PR URLs, and end the turn. Claim completion only after they succeed; otherwise report what remains for manual handling. Either way the workflow ends and is never re-entered. Publication does not establish CI success, merge, or deployment. Follow-up changes use a new plan whose Parent follows [design-feature.md — PR slicing](design-feature.md#pr-slicing).
