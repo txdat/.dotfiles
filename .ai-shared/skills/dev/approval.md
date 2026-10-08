@@ -6,6 +6,8 @@ Owns consent, amendments, deviations, scope decisions, and abandonment. Plan ide
 
 After feature review reports READY, present the Goal, complete AC/TC text including fixtures, actions, and expected results, PR slices, and material risks. Include referenced shared fixtures once with their TC-specific overrides so the approval does not omit required data. Ask for approval of that concrete spec or the items to revise. Record explicit acceptance and set `Status: approved`. Acceptance of the same reviewed spec in native plan mode counts; preserve it on resume. A general instruction given before the spec was presented does not approve its details.
 
+After recording `Status: approved` and before [execute-feature.md](execute-feature.md) starts, post the plan's `## Design Decisions` to its `Issue: #N` as one comment (`gh issue comment <N> --body-file <file>`), headed by the plan file stem so a shared issue stays attributable to this goal. Post at approval, not at the READY verdict: READY is not consent, and the user may revise decisions while approving. Skip the comment when the section is absent. Check the body for sensitive content first and fetch the comment afterward to verify it. When reapproval follows a semantic amendment, post a new comment that names the decisions it supersedes; do not edit earlier comments.
+
 Architecture approval follows a READY system review: present the recommendation, tradeoffs, migration, and decomposition. Explicit acceptance sets that document to `approved`; each resulting application plan still needs its own spec approval.
 
 ## Changes

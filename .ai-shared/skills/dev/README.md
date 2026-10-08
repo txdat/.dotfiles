@@ -18,4 +18,4 @@
 | Capture a standalone issue | [create-issue](create-issue.md) |
 | Extract session lessons | [recap](recap.md) |
 
-[frontend-design.md](frontend-design.md) supplies UI-specific guidance; [PROCESS.md — Repository conventions](../../PROCESS.md#repository-conventions) defines design notation. Delegated tasks use the same owning skill as direct work.
+[frontend-design.md](frontend-design.md) supplies UI-specific guidance; [PROCESS.md — Repository conventions](../../PROCESS.md#repository-conventions) defines design notation.

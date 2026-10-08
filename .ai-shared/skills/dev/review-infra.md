@@ -12,7 +12,7 @@ Use `MATCH` for corroborated claims, `MISMATCH` for differing values, `MISSING` 
 
 Check the applicable resource and phase requirements in [design-infra.md — Runbook](design-infra.md#runbook) against this evidence. In particular, inspect source/target coexistence and duplicate processing, traffic dependencies, and whether rollback resources remain usable through their promised window. Check that gates have observable pass/stop conditions and precede the actions they protect, including destruction. Missing evidence that affects execution safety blocks readiness; formatting preferences do not.
 
-Return `READY` or `NEEDS CHANGES` with severity-ranked findings and decisive command evidence. During authorized runbook delivery, the main agent appends `## Review History` and sets `Review: READY <date>` only for a passing review; revisions invalidate that marker until re-reviewed. A standalone review returns findings without editing the artifact.
+Return `READY` or `NEEDS CHANGES` with severity-ranked findings and decisive command evidence. During authorized runbook delivery, the main agent appends `## Review History` and sets `Review: READY <date>` only for a passing review; revisions invalidate that marker until re-reviewed.
 
 ## Post-execution audit
 

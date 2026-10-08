@@ -1,8 +1,3 @@
----
-name: gke-inspect-incident
-description: Investigate GKE outages, restarts, pending pods, scaling failures, and infrastructure causes using read-only evidence collection.
----
-
 # GKE Incident Investigation
 
 The [collector](../../bin/gke-collect.sh) owns queries, input defaults, thresholds, and detector output. This skill owns investigation and reporting; [diagnostics.md](diagnostics.md) supplies conditional interpretation.
