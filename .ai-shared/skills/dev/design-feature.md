@@ -119,6 +119,8 @@ For each decision that materially adds abstraction, dependency, state, or coordi
 
 Keep the decision only when its residual failure outweighs its cost and no narrower variant suffices. Evaluate removals one at a time and recheck the remaining decisions after each, because overlapping safeguards each look unnecessary while the other remains. If a removal leaves a dropped stated item's outcome uncovered, return that item to the ambiguity gate. When review findings repeatedly trace to one decision, recheck its necessity before repairing it again.
 
+Minimize implementation logic under [CODING.md — Changes and evidence](../../CODING.md#changes-and-evidence). Reuse existing code that implements the same concept (the same data meaning and contract, not merely similar steps), and name it in the implementation steps, or record in Design Decisions why it cannot serve; extending it makes its callers affected under [CODING.md — Impact](../../CODING.md#impact). Do not bend shared code with flags to serve a different concept; write separate code instead. Handle cases through one path when the contract treats them alike, and include only parameters, options, and special cases that an AC or reachable scenario requires. When the change supersedes existing code, name what it deletes or consolidates.
+
 ## PR slicing
 
 Slice each plan by behavior and dependencies after [scope separation](#split-scope-before-splitting-work); scope separation implies neither one PR per scope nor a BE-to-FE branch chain. Plan prerequisites are not Git parents.

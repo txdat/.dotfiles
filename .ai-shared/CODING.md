@@ -30,7 +30,7 @@ Record decisive evidence with the design or verification results. Resolve broken
 
 Prefer semantic navigation for definitions and callers. Reuse evidence until its inputs change.
 
-Before writing a query or aggregation through a database MCP, list the target collection's or table's existing indexes with the MCP's index tool and shape the query to use them. If no existing index supports it, report that; create an index only when authorized.
+Before writing a query or aggregation through a database MCP, list the target collection's or table's existing indexes with the MCP's index tool and shape the query to use them. If no existing index supports it, report that; don't create them.
 
 Shared shell helpers live in `~/.dotfiles/.ai-shared/bin/`; invoke them by full path with Bash. Python helpers use Python 3. Follow the owning skill's arguments and invocation conditions.
 

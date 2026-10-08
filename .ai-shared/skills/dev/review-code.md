@@ -18,7 +18,7 @@ Apply [verification.md](verification.md)'s proof and assertion-quality rules. Re
 
 - **Contracts and data:** inspect applicable security, data-integrity, concurrency, compatibility, and failure paths under [CODING.md — Impact](../../CODING.md#impact). Check mechanism invariants and non-functional commitments against the actual code and dependencies.
 - **Scope and verification:** compare changes with the steps and required Design Decisions; inspect deviations and spec amendments under [approval.md](approval.md). Verify Open Risks are resolved through their approved TCs and check [verification.md — Coverage](verification.md#coverage). An absent deviation record does not prove alignment. Apply [frontend-design.md](frontend-design.md) for UI work.
-- **Efficiency and maintainability:** inspect affected paths for unnecessary queries, repeated computation, unbounded work or allocations, unsuitable structures, and complexity that obscures required behavior. Report concrete impact or maintenance risk; preferences alone do not block.
+- **Efficiency and maintainability:** inspect affected paths for unnecessary queries, repeated computation, unbounded work or allocations, unsuitable structures, complexity that obscures required behavior, existing concepts reimplemented without a reason recorded in the plan, and shared code extended with flags to serve a different concept. Report concrete impact or maintenance risk; preferences alone do not block.
 
 Inspect secrets and debug/conflict artifacts, then run `~/.dotfiles/.ai-shared/bin/dev-check artifacts <first-slice-parent> HEAD`. Read the diff as well; the helper does not cover every artifact or exposure.
 
