@@ -432,9 +432,11 @@ let g:ale_fixers = {
       \   'markdown': ['prettierfmt'],
       \}
 
-let g:ale_set_highlights = 0
 let g:ale_floating_window_border = repeat([''], 8)
 let g:ale_disable_lsp = 1
+let g:ale_set_highlights = 1
+let g:ale_set_signs = 1
+let g:ale_sign_highlight_linenrs = 0
 let g:ale_sign_error = ''
 let g:ale_sign_warning = ''
 let g:ale_sign_info = ''
