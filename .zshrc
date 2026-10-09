@@ -142,16 +142,20 @@ claude() {
     local args=()
     for arg in "$@"; do
         case "$arg" in
+            --key=*)
+                local token="CLAUDE${arg#*=}_API_KEY"
+                env_vars+=("ANTHROPIC_AUTH_TOKEN=${(P)token}")
+                ;;
             --ds)
-                PRO_MODEL="deepseek-v4-pro"
-                FLASH_MODEL="deepseek-flash"
+                local pro_model="deepseek-v4-pro"
+                local flash_model="deepseek-flash"
                 env_vars+=(
                     "ANTHROPIC_BASE_URL=https://api.deepseek.com/anthropic"
                     "ANTHROPIC_AUTH_TOKEN=$DEEPSEEK_API_KEY"
-                    "ANTHROPIC_DEFAULT_OPUS_MODEL=${PRO_MODEL}[1m]"
-                    "ANTHROPIC_DEFAULT_SONNET_MODEL=${FLASH_MODEL}[1m]"
-                    "ANTHROPIC_DEFAULT_HAIKU_MODEL=${FLASH_MODEL}"
-                    "CLAUDE_CODE_SUBAGENT_MODEL=${FLASH_MODEL}"
+                    "ANTHROPIC_DEFAULT_OPUS_MODEL=${pro_model}[1m]"
+                    "ANTHROPIC_DEFAULT_SONNET_MODEL=${flash_model}[1m]"
+                    "ANTHROPIC_DEFAULT_HAIKU_MODEL=${flash_model}"
+                    "CLAUDE_CODE_SUBAGENT_MODEL=${flash_model}"
                 )
                 ;;
             -d)
