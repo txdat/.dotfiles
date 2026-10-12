@@ -1,6 +1,6 @@
 # 2026-dark-alacritty.toml — Alacritty colorscheme
-# Converted from VSCode 2026 Dark theme
-# Source: microsoft/vscode extensions/theme-defaults/themes/2026-dark.json
+# Monokai, with the editor background overridden to black (#121314).
+# Palette: Monokai (Wimer Hazenberg); group mapping follows sickill/vim-monokai (MIT)
 # License: MIT
 #
 # Usage: paste into your alacritty.toml, or save separately and import:
@@ -8,100 +8,81 @@
 #   import = ["~/.config/alacritty/themes/2026-dark.toml"]
 
 [colors.primary]
-background    = "#121314"   # editor.background
-foreground    = "#BBBEBF"   # editor.foreground
-dim_foreground = "#8C8C8C"  # descriptionForeground
+background    = "#121314"     # black override (Monokai background is #272822)
+foreground    = "#f8f8f2"
+dim_foreground = "#75715e"
 
 [colors.cursor]
-text   = "#121314"   # editor.background
-cursor = "#BBBEBF"   # editorCursor.foreground
+text   = "#272822"
+cursor = "#f8f8f0"
 
 [colors.vi_mode_cursor]
-text   = "#121314"
-cursor = "#3994BC"   # focusBorder / accent blue
+text   = "#272822"
+cursor = "#66d9ef"
 
 [colors.selection]
 text       = "CellForeground"
-background = "#276782"   # editor.selectionBackground (stripped alpha)
+background = "#49483e"
 
 [colors.search.matches]
-foreground = "#BBBEBF"
-background = "#276782"   # editor.findMatchHighlightBackground
+foreground = "#121314"
+background = "#e6db74"
 
 [colors.search.focused_match]
 foreground = "#121314"
-background = "#3994BC"   # accent blue
+background = "#fd971f"
 
 [colors.hints.start]
 foreground = "#121314"
-background = "#ffa657"   # variable / entity.name orange
+background = "#fd971f"
 
 [colors.hints.end]
 foreground = "#121314"
-background = "#8C8C8C"   # descriptionForeground
+background = "#75715e"
 
 [colors.line_indicator]
 foreground = "None"
 background = "None"
 
 [colors.footer_bar]
-foreground = "#bfbfbf"   # foreground
-background = "#2A2B2C"   # border
+foreground = "#f8f8f2"
+background = "#64645e"
 
 # ──────────────────────────────────────────────
-# Normal (standard) terminal colors
-#
-# Mapping rationale:
-#   black   -> sidebar/panel bg  (visible dark)
-#   red     -> keyword red       #ff7b72
-#   green   -> tag / git added   #7ee787
-#   yellow  -> variable orange   #ffa657
-#   blue    -> constant blue     #79c0ff
-#   magenta -> function purple   #d2a8ff
-#   cyan    -> string light-blue #a5d6ff
-#   white   -> foreground-dim    #c9d1d9
+# Normal (standard) terminal colors — Monokai
 # ──────────────────────────────────────────────
 [colors.normal]
-black   = "#191A1B"   # sidebar background
-red     = "#ff7b72"   # keyword
-green   = "#7ee787"   # entity.name.tag / git added
-yellow  = "#ffa657"   # variable / entity.name
-blue    = "#79c0ff"   # constant / support
-magenta = "#d2a8ff"   # entity.name.function
-cyan    = "#a5d6ff"   # string
-white   = "#c9d1d9"   # foreground-dim / variable.other
+black   = "#272822"
+red     = "#f92672"
+green   = "#a6e22e"
+yellow  = "#e6db74"
+blue    = "#66d9ef"
+magenta = "#ae81ff"
+cyan    = "#a1efe4"
+white   = "#f8f8f2"
 
 # ──────────────────────────────────────────────
 # Bright terminal colors
-#
-#   bright black   -> active border/widget bg
-#   bright red     -> invalid / error          #ffa198
-#   bright green   -> git added gutter         #73c991
-#   bright yellow  -> warning                  #e5ba7d
-#   bright blue    -> accent / link            #48A0C7
-#   bright magenta -> diff range               #d2a8ff (bold)
-#   bright cyan    -> string interp / support  #79c0ff
-#   bright white   -> full foreground          #BBBEBF
 # ──────────────────────────────────────────────
 [colors.bright]
-black   = "#2A2B2C"   # border / widget bg
-red     = "#ffa198"   # invalid / error
-green   = "#73c991"   # git added gutter
-yellow  = "#e5ba7d"   # warning / git modified
-blue    = "#48A0C7"   # textLink / list.highlight
-magenta = "#d2a8ff"   # function purple (bright)
-cyan    = "#3994BC"   # accent blue
-white   = "#BBBEBF"   # editor.foreground
+black   = "#75715e"
+red     = "#f92672"
+green   = "#a6e22e"
+yellow  = "#e6db74"
+blue    = "#66d9ef"
+magenta = "#ae81ff"
+cyan    = "#a1efe4"
+white   = "#f9f8f5"
 
 # ──────────────────────────────────────────────
-# Dim colors (unfocused terminal)
+# Dim colors (unfocused terminal) — accents darkened ~30%
 # ──────────────────────────────────────────────
 [colors.dim]
-black   = "#121314"   # editor background
-red     = "#c75f5a"   # keyword dimmed
-green   = "#5faa6a"   # tag dimmed
-yellow  = "#c48040"   # variable dimmed
-blue    = "#5a90c0"   # constant dimmed
-magenta = "#a07acc"   # function dimmed
-cyan    = "#7eaaca"   # string dimmed
-white   = "#8C8C8C"   # descriptionForeground
+black   = "#121314"
+red     = "#ae1a4f"
+green   = "#749e20"
+yellow  = "#a19951"
+blue    = "#4797a7"
+magenta = "#795ab2"
+cyan    = "#70a79f"
+white   = "#75715e"
