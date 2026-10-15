@@ -24,6 +24,6 @@ Investigate uncertain equivalence before classifying a change. When a verificati
 
 ## Abandon
 
-Only explicit user direction abandons a plan. If it has a worktree, apply [plan.md — Worktree operations](plan.md#worktree-operations)'s removal checks; report refusal rather than force removal. Preserve branches with unpublished work unless their deletion is explicitly authorized. After successful removal (or when no worktree exists), set `Status: abandoned`, clear `Worktree:`, and record the reason in the retained root plan.
+Only explicit user direction abandons a plan. If it has a worktree, remove it with [dev-worktree.sh](../../bin/dev-worktree.sh) `remove <worktree>` under [plan.md — Worktree operations](plan.md#worktree-operations); report a refusal rather than forcing. The helper keeps any local branch whose tip origin does not hold; delete a kept branch only when explicitly authorized. After successful removal (or when no worktree exists), set `Status: abandoned`, clear `Worktree:`, and record the reason and any kept branch in the retained root plan.
 
 For a shared issue, mark only this goal's checklist item completed and annotate it `abandoned`, so deferred-goal tracking remains accurate. Terminal handling follows [plan.md](plan.md).

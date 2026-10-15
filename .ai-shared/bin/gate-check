@@ -236,6 +236,38 @@ plan_base() {
   ' "$1" 2>/dev/null
 }
 
+# Plan header Snapshot commit (same Status line: "... | Snapshot: <sha> | ...").
+plan_snapshot() {
+  awk '
+    /^Status:/ {
+      if (match($0, /Snapshot:[[:space:]]*[^|]+/)) {
+        t = substr($0, RSTART, RLENGTH)
+        sub(/^Snapshot:[[:space:]]*/, "", t)
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", t)
+        print t
+      }
+      exit
+    }
+  ' "$1" 2>/dev/null
+}
+
+# True when commit $1 is in the history of any of the given branches. Each
+# name is tried as a local branch, as origin's tracking branch (a designer may
+# inspect a freshly fetched origin/<base> without updating the local one), and
+# as a remote-tracking name already qualified, such as origin/main.
+commit_on_any_branch() {
+  local commit="$1" branch ref
+  shift
+  for branch in "$@"; do
+    [[ -n "$branch" ]] || continue
+    for ref in "refs/heads/$branch" "refs/remotes/origin/$branch" "refs/remotes/$branch"; do
+      git -C "$REPO_ROOT" rev-parse --verify -q "$ref^{commit}" >/dev/null 2>&1 || continue
+      git -C "$REPO_ROOT" merge-base --is-ancestor "$commit" "$ref" 2>/dev/null && return 0
+    done
+  done
+  return 1
+}
+
 # Plan header Worktree path (same Status line: "... | Worktree: <path> | ...").
 plan_worktree() {
   awk '
@@ -632,6 +664,17 @@ case "$SKILL_SLUG" in
         block "Plan has no linked issue — the 'Issue:' field in the plan header is empty. Link an existing issue (a parent issue may back several plans) or create one ('gh issue create'); record it as 'Issue: #<n>', then re-run."
       fi
       require_traceability "$PLAN"
+      # Review verifies the plan against a fixed commit (design-feature 'Stable
+      # references'), so later merges into Base cannot keep reopening it. The
+      # commit lies on Base, or on row 1's Parent when the plan extends an
+      # unmerged branch. Hex-only also keeps the value from reaching git as an
+      # option.
+      BASE=$(plan_base "$PLAN")
+      [[ -n "$BASE" ]] || block "Plan has no Base branch — the 'Base:' field in the plan header is empty. Set it to the branch this work is based off, then re-run."
+      SNAPSHOT=$(plan_snapshot "$PLAN")
+      [[ "$SNAPSHOT" =~ ^[0-9a-fA-F]{7,64}$ ]] || block "Plan has no Snapshot commit — the 'Snapshot:' header field must hold the SHA of the commit the design inspected (design-feature 'Stable references'). Record it, then re-run."
+      git -C "$REPO_ROOT" cat-file -e "${SNAPSHOT}^{commit}" 2>/dev/null || block "Plan Snapshot '$SNAPSHOT' is not a commit in this repository. Record the inspected commit's SHA, or fetch it, then re-run."
+      commit_on_any_branch "$SNAPSHOT" "$BASE" "$(plan_first_parent "$PLAN")" || block "Plan Snapshot '$SNAPSHOT' is not in the history of Base '$BASE' or the first slice's Parent (local or origin). Record a commit from the inspected branch, then re-run."
       # Parents are required here, not at review-code: a gap caught at
       # 'implemented' blocks a plan whose execution is already finished, over a
       # table cell design should have written. Row 1's is review-code's review

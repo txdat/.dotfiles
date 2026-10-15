@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Main-agent-only worktree setup; never edits, copies, or removes a plan.
+# Main-agent-only worktree setup and cleanup; never edits, copies, or removes a plan.
 set -euo pipefail
 
 SCRIPT_DIR=$(dirname -- "$(realpath -- "${BASH_SOURCE[0]}")")
@@ -9,9 +9,12 @@ usage() {
     'Usage: dev-worktree.sh create <slug> <branch> <parent> [worktree-directory]' \
     '       dev-worktree.sh link-deps <worktree> [dependency-name ...]' \
     '       dev-worktree.sh isolate-dep <worktree> <dependency-name>' \
+    '       dev-worktree.sh remove <worktree>' \
     'create defaults to $HOME/work/ai-worktrees and prints the new path.' \
     'link-deps defaults to node_modules vendor .venv venv Pods.' \
     'Dependencies must be direct-child directory names. Existing local content is preserved.' \
+    'remove deletes a clean worktree, then its local branch only when origin/<branch> has the same tip;' \
+    'it prints "deleted <branch>" or "kept <branch>", with the reason for keeping on stderr.' \
     'Requires the owning phase authorization; does not approve a plan or install dependencies.'
 }
 
@@ -69,5 +72,24 @@ case "$1" in
     fi
     mkdir -p -- "$dependency"
     [[ -d "$dependency" && ! -L "$dependency" ]] || fail 'Dependency isolation failed.' ;;
+  remove)
+    [[ $# -eq 2 ]] || fail 'remove requires a registered worktree.'
+    registered_worktree "$2"
+    branch=$(git -C "$WORKTREE_PATH" symbolic-ref --quiet --short HEAD) || fail 'Worktree HEAD is detached; its branch cannot be identified.'
+    [[ -z "$(git -C "$WORKTREE_PATH" status --porcelain --untracked-files=all)" ]] || fail "Worktree has uncommitted or untracked changes: $WORKTREE_PATH"
+    git -C "$MAIN_ROOT" worktree remove "$WORKTREE_PATH" >&2
+    # Delete the branch only when a fresh fetch shows origin at the same tip, so
+    # no unpushed commit is lost. A failed fetch keeps it rather than trusting a
+    # stale tracking ref. -d would refuse a branch not merged into the root's HEAD.
+    if ! git -C "$MAIN_ROOT" fetch --quiet origin "+refs/heads/$branch:refs/remotes/origin/$branch" 2>/dev/null; then
+      printf 'Cannot fetch origin/%s (never pushed, deleted on origin, or origin unreachable); keeping the branch.\n' "$branch" >&2
+      printf 'kept %s\n' "$branch"
+    elif [[ "$(git -C "$MAIN_ROOT" rev-parse --verify "refs/heads/$branch")" != "$(git -C "$MAIN_ROOT" rev-parse --verify "refs/remotes/origin/$branch")" ]]; then
+      printf 'Local %s differs from origin/%s; keeping the branch.\n' "$branch" "$branch" >&2
+      printf 'kept %s\n' "$branch"
+    else
+      git -C "$MAIN_ROOT" branch -D "$branch" >&2
+      printf 'deleted %s\n' "$branch"
+    fi ;;
   *) usage >&2; exit 2 ;;
 esac

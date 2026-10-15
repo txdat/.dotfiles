@@ -2,7 +2,7 @@
 
 Read [PROCESS.md](../../PROCESS.md) and [plan.md](plan.md). Design proposes behavior; [approval.md](approval.md) owns approval. Use [frame-goal.md](frame-goal.md) for material ambiguity, [design-system.md](design-system.md) for changed system boundaries, and [frontend-design.md](frontend-design.md) for UI work.
 
-Inspect the relevant code, contracts, and project conventions. Confirm a concrete base branch. Complete the ambiguity gate below before drafting or creating a new `docs/plans/<area>_<date>_<type>_<slug>.md`, where area is a short label grouping related plans (repository, module, or issue number) and type is `feature`, `fix`, or `refactor`.
+Inspect the relevant code, contracts, and project conventions. Confirm a concrete base branch and record the inspected commit's SHA as `Snapshot:` ([Stable references](#stable-references)); the commit must be on Base or, when the plan extends an unmerged branch, on row 1's Parent. Complete the ambiguity gate below before drafting or creating a new `docs/plans/<area>_<date>_<type>_<slug>.md`, where area is a short label grouping related plans (repository, module, or issue number) and type is `feature`, `fix`, or `refactor`.
 
 Before drafting, select the plan language under [language.md](language.md).
 
@@ -32,7 +32,7 @@ Check that the plans together cover the overall outcome without conflicting owne
 
 ```text
 # Task: <name>
-Status: planning | Type: feature|fix|refactor | Base: <branch> | Issue: #N | Worktree:
+Status: planning | Type: feature|fix|refactor | Base: <branch> | Snapshot: <inspected commit SHA> | Issue: #N | Worktree:
 ## Goal
 <the user's intended outcome>
 ## Scope
@@ -51,6 +51,7 @@ TC-1 — <scenario and distinguishing condition>
   Test: <path::name, filled during execution>
 ## Implementation Steps
 Step 1 — <change and files/symbols> — satisfies TC-1
+  Precondition: <current-code fact the step relies on, if any> — Check: <search, inspection, or command that fails when the fact is false>
 ## PR Pattern (provisional)
 Type: single
 | # | Branch | Parent | Steps | Summary |
@@ -73,17 +74,25 @@ Each TC names exactly one AC, includes a concrete fixture, action, and expected 
 
 Fixtures specify enough relevant data and state to derive the expected result without inventing semantics during execution; large or generated datasets may use a precise construction rule. Use exact values for deterministic results; for permitted variability, define the allowed set, tolerance, invariant, or measurable bound from the contract.
 
-Add only useful sections: `## Context`, `## Design Decisions`, `## Test Fixtures`, `## Affected Existing Tests`, or `## Open Risks`. Route unresolved questions that materially affect the requested outcome, an affected contract, or the chosen design through the ambiguity gate instead of parking them in Assumptions or Open Questions. Apply the same criterion to an existing plan's `Open Questions:` field; optional follow-up questions do not block readiness. Open Risks are verification uncertainties assigned to existing TCs, not permission to change behavior.
+Add only useful sections: `## Context`, `## Design Decisions`, `## Test Fixtures`, `## Affected Existing Tests` (how to find affected tests and the expected effect on them, not a list), or `## Open Risks`. Route unresolved questions that materially affect the requested outcome, an affected contract, or the chosen design through the ambiguity gate instead of parking them in Assumptions or Open Questions. Apply the same criterion to an existing plan's `Open Questions:` field; optional follow-up questions do not block readiness. Open Risks are verification uncertainties assigned to existing TCs, not permission to change behavior.
 
 Later phases add `## Review History`, `## Deviations`, `## Discovered Scope`, and `## Coverage Gaps` when needed. Execution records proof/results and fills test references; review finalizes the PR Pattern.
 
 Use [PROCESS.md — Repository conventions](../../PROCESS.md#repository-conventions) for design notation and [CODING.md — Impact](../../CODING.md#impact) for affected contracts and shared state. Investigate the rationale before removing an existing guard or observable behavior. Record material compatibility risks and required decisions.
 
+### Stable references
+
+The plan must stay valid while other work merges into Base. Reference code by path and symbol, and describe required behavior, contracts, and decisions. Do not state facts that unrelated merges can falsify: line numbers; counts of lines, files, messages, fields, callers, or tests; exhaustive claims such as "the only caller" or "no other usages"; current configuration or constant values; and behavior of code the plan does not change.
+
+When a decision, AC, TC, or step depends on such a fact, record it as a `Precondition:` on the first step that relies on it, one fact per line, with a `Check:` that fails when the fact is false. A precondition describes the code that step starts from, after earlier steps and parent slices apply. This includes quoted source, impact evidence under [CODING.md — Impact](../../CODING.md#impact), and the facts behind decisions, such as why existing code cannot be reused or why a guard can be removed; the decision and its rationale stay in Design Decisions. Preconditions are design dependencies, not Open Risks.
+
+`Snapshot:` fixes the code that review verifies against. Advance it only when revising the plan against newer code. Changes after the Snapshot are caught by [execute-feature.md](execute-feature.md), which runs each precondition check before its step.
+
 ## Derive and challenge the spec
 
 ### Scope and evidence
 
-Derive ACs from the Goal, explicit constraints, and affected contracts. Derive TCs to prove those obligations under realistic conditions. An edge or failure case belongs when an explicit requirement demands it or a reachable input, state, or failure in the supported workflow could violate an obligation. Ground reachability in inspected validation, data constraints, callers, dependency behavior, or the proposed design; a prior incident is not required. For non-obvious cases, briefly name that basis and the consequence beside the TC or in Design Decisions.
+Derive ACs from the Goal, explicit constraints, and affected contracts. Derive TCs to prove those obligations under realistic conditions. An edge or failure case belongs when an explicit requirement demands it or a reachable input, state, or failure in the supported workflow could violate an obligation. Ground reachability in inspected validation, data constraints, callers, dependency behavior, or the proposed design; a prior incident is not required. For non-obvious cases, briefly name that basis and the consequence beside the TC or in Design Decisions; a basis in current code is a step precondition under [Stable references](#stable-references).
 
 Do not invent product capabilities, unsupported operating modes, impossible states, or arbitrary limits to create coverage. Synthetic fixtures are valid when they represent reachable conditions. Malformed or adversarial inputs belong at boundaries that can receive them, even when the inputs are invalid; downstream duplication needs a distinct failure risk. Low frequency alone does not exclude a reachable case with a material consequence. Do not assume a guard exists to dismiss a case; inspect it or include it in the design.
 

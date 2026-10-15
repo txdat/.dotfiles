@@ -99,7 +99,7 @@ The extension gates recognized reads, not phase execution: it cannot distinguish
 | skill | description | md file | effort | model |
 | ----- | ----------- | ------- | ------ | ----- |
 | dev-create-issue | Create a standalone GitHub issue with a specific problem, expected outcome, and requested metadata. Use for unplanned issue capture; use dev-design-feature for implementation-plan-linked issues. | skills/dev/create-issue.md | medium | haiku |
-| dev-create-pr | Publish reviewed plan work as draft or ready pull request(s), verify committed scope, archive the plan safely, and clean up its worktree. | skills/dev/create-pr.md | medium | sonnet |
+| dev-create-pr | Publish reviewed plan work as draft or ready pull request(s), verify committed scope, archive the plan safely, and clean up its worktrees and local branches. | skills/dev/create-pr.md | medium | sonnet |
 | dev-design-feature | Design an issue-backed feature, fix, or refactor plan before implementation, including scope, test cases, impact, ordered steps, and provisional PR slicing. | skills/dev/design-feature.md | medium | opus |
 | dev-design-infra | Design a runnable infrastructure operations plan from live-state evidence, verification gates, and rollback requirements. | skills/dev/design-infra.md | high | sonnet |
 | dev-design-system | Design cross-cutting architecture changes such as new communication patterns, service boundaries, or integrations, with options, contracts, migration, rollback, and decomposition. | skills/dev/design-system.md | high | opus |

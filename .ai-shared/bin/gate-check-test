@@ -51,10 +51,13 @@ write_plan() {
   local path="$1" status="$2" type="$3" issue="$4" worktree="$5" pattern="$6"
   local graph="${7-$(valid_graph)}"
   local base="${8-main}"
+  # Default Snapshot: the Base tip of the repository holding the plan, empty
+  # when the plan sits outside a repository with that branch.
+  local snapshot="${9-$(git -C "${path%/docs/*}" rev-parse --verify -q "$base^{commit}" 2>/dev/null || true)}"
   {
     printf '# Task: gate test\n'
-    printf 'Status: %s | Type: %s | Base: %s | Issue: %s | Worktree: %s\n\n' \
-      "$status" "$type" "$base" "$issue" "$worktree"
+    printf 'Status: %s | Type: %s | Base: %s | Snapshot: %s | Issue: %s | Worktree: %s\n\n' \
+      "$status" "$type" "$base" "$snapshot" "$issue" "$worktree"
     printf '%s\n\n' "$graph"
     printf '%s\n' "$pattern"
     printf 'Type: single\n'
@@ -614,6 +617,74 @@ write_plan "$repo/docs/plans/gate.md" planning feature '#12' '' '## PR Pattern (
 printf '| 2 | feature/gate-test-2 | | 2 | second |\n' >> "$repo/docs/plans/gate.md"
 output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
 assert_block "$output" 'without a Parent' 'a later chain row may not omit its parent either'
+
+# ── Snapshot: review verifies the plan against a fixed commit ──
+snapshot_plan() {
+  write_plan "$1/docs/plans/gate.md" planning feature '#12' '' '## PR Pattern (provisional)' "$(valid_graph)" main "$2"
+}
+
+repo=$(new_repo)
+snapshot_plan "$repo" ''
+output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
+assert_block "$output" 'no Snapshot commit' 'review-feature requires a Snapshot'
+
+repo=$(new_repo)
+snapshot_plan "$repo" '<base commit SHA>'
+output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
+assert_block "$output" 'no Snapshot commit' 'a template placeholder is not a Snapshot'
+
+repo=$(new_repo)
+snapshot_plan "$repo" 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef'
+output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
+assert_block "$output" 'is not a commit in this repository' 'a SHA absent from the repository is rejected'
+
+# Merges into Base after the Snapshot must not reopen review.
+repo=$(new_repo)
+old_tip=$(git -C "$repo" rev-parse main)
+printf 'later\n' > "$repo/later.txt"
+git -C "$repo" add later.txt
+git -C "$repo" commit -qm 'merged after design'
+snapshot_plan "$repo" "$old_tip"
+output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
+assert_pass "$output" 'a Snapshot behind the Base tip still enters review'
+
+repo=$(new_repo)
+git -C "$repo" checkout -q -b side
+printf 'side\n' > "$repo/side.txt"
+git -C "$repo" add side.txt
+git -C "$repo" commit -qm 'unrelated side work'
+side_tip=$(git -C "$repo" rev-parse side)
+git -C "$repo" checkout -q main
+snapshot_plan "$repo" "$side_tip"
+output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
+assert_block "$output" 'is not in the history' 'a Snapshot off Base and the first Parent is rejected'
+
+# A plan extending an unmerged branch inspects that branch's code.
+sed -i 's/| 1 | feature\/gate-test | main |/| 1 | feature\/gate-test | side |/' "$repo/docs/plans/gate.md"
+output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
+assert_pass "$output" 'a Snapshot on the first slice'"'"'s unmerged Parent enters review'
+
+# A freshly fetched origin/<base> counts even when the local branch lags.
+repo=$(new_repo)
+git -C "$repo" checkout -q -b fetched
+printf 'upstream\n' > "$repo/upstream.txt"
+git -C "$repo" add upstream.txt
+git -C "$repo" commit -qm 'upstream work'
+upstream_tip=$(git -C "$repo" rev-parse fetched)
+git -C "$repo" checkout -q main
+git -C "$repo" branch -q -D fetched
+git -C "$repo" update-ref refs/remotes/origin/main "$upstream_tip"
+snapshot_plan "$repo" "$upstream_tip"
+output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
+assert_pass "$output" 'a Snapshot on origin/<base> enters review'
+
+# A Parent already written as a remote-tracking name resolves as such. Reset
+# origin/main so only that Parent contains the Snapshot.
+git -C "$repo" update-ref refs/remotes/origin/main "$(git -C "$repo" rev-parse main)"
+git -C "$repo" update-ref refs/remotes/origin/feature-base "$upstream_tip"
+sed -i 's/| 1 | feature\/gate-test | main |/| 1 | feature\/gate-test | origin\/feature-base |/' "$repo/docs/plans/gate.md"
+output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
+assert_pass "$output" 'a Snapshot on a remote-tracking first Parent enters review'
 
 # A follow-up proves only its own work; the unmerged parent's history is outside
 # the current plan, including when that parent has no test(red) commit.
