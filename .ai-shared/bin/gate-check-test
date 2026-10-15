@@ -215,6 +215,12 @@ write_plan "$repo/docs/plans/gate.md" approved feature '#12' '' '## PR Pattern (
 output=$(run_gate "$repo" dev-execute-feature 'docs/plans/gate.md')
 assert_pass "$output" 'approved plan with issue executes'
 
+# An approved plan with a recorded Worktree is mid-execution and resumes.
+repo=$(new_repo)
+make_registered_plan "$repo" feature approved '#12' '## PR Pattern (provisional)' >/dev/null
+output=$(run_gate "$repo" dev-execute-feature 'docs/plans/gate.md')
+assert_pass "$output" 'approved plan with a recorded worktree resumes execution'
+
 # 'abandoned' is terminal: it is not an entry status for any skill. With
 # ambient resolution gone this is the whole of its mechanical meaning — the
 # pin it used to release no longer exists.
@@ -754,19 +760,25 @@ output=$(
 )
 assert_block "$output" 'main working-tree root' 'failed root discovery cannot adopt a linked-worktree plan'
 
-# 'published' is terminal: once a PR exists the workflow never resumes, even
-# when cleanup failed and the live plan and worktree remain.
+# 'archived' is terminal: once the first PR exists the workflow never resumes,
+# even when cleanup failed and the live plan and worktree remain.
 repo=$(new_repo)
-make_registered_plan "$repo" feature published '#12' '## PR Pattern' >/dev/null
+make_registered_plan "$repo" feature archived '#12' '## PR Pattern' >/dev/null
 output=$(run_gate "$repo" dev-create-pr 'docs/plans/gate.md')
-assert_block "$output" 'terminal' 'published plan cannot re-enter create-pr'
+assert_block "$output" 'terminal' 'archived plan cannot re-enter create-pr'
 output=$(run_gate "$repo" dev-ship-feature 'docs/plans/gate.md')
-assert_block "$output" 'terminal' 'ship-feature stops at a published plan'
+assert_block "$output" 'terminal' 'ship-feature stops at an archived plan'
 
 repo=$(new_repo)
-write_plan "$repo/docs/plans/gate.md" published feature '#12' '' '## PR Pattern'
+write_plan "$repo/docs/plans/gate.md" archived feature '#12' '' '## PR Pattern'
 output=$(run_gate "$repo" dev-create-pr 'docs/plans/gate.md')
 assert_block "$output" 'terminal' 'terminal status is reported before the missing worktree'
+
+# Cleanup removed the worktree, then failed before deleting the live plan.
+repo=$(new_repo)
+write_plan "$repo/docs/plans/gate.md" archived feature '#12' "$repo-removed-worktree" '## PR Pattern'
+output=$(run_gate "$repo" dev-create-pr 'docs/plans/gate.md')
+assert_block "$output" 'terminal' 'terminal status is reported before a removed worktree'
 
 repo=$(new_repo)
 write_plan "$repo/docs/plans/gate.md" abandoned feature '#12' '' '## PR Pattern (provisional)'

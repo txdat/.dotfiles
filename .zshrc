@@ -134,7 +134,7 @@ claude() {
         CLAUDE_CODE_DISABLE_AUTO_MEMORY=1
         CLAUDE_CODE_SIMPLE_SYSTEM_PROMPT=1
         CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
-        CLAUDE_CODE_SUBAGENT_MODEL=sonnet
+        CLAUDE_CODE_SUBAGENT_MODEL=haiku
         ENABLE_LSP_TOOL=1
         ENABLE_CLAUDEAI_MCP_SERVERS=false
     )
@@ -152,6 +152,7 @@ claude() {
                 env_vars+=(
                     "ANTHROPIC_BASE_URL=https://api.deepseek.com/anthropic"
                     "ANTHROPIC_AUTH_TOKEN=$DEEPSEEK_API_KEY"
+                    "ANTHROPIC_DEFAULT_FABLE_MODEL=${pro_model}[1m]"
                     "ANTHROPIC_DEFAULT_OPUS_MODEL=${pro_model}[1m]"
                     "ANTHROPIC_DEFAULT_SONNET_MODEL=${flash_model}[1m]"
                     "ANTHROPIC_DEFAULT_HAIKU_MODEL=${flash_model}"

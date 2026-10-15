@@ -7,7 +7,7 @@ Read [PROCESS.md](../../PROCESS.md) and resolve the named plan under [plan.md](p
 1. For each slice, resolve its explicit Parent to a commit before checking ancestry or diffs. Fetch origin as needed; when the branch exists only there, use `refs/remotes/origin/<parent>` for Git checks and `<parent>` for the GitHub base. Record the resolved SHA and confirm local/remote refs and ancestry agree with the reviewed scope; resolve drift before proceeding.
 2. Verify each slice's nonempty diff and `Slice N (<branch>): green at <sha>` against its branch tip, allowing only [plan.md](plan.md#archive-and-cleanup)'s archive-only exception; changed code returns to review. Verify both endpoints and a successful `git diff <parent-sha> <reviewed-code-tip>`, then run `~/.dotfiles/.ai-shared/bin/dev-check artifacts <parent-sha> <reviewed-code-tip>`. The helper rejects unresolvable refs but cannot tell whether they are the reviewed endpoints.
 3. Check for existing PRs under the PR operations below, prepare the archive under [plan.md — Archive and cleanup](plan.md#archive-and-cleanup), and push verified branches in dependency order so every GitHub base exists before PR creation.
-4. Create PRs from the first slice to the last, using the reviewed Parents as bases, recording each under plan.md's step 3. Apply the body and merge-handoff rules below at creation, then finish archive verification and cleanup under plan.md.
+4. Create PRs from the first slice to the last, using the reviewed Parents as bases, setting the live plan `archived` after the first under plan.md's step 3. Apply the body and merge-handoff rules below at creation, then finish archive verification and cleanup under plan.md.
 
 ## Merge handoff
 
@@ -27,7 +27,7 @@ At creation, include the ordered branch/parent table, linking every earlier PR; 
 
 For each represented issue, mark only the delivered goal's checklist items complete and attach their PR numbers after all its PRs exist. Preserve other goals; resolve an ambiguous goal entry before editing.
 
-After all PRs exist and issue checklists and links are verified, fetch the issue again and run [dev-utils.sh](../../bin/dev-utils.sh) `issue-claimants <number>` before deleting the live plan. Only when the output lists no other active plan (this plan, already `published`, is excluded), all its goals have published PRs, and no deferred goal remains unchecked, edit the final PR to use `Closes #N`; every other PR keeps `Refs #N`. Fetch the edited body to verify it.
+After all PRs exist and issue checklists and links are verified, fetch the issue again and run [dev-utils.sh](../../bin/dev-utils.sh) `issue-claimants <number>` before deleting the live plan. Only when the output lists no other active plan (this plan, already `archived`, is excluded), all its goals have published PRs, and no deferred goal remains unchecked, edit the final PR to use `Closes #N`; every other PR keeps `Refs #N`. Fetch the edited body to verify it.
 
 ## Complete
 

@@ -14,9 +14,21 @@ The main agent alone edits the plan, serializing updates.
 
 ## Lifecycle
 
-The live plan follows `planning → approved → in-progress → implemented → reviewed → published`. It becomes `published` when its first PR exists; only its archive copy receives `Status: archived`. Phase skills own nonterminal completion conditions; [approval.md](approval.md) owns amendments and abandonment. `published` and `abandoned` live plans and `archived` copies are terminal and cannot resume; revival or follow-up starts a new plan.
+The plan follows `planning → approved → implemented → reviewed → archived`, and each phase sets at most one status:
 
-Keep the live root plan until publication and cleanup below succeed. Abandonment retains its root record. Archives are historical records and remain untouched once the publishing run ends. Recap may read an exact committed path/permalink or legacy issue-comment URL without recreating a live plan or worktree; identify the repository and plan from the source.
+| Phase | Sets |
+|---|---|
+| [design-feature](design-feature.md) | `planning` |
+| [review-feature](review-feature.md) | none; records its verdict |
+| [approval](approval.md#approve) | `approved` |
+| [execute-feature](execute-feature.md) | `implemented` |
+| [review-code](review-code.md) | `reviewed` |
+| [create-pr](create-pr.md) | `archived` |
+| [abandonment](approval.md#abandon) | `abandoned` |
+
+An `approved` plan with a recorded `Worktree:` is mid-execution and resumes there. Phase skills own completion conditions; [approval.md](approval.md) owns amendments, which may return a plan to an earlier status, and abandonment. `archived` and `abandoned` are terminal and cannot resume; revival or follow-up starts a new plan.
+
+Keep the live root plan until publication and cleanup below succeed. Abandonment retains its root record. Archives are historical records; never edit one after its commit. Recap may read an exact committed path/permalink or legacy issue-comment URL without recreating a live plan or worktree; identify the repository and plan from the source.
 
 ## Worktree operations
 
@@ -37,15 +49,15 @@ Run code, tests, and branch Git operations in the worktree. Preserve unpublished
 
 ## Archive and cleanup
 
-The final PR — the only PR of a single-PR plan, or a chain's last slice — archives the plan in its own worktree; do not add a separate archive PR. Keep the archive at the plan's `docs/plans/<file>.md` path. Preserve and link historical archives already in the chain; resolve path collisions before copying. Only archive copies created in the current run may receive metadata updates.
+The final PR — the only PR of a single-PR plan, or a chain's last slice — archives the plan in its own worktree; do not add a separate archive PR. Keep the archive at the plan's `docs/plans/<file>.md` path. Preserve and link historical archives already in the chain; resolve path collisions before copying.
 
-1. Before PR creation, in the clean archive worktree, copy the root plan, changing only its header to `Status: archived` and empty `Worktree:`. Confirm the identity of any tracked nonterminal copy before replacing it.
+1. Before PR creation, in the final slice's clean worktree, copy the root plan, changing only its header to `Status: archived` and empty `Worktree:`. Confirm the identity of any tracked nonterminal copy before replacing it.
 2. Inspect the copy for sensitive content, run required documentation checks, and stage only its path (`git add -f -- <path>` if ignored). Inspect the staged diff, commit `docs(plan): archive <plan-file-stem>`, and push. Archive-only commits are the sole permitted additions above the final reviewed code tip; code proof, green SHAs, and artifact scans end there.
-3. During [create-pr.md](create-pr.md), record each PR URL in the live plan as it is created and set `Status: published` after the first. After all PRs exist, refresh the archive copy from the updated live plan with only the two header changes, repeating step 2.
-4. Verify the archive at the published head: exact path, terminal headers, and byte-for-byte equality with the root plan except those two fields. Confirm the final PR's remote head equals the local head and every post-review commit touches only the archive path. Link the archive at an immutable commit in the final PR body and fetch it to verify the link.
+3. Once the first PR exists, set the live plan to `Status: archived`, so a failed cleanup cannot re-enter publication. PR URLs go in the final report, not the plan.
+4. Verify the archive at the final PR's remote head, which must equal the local head: exact path, `archived` header, and every post-review commit touching only the archive path. Link the archive at an immutable commit in the final PR body and fetch it to verify the link.
 5. Remove each slice's worktree with `remove <worktree>` under the rules above. Publication verified every slice branch on origin, so each must report `deleted`; a `kept` branch blocks completion until its mismatch with origin is resolved.
-6. After worktree removal, recompare the root plan with its verified archive, then delete it. An untracked plan needs no commit. For a plan tracked in root HEAD, isolate its deletion in a local `docs(plan): remove archived live plan` commit and verify its path list; an index-only addition needs its index entry removed instead. Preserve distinct staged content and unrelated changes; if isolation is unsafe, retain the file and report the blocker.
+6. After worktree removal, delete the root plan. An untracked plan needs no commit. For a plan tracked in root HEAD, isolate its deletion in a local `docs(plan): remove archived live plan` commit and verify its path list; an index-only addition needs its index entry removed instead. Preserve distinct staged content and unrelated changes; if isolation is unsafe, retain the file and report the blocker.
 
 Root cleanup commits stay local unless pushing that branch is explicitly authorized. Report their SHA, branch, and pushed state; an unpushed cleanup commit blocks completion only when its push is part of the task.
 
-On publication verification or cleanup failure, stop: retain the live plan and remaining worktrees and local branches, and report per-item progress — root path, archive commit, PR URLs, branch tips, and worktrees — for manual handling. Completion requires verified publication, removal of the live plan, worktrees, and local slice branches, and required cleanup commits.
+On publication verification or cleanup failure, stop: retain the live plan, remaining worktrees, and local branches, and report per-item progress — root path, archive commit, PR URLs, branch tips, and worktrees — for manual handling. Completion requires verified publication, removal of the live plan, worktrees, and local slice branches, and required cleanup commits.

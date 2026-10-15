@@ -1,6 +1,6 @@
 # /execute-feature — Implement an Approved Plan
 
-Read [PROCESS.md](../../PROCESS.md), [plan.md](plan.md), and the named plan. Entry is `approved` or `in-progress`. Create the first implementation slice's worktree under [plan.md — Worktree operations](plan.md#worktree-operations), using its explicit branch and Parent, then set `in-progress`. Create each later slice's branch and worktree as it begins, after its parent slice passes verification, and update `Worktree:` to the active slice. On resume, continue from the current slice and its recorded worktree.
+Read [PROCESS.md](../../PROCESS.md), [plan.md](plan.md), and the named plan. Entry is `approved`. Without a recorded `Worktree:`, create the first implementation slice's worktree under [plan.md — Worktree operations](plan.md#worktree-operations), using its explicit branch and Parent, and record it; with one, resume from the current slice in that worktree. Create each later slice's branch and worktree as it begins, after its parent slice passes verification, and update `Worktree:` to the active slice.
 
 Execute dependency-ordered slices. Before starting a step, run each of its `Precondition:` checks in the slice worktree and record the outcome beside the step. A failed check stops that step and its dependents; classify the required change under [approval.md](approval.md). Follow [verification.md — Test-first proof](verification.md#test-first-proof) for proof, implementation, and BLUE; fill each TC's test reference and record proof/results.
 

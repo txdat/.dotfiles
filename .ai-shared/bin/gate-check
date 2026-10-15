@@ -9,8 +9,9 @@
 # review-feature requires planning and leaves that status unchanged (../skills/dev/review-feature.md).
 # fix-bug has no plan gate; it diagnoses and routes (../skills/dev/fix-bug.md).
 # Review-code additionally requires proof-commit sequencing for every slice.
-# published, archived, and abandoned are terminal for every plan-consuming skill;
-# a published plan never re-enters create-pr (../skills/dev/plan.md#lifecycle).
+# archived and abandoned are terminal for every plan-consuming skill; create-pr
+# archives the live plan once its first PR exists, so publication never
+# re-enters (../skills/dev/plan.md#lifecycle).
 #
 # Approval is a human decision recorded as `Status: approved`, set at the
 # spec-approval pause (see skills/dev/approval.md). The hook checks that the
@@ -604,6 +605,15 @@ case "$SKILL_SLUG" in
 esac
 # Keep PLAN bound to the root source; only Git checks move into the worktree.
 if [[ -n "$PLAN" ]]; then
+  STATUS=$(plan_status "$PLAN")
+  # Terminal statuses end delivery for every plan-consuming skill, checked
+  # before worktree validation: an archived plan whose cleanup failed may keep
+  # a worktree or name a removed one, and publication must never resume
+  # (plan.md#lifecycle).
+  case "$STATUS" in
+    archived|abandoned)
+      block "Plan status is '$STATUS' — terminal (already shipped or abandoned); the workflow does not resume. For follow-up work, start a new plan with design-feature or ship-feature, without the old plan path." ;;
+  esac
   WT=$(plan_worktree "$PLAN")
   case "${WT,,}" in ""|none|n/a|"<"*">") WT="" ;; esac
   if [[ -n "$WT" ]]; then
@@ -616,14 +626,6 @@ if [[ -n "$PLAN" ]]; then
       block "Plan records 'Worktree: $WT' but the worktree directory is missing. Preserve the root plan and restore the worktree per skills/dev/plan.md#worktree-operations before continuing."
     fi
   fi
-  STATUS=$(plan_status "$PLAN")
-  # Terminal statuses end delivery for every plan-consuming skill, checked
-  # before worktree requirements: a published plan whose cleanup failed keeps
-  # its worktree, and publication must never resume (plan.md#lifecycle).
-  case "$STATUS" in
-    published|archived|abandoned)
-      block "Plan status is '$STATUS' — terminal (already shipped or abandoned); the workflow does not resume. For follow-up work, start a new plan with design-feature or ship-feature, without the old plan path." ;;
-  esac
 fi
 
 # A plan-consuming skill must name its artifact. The block never inspects how
@@ -688,16 +690,16 @@ case "$SKILL_SLUG" in
     fi
     ;;
 
-  # ── execute-feature: plan must be approved (or in-progress for resume) ──
+  # ── execute-feature: plan must be approved (a recorded Worktree means resume) ──
   execute-feature)
     require_plan
     if [[ -n "$PLAN" ]]; then
       case "$STATUS" in
-        approved|in-progress) ;;
+        approved) ;;
         planning) block "Plan status is '$STATUS' — not approved. Run review-feature, then have the user approve the spec (see approval.md)." ;;
         implemented)                      block "Plan is already implemented. Run review-code next." ;;
         reviewed)                         block "Plan status is '$STATUS' — already past execution. Run review-code or create-pr." ;;
-        *)                                block "Plan status is '$STATUS' — expected 'approved' or 'in-progress'." ;;
+        *)                                block "Plan status is '$STATUS' — expected 'approved'." ;;
       esac
       # Every plan (feature/fix/refactor) must be issue-backed before implementation.
       if ! has_issue "$PLAN"; then
@@ -713,7 +715,7 @@ case "$SKILL_SLUG" in
     if [[ -n "$PLAN" ]]; then
       case "$STATUS" in
         implemented) ;;
-        planning|approved|in-progress)
+        planning|approved)
           block "Plan status is '$STATUS' — not yet implemented. Run the appropriate execute skill first." ;;
         reviewed)      block "Plan is already reviewed. Run create-pr next." ;;
         *)             block "Plan status is '$STATUS' — expected 'implemented'." ;;
@@ -764,7 +766,7 @@ case "$SKILL_SLUG" in
       case "$STATUS" in
         reviewed) ;;
         implemented)           block "Plan status is 'implemented' — run review-code first." ;;
-        planning|approved|in-progress) block "Plan status is '$STATUS' — not yet executed. Continue the workflow." ;;
+        planning|approved) block "Plan status is '$STATUS' — not yet executed. Continue the workflow." ;;
         *)                     block "Plan status is '$STATUS' — expected 'reviewed'." ;;
       esac
       if ! has_final_pr_pattern "$PLAN"; then

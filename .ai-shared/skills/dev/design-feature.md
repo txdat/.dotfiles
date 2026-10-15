@@ -16,17 +16,7 @@ Carry resolved behavioral semantics into the ACs. Record decision rationale, sou
 
 ## Split scope before splitting work
 
-Separate the goal into API-contract, backend (BE/server), and frontend (FE/client) responsibilities before slicing work. Include only affected scopes; reference unchanged contracts.
-
-- **API contract** owns shared boundary semantics: relevant requests, responses, errors, authorization obligations, data meaning, compatibility, and contract examples/fixtures. Identify the authoritative contract artifact and how it will be validated.
-- **BE** owns server implementation, persistence, side effects, and verification of conformance to the contract.
-- **FE** owns client integration, user interactions and states, and verification of conformance to the same contract.
-
-When BE and FE both change, give each its own plan with `be` and `fe` slug suffixes; sections or PR slices inside one plan do not satisfy this separation. A changed contract belongs to the plan that implements its producer, normally BE: define it there in Design Decisions or a referenced contract artifact, prove it through that plan's ACs/TCs, and ship artifact changes in the slice that implements them. A contract change with no implementing code is documentation under [PROCESS.md — Scope](../../PROCESS.md#scope). Design and review the contract first; the consumer plan derives from its reviewed revision and may not silently redefine it. Contract changes reopen affected consumer decisions under [approval.md](approval.md).
-
-In `## Related Plans`, record the overall outcome, exact sibling paths, the contract source and revision, and dependency conditions. Use path-qualified IDs for cross-plan references and reference authoritative semantics and fixtures instead of copying them. A shared issue can connect the plans; an executable umbrella plan is unnecessary.
-
-Check that the plans together cover the overall outcome without conflicting ownership. Assign cross-scope integration verification to an explicit owning plan and TC with concrete prerequisite state and expected results; contract-based mocks may unblock FE work but do not prove integration with BE. Record development, merge, and release dependencies where they differ. Each plan keeps its own review and approval.
+Separate the goal into API-contract, backend (BE/server), and frontend (FE/client) responsibilities before slicing work. Include only affected scopes; reference unchanged contracts. When more than one scope changes, apply [related plans](reference/related-plans.md): BE and FE changes get separate plans, a changed contract belongs to its producer's plan, and integration verification has an explicit owner.
 
 ## Plan schema
 
@@ -86,6 +76,8 @@ The plan must stay valid while other work merges into Base. Reference code by pa
 
 When a decision, AC, TC, or step depends on such a fact, record it as a `Precondition:` on the first step that relies on it, one fact per line, with a `Check:` that fails when the fact is false. A precondition describes the code that step starts from, after earlier steps and parent slices apply. This includes quoted source, impact evidence under [CODING.md — Impact](../../CODING.md#impact), and the facts behind decisions, such as why existing code cannot be reused or why a guard can be removed; the decision and its rationale stay in Design Decisions. Preconditions are design dependencies, not Open Risks.
 
+Before every handoff to review, including after repairs, sweep every section of the plan for facts this section excludes; a revision can add new ones. For each, ask whether any decision, AC, TC, or step would change if it were false: if none would, delete it or restate it as required behavior; otherwise make it a precondition. Run each Check at the Snapshot. A failing Check means the fact or the design is wrong; correct the plan before handoff.
+
 `Snapshot:` fixes the code that review verifies against. Advance it only when revising the plan against newer code. Changes after the Snapshot are caught by [execute-feature.md](execute-feature.md), which runs each precondition check before its step.
 
 ## Derive and challenge the spec
@@ -112,21 +104,7 @@ For worked illustrations of fixture coverage and ambiguity resolution, see [desi
 
 ### Complexity and simpler alternatives
 
-Scale analysis to impact. When neither computational/resource cost nor implementation complexity changes meaningfully, one sentence suffices; otherwise record the analysis in Design Decisions.
-
-For affected computational/resource costs, derive typical- and worst-case time and space from operations, input sizes, allocation scope, and material I/O. Support the typical workload with evidence, or label it unknown and give conditional estimates; report an unbounded worst case and do not invent workload limits. Analytical estimates need no code. When practical limits need validation, use measurements, query plans, or targeted experiments, naming their workload and environment and whether they reproduce production selection such as query plans cached across inputs. Big-O does not establish latency or bytes, and a benchmark does not prove a worst-case bound. Justified measurement gaps may remain Open Risks with verification TCs; missing requirements return to the ambiguity gate.
-
-State cost criteria as the bound itself; for data access, name what limits the examined range and how work scales with it. A proxy such as an index name or plan shape qualifies only if it cannot pass while the bound is violated or fail while it holds; otherwise verify the bound directly and record the establishing evidence, such as index scan ranges. Before using a relative criterion ("no regression", "same plan"), check the baseline against the bound: a violating baseline is not a success reference. Report it and, unless the Goal already requires the fix, resolve its scope through the ambiguity gate.
-
-Assess abstraction, dependency, state, and coordination complexity separately from runtime cost. When cost threatens required limits or complexity outweighs its benefit, warn with cause and consequence, compare a simpler viable alternative's costs and maintenance tradeoffs, and recommend one, or explain why none preserves the requirements. Record the selected approach and rationale; changes to agreed behavior follow [approval.md](approval.md).
-
-For each decision that materially adds abstraction, dependency, state, or coordination, record a necessity check; a decision an AC directly requires needs only `required by AC-n`. The check names:
-
-- **Residual failure:** the failure reachable without the decision, its consequence, and what limits its frequency or impact.
-- **Cost:** the ACs, TCs, Open Risks, and failure modes that exist only because of the decision.
-- **Narrower variant:** whether one, such as a shorter timeout, bounds that failure.
-
-Keep the decision only when its residual failure outweighs its cost and no narrower variant suffices. Evaluate removals one at a time and recheck the remaining decisions after each, because overlapping safeguards each look unnecessary while the other remains. If a removal leaves a dropped stated item's outcome uncovered, return that item to the ambiguity gate. When review findings repeatedly trace to one decision, recheck its necessity before repairing it again.
+Scale analysis to impact. When neither computational/resource cost nor implementation complexity changes meaningfully, one sentence suffices; otherwise apply [complexity analysis](reference/complexity.md), including a necessity check for each decision that materially adds abstraction, dependency, state, or coordination, and record it in Design Decisions.
 
 Minimize implementation logic under [CODING.md — Changes and evidence](../../CODING.md#changes-and-evidence). Reuse existing code that implements the same concept (the same data meaning and contract, not merely similar steps), and name it in the implementation steps, or record in Design Decisions why it cannot serve; extending it makes its callers affected under [CODING.md — Impact](../../CODING.md#impact). Do not bend shared code with flags to serve a different concept; write separate code instead. Handle cases through one path when the contract treats them alike, and include only parameters, options, and special cases that an AC or reachable scenario requires. When the change supersedes existing code, name what it deletes or consolidates.
 
@@ -142,4 +120,4 @@ Every row records its explicit Parent and owned steps. Row 1's Parent is Base, o
 
 Link the supplied issue, including a shared parent issue, or create one from the Goal and scope. Verify a named issue matches the work and is open. Preserve sibling goals in shared issues; update only this goal's information. Record `Issue: #N` before handoff.
 
-Finish when the ambiguity gate is satisfied and the Goal is covered by decidable ACs, meaningful TCs with concrete fixtures and expected results, ordered steps, and valid PR slices. Save the planning artifact and hand it to [review-feature.md](review-feature.md).
+Finish when the ambiguity gate is satisfied and the Goal is covered by decidable ACs, meaningful TCs with concrete fixtures and expected results, ordered steps, and valid PR slices. Save the planning artifact, complete the [Stable references](#stable-references) sweep, and hand it to [review-feature.md](review-feature.md).
