@@ -117,6 +117,12 @@ make_registered_plan() {
   printf '%s\n' "$worktree"
 }
 
+# Commits a plan in the main root, as a merged publication leaves it.
+commit_plan() {
+  git -C "$1" add -f "docs/plans/$2"
+  git -C "$1" commit -qm "docs(plan): archive ${2%.md}"
+}
+
 # The infra lane is gone. A stale plan still carrying Type: infra must not
 # inherit the old proof exemption — it falls through to the RED-proof gate.
 repo=$(new_repo)
@@ -225,22 +231,21 @@ make_registered_plan "$repo" feature approved '#12' '## PR Pattern (provisional)
 output=$(run_gate "$repo" dev-execute-feature 'docs/plans/gate.md')
 assert_pass "$output" 'approved plan with a recorded worktree resumes execution'
 
-# 'abandoned' is terminal: it is not an entry status for any skill. With
-# ambient resolution gone this is the whole of its mechanical meaning — the
-# pin it used to release no longer exists.
+# A plan tracked in the main root is a published record, whatever its status.
 repo=$(new_repo)
-write_plan "$repo/docs/plans/gate.md" abandoned feature '#12' '' '## PR Pattern (provisional)'
+write_plan "$repo/docs/plans/gate.md" approved feature '#12' '' '## PR Pattern (provisional)'
+commit_plan "$repo" gate.md
 output=$(run_gate "$repo" dev-execute-feature 'docs/plans/gate.md')
-assert_block "$output" 'abandoned' 'abandoned plan cannot be executed'
+assert_block "$output" 'published record' 'a committed plan cannot be executed'
 
-# A terminal plan beside an active one is inert: naming the active plan works
+# A published record beside a live plan is inert: naming the live plan works
 # regardless of what else sits in docs/plans/.
 repo=$(new_repo)
-write_plan "$repo/docs/plans/dropped.md" abandoned feature '#12' '' '## PR Pattern (provisional)'
-write_plan "$repo/docs/plans/shipped.md" archived feature '#12' '' '## PR Pattern (provisional)'
+write_plan "$repo/docs/plans/shipped.md" reviewed feature '#12' '' '## PR Pattern'
+commit_plan "$repo" shipped.md
 write_plan "$repo/docs/plans/gate.md" approved feature '#12' '' '## PR Pattern (provisional)'
 output=$(run_gate "$repo" dev-execute-feature 'docs/plans/gate.md')
-assert_pass "$output" 'terminal plans beside an explicitly named active plan are inert'
+assert_pass "$output" 'published records beside an explicitly named live plan are inert'
 
 # ── explicit plan resolution ──
 # Governance binds to a named artifact: a dormant plan must never capture
@@ -286,9 +291,10 @@ output=$(run_gate "$repo" dev-frame-goal 'add rate limiting to the upload endpoi
 assert_pass "$output" 'frame-goal is ungated beside a dormant plan'
 
 repo=$(new_repo)
-write_plan "$repo/docs/plans/gate.md" archived feature '#12' '' '## PR Pattern (provisional)'
+write_plan "$repo/docs/plans/gate.md" approved feature '#12' '' '## PR Pattern (provisional)'
+commit_plan "$repo" gate.md
 output=$(run_gate "$repo" dev-ship-feature 'docs/plans/gate.md from execute')
-assert_block "$output" 'already shipped' 'ship-feature resume names its plan and still sees terminal status'
+assert_block "$output" 'published record' 'ship-feature resume names its plan and still sees a published record'
 
 # Diagnosis never adopts an application plan; implementation names its own.
 repo=$(new_repo)
@@ -407,7 +413,7 @@ write_plan "$repo/docs/plans/gate.md" planning feature '#12' '' '## PR Pattern (
 AC-1 — outcome
   Source: goal
 AC-2 — second outcome
-  Source: approval.md
+  Source: issue
 ## Test Cases
 TC-1 — scenario
   Proves: AC-1
@@ -796,32 +802,38 @@ output=$(
 )
 assert_block "$output" 'main working-tree root' 'failed root discovery cannot adopt a linked-worktree plan'
 
-# 'archived' is terminal: once the first PR exists the workflow never resumes,
-# even when cleanup failed and the live plan and worktree remain.
+# A published record never re-enters delivery, even with a registered worktree.
 repo=$(new_repo)
-make_registered_plan "$repo" feature archived '#12' '## PR Pattern' >/dev/null
+make_registered_plan "$repo" feature reviewed '#12' '## PR Pattern' >/dev/null
+commit_plan "$repo" gate.md
 output=$(run_gate "$repo" dev-create-pr 'docs/plans/gate.md')
-assert_block "$output" 'terminal' 'archived plan cannot re-enter create-pr'
+assert_block "$output" 'published record' 'a committed plan cannot re-enter create-pr'
 output=$(run_gate "$repo" dev-ship-feature 'docs/plans/gate.md')
-assert_block "$output" 'terminal' 'ship-feature stops at an archived plan'
+assert_block "$output" 'published record' 'ship-feature stops at a committed plan'
+
+# Local edits to a committed plan do not make it live again.
+printf '\nedited\n' >> "$repo/docs/plans/gate.md"
+output=$(run_gate "$repo" dev-create-pr 'docs/plans/gate.md')
+assert_block "$output" 'published record' 'an edited committed plan is still a published record'
+
+# Removing a committed plan from the index does not make it live again.
+git -C "$repo" rm -q --cached docs/plans/gate.md
+output=$(run_gate "$repo" dev-create-pr 'docs/plans/gate.md')
+assert_block "$output" 'published record' 'a plan in HEAD but not the index is still a published record'
 
 repo=$(new_repo)
-write_plan "$repo/docs/plans/gate.md" archived feature '#12' '' '## PR Pattern'
+write_plan "$repo/docs/plans/gate.md" reviewed feature '#12' "$repo-removed-worktree" '## PR Pattern'
+commit_plan "$repo" gate.md
 output=$(run_gate "$repo" dev-create-pr 'docs/plans/gate.md')
-assert_block "$output" 'terminal' 'terminal status is reported before the missing worktree'
+assert_block "$output" 'published record' 'a published record is reported before a removed worktree'
+output=$(run_gate "$repo" dev-ship-feature 'redo the work in docs/plans/gate.md')
+assert_block "$output" 'without the old plan path' 'a mentioned published record tells the caller how to start new work'
 
 # Cleanup removed the worktree, then failed before deleting the live plan.
 repo=$(new_repo)
-write_plan "$repo/docs/plans/gate.md" archived feature '#12' "$repo-removed-worktree" '## PR Pattern'
+write_plan "$repo/docs/plans/gate.md" reviewed feature '#12' "$repo-removed-worktree" '## PR Pattern'
 output=$(run_gate "$repo" dev-create-pr 'docs/plans/gate.md')
-assert_block "$output" 'terminal' 'terminal status is reported before a removed worktree'
-
-repo=$(new_repo)
-write_plan "$repo/docs/plans/gate.md" abandoned feature '#12' '' '## PR Pattern (provisional)'
-output=$(run_gate "$repo" dev-ship-feature 'docs/plans/gate.md')
-assert_block "$output" 'abandoned' 'ship-feature stops at an abandoned plan'
-output=$(run_gate "$repo" dev-ship-feature 'redo the work in docs/plans/gate.md')
-assert_block "$output" 'without the old plan path' 'a mentioned terminal plan tells the caller how to start new work'
+assert_block "$output" 'rerun dev-publish.sh cleanup docs/plans/gate.md' 'a live plan whose worktree cleanup removed points to cleanup'
 
 # ── Hook input shapes ──
 # Claude Code's Skill tool sends the argument string as tool_input.args; the Pi
@@ -884,11 +896,86 @@ AC-1 — the response carries UTC-7 offsets and an SHA-256 digest
 TC-1 — scenario
   Proves: AC-1
 ## Implementation Steps
-ST-1 — action — satisfies TC-1
-## Related Plans
-Consumer: docs/plans/fe.md#AC-9 depends on AC-1')
+ST-1 — action — satisfies TC-1')
 output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
-assert_pass "$output" 'word-embedded and path-qualified tokens are not IDs here'
+assert_pass "$output" 'word-embedded tokens are not IDs'
+
+repo=$(id_plan '## Acceptance Criteria
+AC-1 — the client renders the order list
+## Test Cases
+TC-1 — scenario
+  Proves: AC-1
+## Implementation Steps
+ST-1 — action — satisfies TC-1
+  PC-1 — the list endpoint follows docs/plans/be.md#AC-2 — Check: rg list_orders')
+output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
+assert_block "$output" "cites another artifact's IDs" 'a plan citing another plan'"'"'s ID is blocked'
+assert_block "$output" 'docs/plans/be.md#AC-2' 'the cross-reference block names the offending line'
+
+repo=$(id_plan '## Acceptance Criteria
+AC-1 — outcome
+## Test Cases
+TC-1 — scenario
+  Proves: AC-1
+## Implementation Steps
+ST-1 — action — satisfies TC-1
+## Notes
+Replaced docs/plans/be.md#AC-2 with PC-1')
+output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
+assert_block "$output" "cites another artifact's IDs" 'no plan section is exempt from the cross-reference check'
+
+repo=$(id_plan '## Acceptance Criteria
+AC-1 — outcome
+## Test Cases
+TC-1 — scenario
+  Proves: AC-1
+## Implementation Steps
+ST-1 — action — satisfies TC-1
+## Execution Record
+AC-9 retired')
+output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
+assert_block "$output" 'cites AC-9, which is not declared' 'a plan Execution Record is not exempt from the reference check'
+
+cross_plan() {
+  id_plan "$1"'
+## Acceptance Criteria
+AC-1 — outcome
+## Test Cases
+TC-1 — scenario
+  Proves: AC-1
+## Implementation Steps
+ST-1 — action — satisfies TC-1'"$2"
+}
+
+repo=$(cross_plan 'After: docs/plans/be.md' '')
+output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
+assert_pass "$output" 'an After: line names the earlier plan by path only'
+
+repo=$(cross_plan '' '
+## Design Decisions
+DD-1 — reuse the order shape from docs/plans/be#AC-2')
+output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
+assert_block "$output" "cites another artifact's IDs" 'an extensionless cross-reference in Design Decisions is blocked'
+
+repo=$(cross_plan '' '
+## Context
+The contract lives in api/orders.yaml#CT-1')
+output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
+assert_block "$output" "cites another artifact's IDs" 'a non-.md path-qualified ID is blocked'
+
+repo=$(id_plan '## Acceptance Criteria
+AC-1 — outcome
+## Test Cases
+TC-1 — scenario
+  Proves: AC-1
+## Implementation Steps
+ST-1 — action — satisfies TC-1
+## Context
+```
+docs/plans/be.md#AC-2
+```')
+output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
+assert_pass "$output" 'fenced text is not a cross-reference'
 
 repo=$(id_plan '## Acceptance Criteria
 AC-1 — outcome
@@ -904,12 +991,9 @@ ST-1 — action — satisfies TC-1
 ## Design Decisions
 DD-1 — reuse the ledger check
 ## Open Risks
-RK-1 — timing under load — TC-1
-## Review History
-RV-1 — review-feature: NEEDS CHANGES
-  FD-1 — TC-4 duplicated TC-1; removed (AC-3 retired)')
+RK-1 — timing under load — TC-1')
 output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
-assert_pass "$output" 'every plan prefix declares cleanly; history may cite retired IDs'
+assert_pass "$output" 'every plan prefix declares cleanly'
 
 bad_graph 'a TC citing an undeclared fixture is reported' '## Acceptance Criteria
 AC-1 — outcome
@@ -979,6 +1063,17 @@ assert_block "$output" 'Named document not found' 'a mistyped runbook path block
 write_runbook "$repo" "${valid_runbook/PH-1 gate passed/PH-3 gate passed}"
 output=$(run_gate "$repo" dev-review-infra 'docs/runbooks/move.md')
 assert_block "$output" 'cites PH-3, which is not declared: no line in ## Phases' 'a runbook reference to an undeclared phase blocks'
+
+write_runbook "$repo" "${valid_runbook/'## Resources'/'Contract: docs/architecture/events.md#CT-1
+## Resources'}"
+output=$(run_gate "$repo" dev-review-infra 'docs/runbooks/move.md')
+assert_pass "$output" 'a runbook may cite another artifact path-qualified'
+
+write_runbook "$repo" "$valid_runbook"'
+## Execution Record
+EX-1 — PH-1 ran; PH-3 retired'
+output=$(run_gate "$repo" dev-review-infra 'docs/runbooks/move.md')
+assert_pass "$output" 'an Execution Record may mention a retired phase'
 
 write_runbook "$repo" "${valid_runbook/'### PH-2'/'### Phase 2'}"
 output=$(run_gate "$repo" dev-review-infra 'docs/runbooks/move.md')

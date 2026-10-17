@@ -7,7 +7,7 @@ Owns the identifiers written into application plans (`docs/plans/`), infrastruct
 - An ID is `<PREFIX>-<n>`: a two-letter prefix from the registry below, a hyphen, and a positive integer without leading zeros, such as `AC-1`, `ST-12`, `PH-3`.
 - IDs are unique per prefix within one artifact. Number new items after the highest ID that prefix has ever used in the artifact; never renumber or reuse a retired ID.
 - Cite every ID explicitly. Ranges such as `TC-1 to TC-4` or `AC-1–AC-3` are invalid; write `TC-1, TC-2, TC-3, TC-4`.
-- Reference another artifact's ID with its path: `docs/plans/<file>.md#AC-1`. A `#`-qualified ID is not checked against the citing artifact.
+- An application plan cites only its own IDs. It cites a contract or other artifact by path without its IDs, and restates a fact another artifact establishes as a `PC-n` precondition ([related plans — Order](reference/related-plans.md#order)). A runbook or architecture document may cite another artifact's ID path-qualified, such as `docs/architecture/<file>.md#CT-1`. A `#`-qualified ID is not checked against the citing artifact.
 - Old forms are invalid where the ID now lives: `Step 1`, `Slice 1`, or `Precondition:` in `## Implementation Steps` or `## PR Pattern`, `Phase 1` in `## Phases` or `## Migration`, and numbered PR or Publication Inventory rows. Elsewhere, "step 1 of the wizard" is prose.
 
 ## Declaration and reference
@@ -16,11 +16,11 @@ An ID is **declared** by a line in its owning section (below) that begins with t
 
 Text inside fenced code blocks (```` ``` ```` or `~~~`) is neither a declaration nor a reference, so keep declaring lines such as `### PH-1 — <outcome>` outside fences and fence only commands and data. Skill templates are fenced for display; write their lines unfenced in the artifact.
 
-Every reference must name an ID declared in the same artifact, except inside history sections — `## Review History`, a plan's `## Deviations`, and a runbook's `## Execution Record` — which may mention retired IDs and quote old ranges. Record each retired ID and why in an `RV-n` entry.
+Every unqualified reference must name an ID declared in the same artifact, except inside a runbook's `## Execution Record`, which may mention retired IDs and quote old ranges.
 
 A plan's IDs must also close as a graph, whose rules [design-feature.md — ID graph](design-feature.md#id-graph) owns.
 
-The gate checks the rules above and the graph's shape only. Numbering history (reuse or renumbering of a retired ID) and an FD's placement under its RV remain review judgments.
+The gate checks the rules above and the graph's shape only; it detects a cross-reference by its `<path>#ID` form, so an unqualified ID borrowed from another plan, like renumbering or reuse of a retired ID, remains review judgment.
 
 ## Registry
 
@@ -38,11 +38,8 @@ The ID line shows where an ID is declared and which IDs it must cite; `…` is c
 | `PR` | PR slice | `## PR Pattern` table, first column | design-feature; review-code finalizes | `\| PR-1 \| … \| ST-1, ST-2 \| … \|`, steps in the `Steps` column |
 | `DD` | Design decision | `## Design Decisions` | design-feature, frame-goal | `DD-1 — …` |
 | `RK` | Open risk | `## Open Risks` | design-feature | `RK-1 — … — TC-2` |
-| `DV` | Deviation | `## Deviations` | approval classifies; execute-feature, review-code record | `DV-1 — …` |
-| `DS` | Discovered scope | `## Discovered Scope` | approval, execute-feature | `DS-1 — …` |
+| `DS` | Discovered scope | `## Discovered Scope` | execute-feature, under [plan.md — Changes](plan.md#changes) | `DS-1 — …` |
 | `CG` | Coverage gap | `## Coverage Gaps` | verification | `CG-1 — …` |
-| `RV` | History entry: review round, amendment, editorial correction, or failed-fix count | `## Review History` | review-feature, review-code, approval, AGENTS.md failed-fix rule | `RV-1 — …` |
-| `FD` | Review finding | `## Review History`, under its round | review-feature, review-code, independence | `FD-1 — …` |
 
 Records that cite a slice use its PR ID: [plan.md](plan.md#worktree-operations)'s Publication Inventory and [review-code.md](review-code.md#finalize-during-authorized-delivery)'s green records own their line forms.
 
@@ -55,8 +52,6 @@ Records that cite a slice use its PR ID: [plan.md](plan.md#worktree-operations)'
 | `RS` | Affected resource or workload | `## Resources` | design-infra | `RS-1 — …` |
 | `PH` | Phase | `## Phases` | design-infra | `### PH-1 — …` |
 | `OQ` | Open question | `## Open Questions` | design-infra | `OQ-1 — … — blocks PH-2` |
-| `RV` | Review round | `## Review History` | review-infra | `RV-1 — …` |
-| `FD` | Review finding | `## Review History`, under its round | review-infra | `FD-1 — …` |
 | `EX` | Execution record entry | `## Execution Record` | review-infra (post) | `EX-1 — …`, citing the `PH-n` that ran |
 
 ### Architecture document
@@ -68,7 +63,5 @@ Records that cite a slice use its PR ID: [plan.md](plan.md#worktree-operations)'
 | `CT` | Changed contract | `## Contracts` | design-system | `CT-1 — …` |
 | `PH` | Migration phase | `## Migration` | design-system | `### PH-1 — …` |
 | `DC` | Decomposition entry | `## Decomposition` | design-system | `DC-1 — … — CT-1 — …` |
-| `RV` | Review round | `## Review History` | review-system | `RV-1 — …` |
-| `FD` | Review finding | `## Review History`, under its round | review-system | `FD-1 — …` |
 
-Prefixes outside an artifact's table are not parsed there; cite another artifact's IDs path-qualified. Items not listed here, such as header fields and prose sections, carry no ID.
+Prefixes outside an artifact's table are not parsed there; cite another artifact's IDs only as [Format](#format) allows. Items not listed here, such as header fields and prose sections, carry no ID.

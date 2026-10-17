@@ -59,16 +59,6 @@ else
 fi
 printf 'PASS: literal production search and path-based test exclusions\n'
 
-mkdir -p docs/plans
-printf 'Status: reviewed | Type: feature | Base: main | Issue: #12 | Worktree:\n' > docs/plans/live.md
-printf 'Status: abandoned | Type: feature | Base: main | Issue: #12 | Worktree:\n' > docs/plans/dropped.md
-printf 'Status: archived | Type: feature | Base: main | Issue: #12 | Worktree: /tmp/leftover\n' > docs/plans/shipped.md
-printf 'Status: planning | Type: feature | Base: main | Issue: #123 | Worktree:\nIssue: #12 appears only in body\n' > docs/plans/other.md
-equal "$(bash "$UTILS" issue-claimants 12)" "$repo/docs/plans/live.md" 'exact issue header and terminal filter'
-reject bash "$UTILS" issue-claimants 0
-reject bash "$UTILS" issue-claimants 12x
-printf 'PASS: issue claimant filtering\n'
-
 git branch explicit-parent HEAD
 git commit --allow-empty -qm 'main diverged'
 main_tip=$(git rev-parse HEAD)
@@ -154,7 +144,11 @@ git -C "$detached" checkout -q --detach
 reject bash "$WORKTREES" remove "$detached"
 [[ -d "$detached" ]] || fail 'a detached worktree was removed'
 
-# Linked dependencies go as symlinks; the shared main-root content stays.
+# Linked dependencies go as symlinks, ignored or not; the shared main-root content stays.
+unignored=$(bash "$WORKTREES" create unignored feature/unignored main "$TEST_ROOT/worktrees")
+bash "$WORKTREES" link-deps "$unignored" node_modules
+git -C "$unignored" push -q origin feature/unignored
+equal "$(bash "$WORKTREES" remove "$unignored" 2>/dev/null)" 'deleted feature/unignored' 'worktree with an unignored dependency link removed'
 printf 'node_modules\n' >> "$(git -C "$repo" rev-parse --git-common-dir)/info/exclude"
 linked=$(bash "$WORKTREES" create linked feature/linked main "$TEST_ROOT/worktrees")
 bash "$WORKTREES" link-deps "$linked" node_modules
@@ -165,5 +159,17 @@ equal "$(<"$repo/node_modules/keep.txt")" 'shared sentinel' 'remove preserved th
 reject bash "$WORKTREES" remove "$repo"
 reject bash "$WORKTREES" remove "$TEST_ROOT"
 printf 'PASS: remove deletes clean worktrees and only branches origin already holds\n'
+
+# A local stand-in prints argument boundaries; no GitHub requests are made.
+mkdir -p "$TEST_ROOT/bin"
+printf '%s\n' '#!/usr/bin/env bash' 'printf "<%s>\n" "$@"' > "$TEST_ROOT/bin/gh"
+chmod +x "$TEST_ROOT/bin/gh"
+body="$TEST_ROOT/body with spaces.md"
+printf 'body\n' > "$body"
+equal "$(PATH="$TEST_ROOT/bin:$PATH" bash "$UTILS" issue-create 'Title with spaces' "$body" --label bug --milestone 'Next release')" \
+  "<issue>"$'\n'"<create>"$'\n'"<--title>"$'\n'"<Title with spaces>"$'\n'"<--body-file>"$'\n'"<$body>"$'\n'"<--label>"$'\n'"<bug>"$'\n'"<--milestone>"$'\n'"<Next release>" 'issue argument boundaries'
+reject env PATH="$TEST_ROOT/bin:$PATH" bash "$UTILS" issue-create title "$TEST_ROOT/missing"
+reject env PATH="$TEST_ROOT/bin:$PATH" bash "$UTILS" issue-create '' "$body"
+printf 'PASS: issue-create arguments and refusals (stubbed)\n'
 
 printf 'All dev utility tests passed. Temporary fixtures: %s\n' "$TEST_ROOT"

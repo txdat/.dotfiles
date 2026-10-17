@@ -110,7 +110,7 @@ The extension gates recognized reads, not phase execution: it cannot distinguish
 | dev-fix-bug | Diagnose a bug from evidence, propose fix options and follow-ups, and route a requested fix: plan-backed delivery when asked, otherwise a direct edit. | skills/dev/fix-bug.md | high | sonnet |
 | dev-frame-goal | Clarify ambiguous requirements or split independently useful goals, before design or when a plan bundles goals. | skills/dev/frame-goal.md | medium | opus |
 | dev-review-code | Review implemented plan changes for TDD proof, independent test results, correctness, security, architecture, scope, hygiene, and final PR slicing before create-pr. | skills/dev/review-code.md | high | sonnet |
-| dev-review-feature | Review a planning-stage feature/fix/refactor plan for approach, system fit, test completeness, impact, scope, and independently mergeable PR slices before human approval. | skills/dev/review-feature.md | high | sonnet |
+| dev-review-feature | Review a planning-stage feature/fix/refactor plan for approach, system fit, test completeness, impact, and scope before human approval. | skills/dev/review-feature.md | high | sonnet |
 | dev-review-infra | Review an infra/devops runbook against live state with read-only commands: phase ordering, rollback safety, DNS/traffic cutover sequencing, IaC completeness, and CI/CD coverage. | skills/dev/review-infra.md | high | sonnet |
 | dev-review-system | Review an architecture design for measurable outcomes, viable alternatives, boundary contracts, failure modes, migration and rollback safety, and dependency-ordered decomposition. | skills/dev/review-system.md | high | opus |
 | dev-recap | Session lessons and workflow improvement proposals from a plan-based session. | skills/dev/recap.md | — | — |

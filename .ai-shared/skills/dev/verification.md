@@ -1,6 +1,6 @@
 # Development Verification
 
-Owns test-first proof, coverage measurement, and verification gaps for approved application plans. [approval.md](approval.md) handles contradictions or changed test intent.
+Owns test-first proof, coverage measurement, and verification gaps for approved application plans. A contradiction or changed test intent follows [plan.md — Changes](plan.md#changes).
 
 ## Test-first proof
 
@@ -11,7 +11,9 @@ Owns test-first proof, coverage measurement, and verification gaps for approved 
 
 The `test(red): <scope>` and `test: baseline <scope>` subjects are fixed: [gate-check](../../bin/gate-check) counts them to verify proof sequencing. Implementation commits follow the project's commit-message convention; use Conventional Commits when the project defines none.
 
-A targeted batch is sufficient when its output identifies each test and result. Inspect evidence on resume; commit titles alone prove nothing. If a fixture cannot be constructed or its expectation requires inventing semantics, stop the affected work and resolve it through [approval.md](approval.md); do not substitute an easier scenario or derive the expectation from production output.
+A targeted batch is sufficient when its output identifies each test and result. Inspect evidence on resume; commit titles alone prove nothing. If a fixture cannot be constructed or its expectation requires inventing semantics, stop the affected work under [plan.md — Changes](plan.md#changes); do not substitute an easier scenario or derive the expectation from production output.
+
+Test code may restructure setup or rename incidental identifiers only while the approved scenario's meaning, distinguishing conditions, and expected result hold; check every TC that references a changed shared fixture. When an obligation fails, recheck it against its source requirement and the raw evidence and seek a solution that meets it; relaxing or dropping it follows [plan.md — Changes](plan.md#changes). After a revision, keep unaffected commits and evidence, replace invalidated proof under this section, and rerun affected checks; never rewrite history to conceal earlier work.
 
 Before GREEN and during review, run `~/.dotfiles/.ai-shared/bin/dev-check proof <commit> [--test <in-source-test-path>] [--stub <throwing-stub-path>]`. The helper checks paths and obvious stub violations. Read the diff too: a recognized test path can still hide implementation, and a tool pass does not prove assertion quality.
 
@@ -35,6 +37,6 @@ Record revision, command, metric, scope, exclusions, and result. Missing or fail
 
 Run `~/.dotfiles/.ai-shared/bin/dev-check coverage <percent> [uncovered-critical]`. The reporting bands are ≥90% PASS, 80–89% WARN, and <80% WARN below the 80% target; neither WARN blocks. Uncovered critical behavior blocks. Separate project thresholds still apply.
 
-For a shortfall, record uncovered lines, their behavior, and the reason as a `CG-n` entry in `## Coverage Gaps`. An explained percentage alone does not block or require approval. Missing required behavior does: repair its existing TC, or use [approval.md](approval.md) when the obligation itself must change.
+For a shortfall, record uncovered lines, their behavior, and the reason as a `CG-n` entry in `## Coverage Gaps`. An explained percentage alone does not block or require a user decision. Missing required behavior does: repair its existing TC, or follow [plan.md — Changes](plan.md#changes) when the obligation itself must change.
 
 Assertions must distinguish the required result from a plausible incorrect one. Copied implementation expressions, snapshots, mock calls, and type/no-error checks can pass despite a defect; use them only when they prove the actual contract.

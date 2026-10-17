@@ -13,7 +13,7 @@ usage() {
     'create defaults to $HOME/work/ai-worktrees and prints the new path.' \
     'link-deps defaults to node_modules vendor .venv venv Pods.' \
     'Dependencies must be direct-child directory names. Existing local content is preserved.' \
-    'remove deletes a clean worktree, then its local branch only when origin/<branch> has the same tip;' \
+    'remove unlinks link-deps links, deletes a clean worktree, then its local branch only when origin/<branch> has the same tip;' \
     'it prints "deleted <branch>" or "kept <branch>", with the reason for keeping on stderr.' \
     'Requires the owning phase authorization; does not approve a plan or install dependencies.'
 }
@@ -76,6 +76,11 @@ case "$1" in
     [[ $# -eq 2 ]] || fail 'remove requires a registered worktree.'
     registered_worktree "$2"
     branch=$(git -C "$WORKTREE_PATH" symbolic-ref --quiet --short HEAD) || fail 'Worktree HEAD is detached; its branch cannot be identified.'
+    # Unlink the dependency links link-deps made, so an unignored link does not
+    # block removal; their main-root targets stay.
+    for entry in "$WORKTREE_PATH"/* "$WORKTREE_PATH"/.[!.]*; do
+      if [[ -L "$entry" && "$(readlink -- "$entry")" == "$MAIN_ROOT/$(basename -- "$entry")" ]]; then unlink -- "$entry"; fi
+    done
     [[ -z "$(git -C "$WORKTREE_PATH" status --porcelain --untracked-files=all)" ]] || fail "Worktree has uncommitted or untracked changes: $WORKTREE_PATH"
     git -C "$MAIN_ROOT" worktree remove "$WORKTREE_PATH" >&2
     # Delete the branch only when a fresh fetch shows origin at the same tip, so

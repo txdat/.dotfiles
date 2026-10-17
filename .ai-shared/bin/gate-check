@@ -6,19 +6,18 @@
 # the Pi extension sends tool_input.arguments), and UserPromptSubmit for a
 # user-typed /dev-<skill> command, which expands without any Skill tool call.
 #
-# Plan states and terminal handling: ../skills/dev/plan.md#lifecycle.
+# Plan states and the end of delivery: ../skills/dev/plan.md#lifecycle.
 # Required delivery phases: ../PROCESS.md#delivery.
 # Each skill's entry gate checks its prerequisite status.
 # review-feature requires planning and leaves that status unchanged (../skills/dev/review-feature.md).
 # fix-bug has no plan gate; it diagnoses and routes (../skills/dev/fix-bug.md).
 # Review-code additionally requires proof-commit sequencing for every slice.
-# archived and abandoned are terminal for every plan-consuming skill; create-pr
-# archives the live plan once its first PR exists, so publication never
-# re-enters (../skills/dev/plan.md#lifecycle).
+# A live plan is untracked. A plan tracked in the main root is a published
+# record, so no plan-consuming skill resumes it (../skills/dev/plan.md#lifecycle).
 #
-# Approval is a human decision recorded as `Status: approved`, set at the
-# spec-approval pause (see skills/dev/approval.md). The hook checks that the
-# status is there before execution. It cannot tell who wrote the field, and it
+# Approval is the user's action: only the user sets `Status: approved`
+# (../skills/dev/plan.md#lifecycle). The hook checks that the status is there
+# before execution. It cannot tell who wrote the field, and it
 # deliberately does not validate plan prose. Artifact IDs (../skills/dev/ids.md)
 # are checked for format and referential closure (see id_report) at
 # review-feature and review-code for the named plan, and at review-infra and
@@ -384,11 +383,13 @@ open_questions_line() {
 # (../skills/dev/design-feature.md#id-graph): AC <- TC (Proves:) <- ST
 # (satisfies) <- PR (Steps), and FX <- TC.
 #
-# Two output classes, and the caller must keep them apart. A line prefixed `!`
+# Three output classes, and the caller must keep them apart. A line prefixed `!`
 # means the IDs could not be read at all (old ordinals, ranges, leading zeros,
 # duplicates, a missing section, an unparseable Proves:) — a parser that cannot
 # read the graph must say so, not report a defect, because a false traceability
-# block teaches the reader to distrust the hook. Everything else is a real
+# block teaches the reader to distrust the hook. A line prefixed `@` is a plan
+# citing another artifact's ID, which plans never do
+# (../skills/dev/reference/related-plans.md#order). Everything else is a real
 # closure finding.
 id_report() {
   awk -v kind="$1" '
@@ -428,22 +429,19 @@ id_report() {
         owner["FX"] = "Test Fixtures";       owner["ST"] = "Implementation Steps"
         owner["PC"] = "Implementation Steps"; owner["PR"] = "PR Pattern"
         owner["DD"] = "Design Decisions";    owner["RK"] = "Open Risks"
-        owner["DV"] = "Deviations";          owner["DS"] = "Discovered Scope"
-        owner["CG"] = "Coverage Gaps";       owner["RV"] = "Review History"
-        owner["FD"] = "Review History"
+        owner["DS"] = "Discovered Scope";    owner["CG"] = "Coverage Gaps"
       } else if (kind == "runbook") {
         owner["SC"] = "Success Criteria";    owner["CL"] = "Evidence"
         owner["RS"] = "Resources";           owner["PH"] = "Phases"
-        owner["OQ"] = "Open Questions";      owner["RV"] = "Review History"
-        owner["FD"] = "Review History";      owner["EX"] = "Execution Record"
+        owner["OQ"] = "Open Questions";      owner["EX"] = "Execution Record"
       } else {
         owner["SC"] = "Goal and Constraints"; owner["OP"] = "Options"
         owner["CT"] = "Contracts";           owner["PH"] = "Migration"
-        owner["DC"] = "Decomposition";       owner["RV"] = "Review History"
-        owner["FD"] = "Review History"
+        owner["DC"] = "Decomposition"
       }
-      # History may mention retired IDs; it is exempt from reference checks.
-      history["Review History"] = 1; history["Deviations"] = 1; history["Execution Record"] = 1
+      # Only the runbook Execution Record may mention retired IDs, so only it
+      # is exempt from reference checks.
+      if (kind == "runbook") history["Execution Record"] = 1
     }
 
     /^[[:space:]]*(```|~~~)/ { fenced = !fenced; next }
@@ -477,7 +475,7 @@ id_report() {
       # unreadable input, not an unreferenced ID. Both operands must carry the
       # same prefix (or the second is a bare number), and a dash separator must
       # be unspaced — otherwise "TC-1 - 200 returned" or a title such as
-      # "TC-2 — TC-1 variant" would trip it. History may quote old ranges.
+      # "TC-2 — TC-1 variant" would trip it. An Execution Record may quote old ranges.
       if (!hist) {
         for (p in owner) {
           if (line ~ (p "-[0-9]+([[:space:]]+(through|thru|to)[[:space:]]+|[[:space:]]*\\.\\.[[:space:]]*|–|-)" p "-[0-9]+") ||
@@ -489,6 +487,13 @@ id_report() {
           }
         }
       }
+
+      # A plan cites only its own IDs; a fact an earlier plan establishes is
+      # restated as a precondition. Any path-like token before #ID counts
+      # (be.md#, be#, x.yaml#, `be.md`#); a URL anchor shaped like an ID is an
+      # accepted false positive.
+      if (kind == "plan" && match(line, /[A-Za-z0-9_\/.`-]#[A-Z][A-Z]-[0-9]+/))
+        printf "@line %d cites another artifact\047s ID (%s) — restate the fact as a PC-n precondition\n", NR, trim(line)
 
       # PR ownership is read from the Steps column only; a Summary that
       # mentions a step does not own it.
@@ -598,14 +603,17 @@ id_report() {
   ' "$2" 2>/dev/null
 }
 
-# Blocks on either output class, with different messages: an unreadable
+# Blocks on any output class, with different messages: an unreadable
 # artifact is a shape defect to fix, never a traceability verdict.
 require_ids() {
   local kind="$1" file="$2" report
   report=$(id_report "$kind" "$file")
   [[ -n "$report" ]] || return 0
   if [[ "$report" == *$'\n'!* || "$report" == !* ]]; then
-    block "$(printf 'gate-check cannot read the IDs in %s — fix them per skills/dev/ids.md and re-run. This is NOT a traceability verdict:\n%s' "$file" "$(sed 's/^!//' <<<"$report")")"
+    block "$(printf 'gate-check cannot read the IDs in %s — fix them per skills/dev/ids.md and re-run. This is NOT a traceability verdict:\n%s' "$file" "$(sed 's/^[!@]//' <<<"$report")")"
+  fi
+  if [[ "$report" == *$'\n'@* || "$report" == @* ]]; then
+    block "$(printf '%s cites another artifact'"'"'s IDs. A plan cites only its own IDs (skills/dev/reference/related-plans.md#order):\n%s' "$file" "$(sed -n 's/^@//p' <<<"$report")")"
   fi
   if [[ "$kind" == plan ]]; then
     block "$(printf "The ID graph in %s is not closed (skills/dev/design-feature.md#id-graph):\n%s\n\nClosure is shape, not correctness: fixing these does not mean an edge is right." "$file" "$report")"
@@ -720,20 +728,18 @@ case "$SKILL_SLUG" in
 esac
 # Keep PLAN bound to the root source; only Git checks move into the worktree.
 if [[ -n "$PLAN" ]]; then
+  # Checked before status and worktree validation: a published record ends
+  # delivery whatever it says (plan.md#lifecycle).
+  if git -C "$REPO_ROOT" ls-files --error-unmatch -- "$PLAN" >/dev/null 2>&1 ||
+     git -C "$REPO_ROOT" cat-file -e "HEAD:$PLAN" 2>/dev/null; then
+    block "Plan $PLAN is tracked by Git — a published record; the workflow does not resume it. Restore any local edits to it with git. For follow-up work, start a new plan with design-feature or ship-feature, without the old plan path."
+  fi
   STATUS=$(plan_status "$PLAN")
-  # Terminal statuses end delivery for every plan-consuming skill, checked
-  # before worktree validation: an archived plan whose cleanup failed may keep
-  # a worktree or name a removed one, and publication must never resume
-  # (plan.md#lifecycle).
-  case "$STATUS" in
-    archived|abandoned)
-      block "Plan status is '$STATUS' — terminal (already shipped or abandoned); the workflow does not resume. For follow-up work, start a new plan with design-feature or ship-feature, without the old plan path." ;;
-  esac
   WT=$(plan_worktree "$PLAN")
   case "${WT,,}" in ""|none|n/a|"<"*">") WT="" ;; esac
   if [[ -n "$WT" ]]; then
     if ! is_registered_worktree "$WT"; then
-      block "Plan records 'Worktree: $WT', but that path is not a registered non-main Git worktree. Preserve the plan and resolve registration per skills/dev/plan.md#worktree-operations before retrying."
+      block "Plan records 'Worktree: $WT', but that path is not a registered non-main Git worktree. If publication cleanup removed it, rerun dev-publish.sh cleanup $PLAN instead. Otherwise preserve the plan and resolve registration per skills/dev/plan.md#worktree-operations before retrying."
     elif [[ -d "$WT" ]]; then
       GIT_TREE="$WT"
       ACTIVE_WORKTREE="$WT"
@@ -778,7 +784,7 @@ case "$SKILL_SLUG" in
       # design-feature owns issue creation, so the omission surfaces here rather
       # than at execution — after review and approval have already been spent.
       if ! has_issue "$PLAN"; then
-        block "Plan has no linked issue — the 'Issue:' field in the plan header is empty. Link an existing issue (a parent issue may back several plans) or create one ('gh issue create'); record it as 'Issue: #<n>', then re-run."
+        block "Plan has no linked issue — the 'Issue:' field in the plan header is empty. Link an existing issue (a parent issue may back several plans) or create one (dev-utils.sh issue-create); record it as 'Issue: #<n>', then re-run."
       fi
       require_ids plan "$PLAN"
       # Review verifies the plan against a fixed commit (design-feature 'Stable
@@ -798,9 +804,9 @@ case "$SKILL_SLUG" in
       # base; later rows are what create-pr targets each PR at.
       if [[ -n "$(plan_first_parent "$PLAN")" ]]; then
         PARENTLESS=$(parentless_row_count "$PLAN")
-        [[ "$PARENTLESS" -eq 0 ]] || block "Plan PR Pattern leaves $PARENTLESS PR row(s) without a Parent. Every PR-n row records its own (design-feature 'PR Pattern'): normally the preceding branch, or the Base branch for PR-1."
+        [[ "$PARENTLESS" -eq 0 ]] || block "Plan PR Pattern leaves $PARENTLESS PR row(s) without a Parent. Every PR-n row records its own (design-feature 'PR Pattern'): normally the preceding branch, and for PR-1 the Base branch or the earlier plan's last slice branch (skills/dev/reference/related-plans.md#order)."
       else
-        block "Plan PR Pattern has no Parent for PR-1. Give every slice an explicit parent (design-feature 'PR Pattern') — normally the Base branch, or an unmerged PR's branch when this plan builds on one."
+        block "Plan PR Pattern has no Parent for PR-1. Give every slice an explicit parent (design-feature 'PR Pattern') — normally the Base branch, or the earlier plan's last slice branch (skills/dev/reference/related-plans.md#order)."
       fi
     fi
     ;;
@@ -811,14 +817,14 @@ case "$SKILL_SLUG" in
     if [[ -n "$PLAN" ]]; then
       case "$STATUS" in
         approved) ;;
-        planning) block "Plan status is '$STATUS' — not approved. Run review-feature, then have the user approve the spec (see approval.md)." ;;
+        planning) block "Plan status is '$STATUS' — not approved. Run review-feature; only the user sets 'Status: approved'." ;;
         implemented)                      block "Plan is already implemented. Run review-code next." ;;
         reviewed)                         block "Plan status is '$STATUS' — already past execution. Run review-code or create-pr." ;;
         *)                                block "Plan status is '$STATUS' — expected 'approved'." ;;
       esac
       # Every plan (feature/fix/refactor) must be issue-backed before implementation.
       if ! has_issue "$PLAN"; then
-        block "Plan has no linked issue — the 'Issue:' field in the plan header is empty. Link an existing issue (a parent issue may back several plans) or create one ('gh issue create'); record it as 'Issue: #<n>', then re-run."
+        block "Plan has no linked issue — the 'Issue:' field in the plan header is empty. Link an existing issue (a parent issue may back several plans) or create one (dev-utils.sh issue-create); record it as 'Issue: #<n>', then re-run."
       fi
     fi
     ;;
@@ -839,11 +845,11 @@ case "$SKILL_SLUG" in
       # A header counter is not evidence of readiness or authorization.
       # Catches plans that entered implemented without the normal execution gate.
       if ! has_issue "$PLAN"; then
-        block "Plan has no linked issue — the 'Issue:' field in the plan header is empty. Link an existing issue or create one ('gh issue create'), record it as 'Issue: #<n>', then re-run."
+        block "Plan has no linked issue — the 'Issue:' field in the plan header is empty. Link an existing issue or create one (dev-utils.sh issue-create), record it as 'Issue: #<n>', then re-run."
       fi
-      # Re-checked here, not just at review-feature: the plan is edited between
-      # the two (Deviations, Coverage Gaps, a TC added mid-flight), so a TC that
-      # gained no owning step during execution would otherwise never be caught.
+      # Re-checked here, not just at review-feature: execution edits the plan
+      # between the two, so a TC that lost its owning step would otherwise
+      # never be caught.
       require_ids plan "$PLAN"
     fi
     BASE=$(plan_base "$PLAN")
@@ -888,12 +894,12 @@ case "$SKILL_SLUG" in
         block "Plan PR Pattern is missing or still provisional. Run review-code to finalize it before create-pr."
       fi
       if ! has_issue "$PLAN"; then
-        block "Plan has no linked issue — the 'Issue:' field must hold '#<n>' before a PR can reference it. Link an existing issue or create one ('gh issue create'), record it, then re-run."
+        block "Plan has no linked issue — the 'Issue:' field must hold '#<n>' before a PR can reference it. Link an existing issue or create one (dev-utils.sh issue-create), record it, then re-run."
       fi
     fi
     ;;
 
-  # ── ship-feature: terminal statuses are rejected at plan resolution ──
+  # ── ship-feature: published records are rejected at plan resolution ──
   ship-feature)
     ;;
 
