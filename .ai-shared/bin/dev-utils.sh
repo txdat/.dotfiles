@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Read-only mechanics shared by dev phase skills and gate-check.
+# Mechanics shared by dev phase skills and gate-check. Every command is
+# read-only except issue-create, the only one that creates an external record;
+# run it only after the owning phase's authorization.
 set -euo pipefail
 
 fail() { printf '%s\n' "$*" >&2; exit 1; }
@@ -8,7 +10,7 @@ usage() {
     'Usage: dev-utils.sh main-root' \
     '       dev-utils.sh diagnostic-base' \
     '       dev-utils.sh search-production <literal-symbol> [directory]' \
-    '       dev-utils.sh issue-claimants <positive-issue-number>' \
+    '       dev-utils.sh issue-create <title> <body-file> [gh issue create options ...]' \
     'Paths/refs are printed on stdout; errors go to stderr.' \
     'search-production preserves rg status: 0 matches, 1 none, 2 error.'
 }
@@ -37,30 +39,6 @@ diagnostic_base() {
   fail 'Cannot resolve a diagnostic base; provide an existing branch or commit.'
 }
 
-issue_claimants() {
-  local root plan
-  [[ "$1" =~ ^[1-9][0-9]*$ ]] || fail 'Issue must be a positive integer without #.'
-  root=$(main_root)
-  [[ -d "$root/docs/plans" ]] || return 0
-  for plan in "$root"/docs/plans/*.md; do
-    [[ -f "$plan" ]] || continue
-    [[ ! -L "$plan" ]] || fail "Plan must not be a symlink: $plan"
-    awk -v issue="#$1" '
-      /^Status:/ {
-        n = split($0, fields, /\|/)
-        for (i = 1; i <= n; i++) {
-          field = fields[i]
-          gsub(/^[[:space:]]+|[[:space:]]+$/, "", field)
-          if (field ~ /^Status:/) { sub(/^Status:[[:space:]]*/, "", field); status = field }
-          if (field ~ /^Issue:/) { sub(/^Issue:[[:space:]]*/, "", field); reference = field }
-        }
-        if (reference == issue && status != "abandoned" && status != "archived") print FILENAME
-        exit
-      }
-    ' "$plan"
-  done
-}
-
 case "${1-}" in
   main-root)
     [[ $# -eq 1 ]] || fail 'main-root takes no arguments.'
@@ -73,9 +51,10 @@ case "${1-}" in
     exec rg -n -F -g '!**/{test,tests,spec,specs,__tests__}/**' \
       -g '!**/*_test.*' -g '!**/*_spec.*' -g '!**/*.test.*' -g '!**/*.spec.*' \
       -- "$2" "${3-.}" ;;
-  issue-claimants)
-    [[ $# -eq 2 ]] || fail 'issue-claimants requires one issue number.'
-    issue_claimants "$2" ;;
+  issue-create)
+    [[ $# -ge 3 && -n "$2" && -f "$3" && -r "$3" ]] || fail 'issue-create requires a nonempty title and a readable body file.'
+    title="$2"; body="$3"; shift 3
+    exec gh issue create --title "$title" --body-file "$body" "$@" ;;
   --help|-h) usage ;;
   *) usage >&2; exit 2 ;;
 esac

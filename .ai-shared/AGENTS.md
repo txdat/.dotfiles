@@ -24,7 +24,7 @@ Never wait on background work. While a job is pending, continue independent auth
 
 Never wait for CI after a push, including PR creation or update: finish the remaining authorized work, report the results, and end the turn; cite already-known CI results or mark CI unverified. Monitoring, retrying, or repairing CI requires an explicit user request in the current task, including one made before a handoff; a push, PR, or CI notification is not such a request.
 
-After three failed fix-and-verification attempts at the same failure, stop fixing and report what you tried, what happened, and the evidence or decision you need; stop sooner when attempts yield no new evidence. The count persists across hypotheses, delegation, and sessions until verification resolves the failure or the user grants three more attempts. Record `Failed fixes: <n>/3 — <failure>` where the work is tracked — as an `RV-n` entry ([ids.md](skills/dev/ids.md)) in the active plan's `## Review History`, otherwise a [handoff](skills/handoff.md) — keeping prior history. Read-only diagnosis and other authorized work may continue.
+After three failed fix-and-verification attempts at the same failure, stop fixing and report what you tried, what happened, and the evidence or decision you need; stop sooner when attempts yield no new evidence. The count persists across hypotheses, delegation, and sessions until verification resolves the failure or the user grants three more attempts. Record `Failed fixes: <n>/3 — <failure>` in a [handoff](skills/handoff.md), keeping prior counts. Read-only diagnosis and other authorized work may continue.
 
 ## Load on demand
 

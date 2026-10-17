@@ -6,4 +6,4 @@ Check the recommendation against the Goal and constraints, viable simpler altern
 
 Trace each changed `CT-n` through [design-system.md](design-system.md)'s `DC-n` decomposition: owning future plan, source contract/invariant, observable obligation, and verification route. Check that producer/consumer responsibilities and cross-plan dependencies agree. Missing ownership or unverifiable obligations block readiness; application plans and their AC/TC IDs need not exist before architecture approval.
 
-Report located findings with consequences and `READY` or `NEEDS CHANGES`. Optional stylistic preferences do not block. During delivery, the main agent records review evidence as `RV-n`/`FD-n` entries under [ids.md](ids.md) and hands a READY document to [approval.md](approval.md); review does not approve architecture or application behavior.
+Report located findings with consequences and `READY` or `NEEDS CHANGES`. Optional stylistic preferences do not block. Review does not approve; the user approves a READY document by setting `Status: approved`.

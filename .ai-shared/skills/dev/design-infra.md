@@ -31,4 +31,4 @@ Mark irreversible actions and their containment/recovery requirements; do not pr
 
 For the affected paths, check source/target coexistence and duplicate processing, pinned image versions and companion processes, dependent resources, DNS/traffic mappings and propagation, IaC resource/file changes and plan review, and CI/CD workload placement. Include the relevant evidence in the phase that uses it. A destruction phase must account for dependencies, deletion protection, backups, and explicit human confirmation.
 
-Record unresolved questions as `OQ-n` entries in `## Open Questions`, each citing the `PH-n` it blocks. Finish when the proposed operation is concrete and reviewable; hand off to [review-infra.md](review-infra.md). The main agent adds review/execution history when those events occur, preserving the evidence.
+Record unresolved questions as `OQ-n` entries in `## Open Questions`, each citing the `PH-n` it blocks. Finish when the proposed operation is concrete and reviewable; hand off to [review-infra.md](review-infra.md). The main agent adds the Execution Record when execution occurs.

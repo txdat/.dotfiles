@@ -10,11 +10,11 @@ Within the workflow, the phases below govern application code: executable logic 
 
 ## Delivery
 
-The required sequence is **design-feature → review-feature → spec approval → execute-feature → review-code → create-pr**. Exploration and goal framing are optional when the request is already clear; framing is required when design or review finds a bundled goal.
+The required sequence is **design-feature → review-feature → user approval (`Status: approved`) → execute-feature → review-code → create-pr**. Exploration and goal framing are optional when the request is already clear; framing is required when design or review finds a bundled goal.
 
 A phase advances when its owning skill's completion conditions hold. Mechanical gates check artifact shape and Git history; they do not establish correctness or user consent. Correct a failed prerequisite before dependent work. Continue independent authorized work.
 
-Delegated design tasks follow [CODING.md — Ownership](CODING.md#ownership) and the selected design skill. The subagent returns draft content and unresolved decisions; the main agent writes the artifact and handles approval. Drafting subagents do not implement, mutate infrastructure, or delegate further.
+Delegated design tasks follow [CODING.md — Ownership](CODING.md#ownership) and the selected design skill. The subagent returns draft content and unresolved decisions; the main agent writes the artifact and takes decisions to the user. Drafting subagents do not implement, mutate infrastructure, or delegate further.
 
 ## Repository conventions
 

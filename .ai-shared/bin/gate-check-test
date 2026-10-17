@@ -117,6 +117,12 @@ make_registered_plan() {
   printf '%s\n' "$worktree"
 }
 
+# Commits a plan in the main root, as a merged publication leaves it.
+commit_plan() {
+  git -C "$1" add -f "docs/plans/$2"
+  git -C "$1" commit -qm "docs(plan): archive ${2%.md}"
+}
+
 # The infra lane is gone. A stale plan still carrying Type: infra must not
 # inherit the old proof exemption — it falls through to the RED-proof gate.
 repo=$(new_repo)
@@ -225,22 +231,21 @@ make_registered_plan "$repo" feature approved '#12' '## PR Pattern (provisional)
 output=$(run_gate "$repo" dev-execute-feature 'docs/plans/gate.md')
 assert_pass "$output" 'approved plan with a recorded worktree resumes execution'
 
-# 'abandoned' is terminal: it is not an entry status for any skill. With
-# ambient resolution gone this is the whole of its mechanical meaning — the
-# pin it used to release no longer exists.
+# A plan tracked in the main root is a published record, whatever its status.
 repo=$(new_repo)
-write_plan "$repo/docs/plans/gate.md" abandoned feature '#12' '' '## PR Pattern (provisional)'
+write_plan "$repo/docs/plans/gate.md" approved feature '#12' '' '## PR Pattern (provisional)'
+commit_plan "$repo" gate.md
 output=$(run_gate "$repo" dev-execute-feature 'docs/plans/gate.md')
-assert_block "$output" 'abandoned' 'abandoned plan cannot be executed'
+assert_block "$output" 'published record' 'a committed plan cannot be executed'
 
-# A terminal plan beside an active one is inert: naming the active plan works
+# A published record beside a live plan is inert: naming the live plan works
 # regardless of what else sits in docs/plans/.
 repo=$(new_repo)
-write_plan "$repo/docs/plans/dropped.md" abandoned feature '#12' '' '## PR Pattern (provisional)'
-write_plan "$repo/docs/plans/shipped.md" archived feature '#12' '' '## PR Pattern (provisional)'
+write_plan "$repo/docs/plans/shipped.md" reviewed feature '#12' '' '## PR Pattern'
+commit_plan "$repo" shipped.md
 write_plan "$repo/docs/plans/gate.md" approved feature '#12' '' '## PR Pattern (provisional)'
 output=$(run_gate "$repo" dev-execute-feature 'docs/plans/gate.md')
-assert_pass "$output" 'terminal plans beside an explicitly named active plan are inert'
+assert_pass "$output" 'published records beside an explicitly named live plan are inert'
 
 # ── explicit plan resolution ──
 # Governance binds to a named artifact: a dormant plan must never capture
@@ -286,9 +291,10 @@ output=$(run_gate "$repo" dev-frame-goal 'add rate limiting to the upload endpoi
 assert_pass "$output" 'frame-goal is ungated beside a dormant plan'
 
 repo=$(new_repo)
-write_plan "$repo/docs/plans/gate.md" archived feature '#12' '' '## PR Pattern (provisional)'
+write_plan "$repo/docs/plans/gate.md" approved feature '#12' '' '## PR Pattern (provisional)'
+commit_plan "$repo" gate.md
 output=$(run_gate "$repo" dev-ship-feature 'docs/plans/gate.md from execute')
-assert_block "$output" 'already shipped' 'ship-feature resume names its plan and still sees terminal status'
+assert_block "$output" 'published record' 'ship-feature resume names its plan and still sees a published record'
 
 # Diagnosis never adopts an application plan; implementation names its own.
 repo=$(new_repo)
@@ -407,7 +413,7 @@ write_plan "$repo/docs/plans/gate.md" planning feature '#12' '' '## PR Pattern (
 AC-1 — outcome
   Source: goal
 AC-2 — second outcome
-  Source: approval.md
+  Source: issue
 ## Test Cases
 TC-1 — scenario
   Proves: AC-1
@@ -796,32 +802,38 @@ output=$(
 )
 assert_block "$output" 'main working-tree root' 'failed root discovery cannot adopt a linked-worktree plan'
 
-# 'archived' is terminal: once the first PR exists the workflow never resumes,
-# even when cleanup failed and the live plan and worktree remain.
+# A published record never re-enters delivery, even with a registered worktree.
 repo=$(new_repo)
-make_registered_plan "$repo" feature archived '#12' '## PR Pattern' >/dev/null
+make_registered_plan "$repo" feature reviewed '#12' '## PR Pattern' >/dev/null
+commit_plan "$repo" gate.md
 output=$(run_gate "$repo" dev-create-pr 'docs/plans/gate.md')
-assert_block "$output" 'terminal' 'archived plan cannot re-enter create-pr'
+assert_block "$output" 'published record' 'a committed plan cannot re-enter create-pr'
 output=$(run_gate "$repo" dev-ship-feature 'docs/plans/gate.md')
-assert_block "$output" 'terminal' 'ship-feature stops at an archived plan'
+assert_block "$output" 'published record' 'ship-feature stops at a committed plan'
+
+# Local edits to a committed plan do not make it live again.
+printf '\nedited\n' >> "$repo/docs/plans/gate.md"
+output=$(run_gate "$repo" dev-create-pr 'docs/plans/gate.md')
+assert_block "$output" 'published record' 'an edited committed plan is still a published record'
+
+# Removing a committed plan from the index does not make it live again.
+git -C "$repo" rm -q --cached docs/plans/gate.md
+output=$(run_gate "$repo" dev-create-pr 'docs/plans/gate.md')
+assert_block "$output" 'published record' 'a plan in HEAD but not the index is still a published record'
 
 repo=$(new_repo)
-write_plan "$repo/docs/plans/gate.md" archived feature '#12' '' '## PR Pattern'
+write_plan "$repo/docs/plans/gate.md" reviewed feature '#12' "$repo-removed-worktree" '## PR Pattern'
+commit_plan "$repo" gate.md
 output=$(run_gate "$repo" dev-create-pr 'docs/plans/gate.md')
-assert_block "$output" 'terminal' 'terminal status is reported before the missing worktree'
+assert_block "$output" 'published record' 'a published record is reported before a removed worktree'
+output=$(run_gate "$repo" dev-ship-feature 'redo the work in docs/plans/gate.md')
+assert_block "$output" 'without the old plan path' 'a mentioned published record tells the caller how to start new work'
 
 # Cleanup removed the worktree, then failed before deleting the live plan.
 repo=$(new_repo)
-write_plan "$repo/docs/plans/gate.md" archived feature '#12' "$repo-removed-worktree" '## PR Pattern'
+write_plan "$repo/docs/plans/gate.md" reviewed feature '#12' "$repo-removed-worktree" '## PR Pattern'
 output=$(run_gate "$repo" dev-create-pr 'docs/plans/gate.md')
-assert_block "$output" 'terminal' 'terminal status is reported before a removed worktree'
-
-repo=$(new_repo)
-write_plan "$repo/docs/plans/gate.md" abandoned feature '#12' '' '## PR Pattern (provisional)'
-output=$(run_gate "$repo" dev-ship-feature 'docs/plans/gate.md')
-assert_block "$output" 'abandoned' 'ship-feature stops at an abandoned plan'
-output=$(run_gate "$repo" dev-ship-feature 'redo the work in docs/plans/gate.md')
-assert_block "$output" 'without the old plan path' 'a mentioned terminal plan tells the caller how to start new work'
+assert_block "$output" 'rerun dev-publish.sh cleanup docs/plans/gate.md' 'a live plan whose worktree cleanup removed points to cleanup'
 
 # ── Hook input shapes ──
 # Claude Code's Skill tool sends the argument string as tool_input.args; the Pi
@@ -884,11 +896,86 @@ AC-1 — the response carries UTC-7 offsets and an SHA-256 digest
 TC-1 — scenario
   Proves: AC-1
 ## Implementation Steps
-ST-1 — action — satisfies TC-1
-## Related Plans
-Consumer: docs/plans/fe.md#AC-9 depends on AC-1')
+ST-1 — action — satisfies TC-1')
 output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
-assert_pass "$output" 'word-embedded and path-qualified tokens are not IDs here'
+assert_pass "$output" 'word-embedded tokens are not IDs'
+
+repo=$(id_plan '## Acceptance Criteria
+AC-1 — the client renders the order list
+## Test Cases
+TC-1 — scenario
+  Proves: AC-1
+## Implementation Steps
+ST-1 — action — satisfies TC-1
+  PC-1 — the list endpoint follows docs/plans/be.md#AC-2 — Check: rg list_orders')
+output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
+assert_block "$output" "cites another artifact's IDs" 'a plan citing another plan'"'"'s ID is blocked'
+assert_block "$output" 'docs/plans/be.md#AC-2' 'the cross-reference block names the offending line'
+
+repo=$(id_plan '## Acceptance Criteria
+AC-1 — outcome
+## Test Cases
+TC-1 — scenario
+  Proves: AC-1
+## Implementation Steps
+ST-1 — action — satisfies TC-1
+## Notes
+Replaced docs/plans/be.md#AC-2 with PC-1')
+output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
+assert_block "$output" "cites another artifact's IDs" 'no plan section is exempt from the cross-reference check'
+
+repo=$(id_plan '## Acceptance Criteria
+AC-1 — outcome
+## Test Cases
+TC-1 — scenario
+  Proves: AC-1
+## Implementation Steps
+ST-1 — action — satisfies TC-1
+## Execution Record
+AC-9 retired')
+output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
+assert_block "$output" 'cites AC-9, which is not declared' 'a plan Execution Record is not exempt from the reference check'
+
+cross_plan() {
+  id_plan "$1"'
+## Acceptance Criteria
+AC-1 — outcome
+## Test Cases
+TC-1 — scenario
+  Proves: AC-1
+## Implementation Steps
+ST-1 — action — satisfies TC-1'"$2"
+}
+
+repo=$(cross_plan 'After: docs/plans/be.md' '')
+output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
+assert_pass "$output" 'an After: line names the earlier plan by path only'
+
+repo=$(cross_plan '' '
+## Design Decisions
+DD-1 — reuse the order shape from docs/plans/be#AC-2')
+output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
+assert_block "$output" "cites another artifact's IDs" 'an extensionless cross-reference in Design Decisions is blocked'
+
+repo=$(cross_plan '' '
+## Context
+The contract lives in api/orders.yaml#CT-1')
+output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
+assert_block "$output" "cites another artifact's IDs" 'a non-.md path-qualified ID is blocked'
+
+repo=$(id_plan '## Acceptance Criteria
+AC-1 — outcome
+## Test Cases
+TC-1 — scenario
+  Proves: AC-1
+## Implementation Steps
+ST-1 — action — satisfies TC-1
+## Context
+```
+docs/plans/be.md#AC-2
+```')
+output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
+assert_pass "$output" 'fenced text is not a cross-reference'
 
 repo=$(id_plan '## Acceptance Criteria
 AC-1 — outcome
@@ -904,12 +991,9 @@ ST-1 — action — satisfies TC-1
 ## Design Decisions
 DD-1 — reuse the ledger check
 ## Open Risks
-RK-1 — timing under load — TC-1
-## Review History
-RV-1 — review-feature: NEEDS CHANGES
-  FD-1 — TC-4 duplicated TC-1; removed (AC-3 retired)')
+RK-1 — timing under load — TC-1')
 output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
-assert_pass "$output" 'every plan prefix declares cleanly; history may cite retired IDs'
+assert_pass "$output" 'every plan prefix declares cleanly'
 
 bad_graph 'a TC citing an undeclared fixture is reported' '## Acceptance Criteria
 AC-1 — outcome
@@ -979,6 +1063,17 @@ assert_block "$output" 'Named document not found' 'a mistyped runbook path block
 write_runbook "$repo" "${valid_runbook/PH-1 gate passed/PH-3 gate passed}"
 output=$(run_gate "$repo" dev-review-infra 'docs/runbooks/move.md')
 assert_block "$output" 'cites PH-3, which is not declared: no line in ## Phases' 'a runbook reference to an undeclared phase blocks'
+
+write_runbook "$repo" "${valid_runbook/'## Resources'/'Contract: docs/architecture/events.md#CT-1
+## Resources'}"
+output=$(run_gate "$repo" dev-review-infra 'docs/runbooks/move.md')
+assert_pass "$output" 'a runbook may cite another artifact path-qualified'
+
+write_runbook "$repo" "$valid_runbook"'
+## Execution Record
+EX-1 — PH-1 ran; PH-3 retired'
+output=$(run_gate "$repo" dev-review-infra 'docs/runbooks/move.md')
+assert_pass "$output" 'an Execution Record may mention a retired phase'
 
 write_runbook "$repo" "${valid_runbook/'### PH-2'/'### Phase 2'}"
 output=$(run_gate "$repo" dev-review-infra 'docs/runbooks/move.md')
@@ -1149,5 +1244,386 @@ mkdir -p "$repo/docs/architecture"
 printf '%s\n' '# Events' 'Status: draft' '' '## Contracts' 'CT-1 — order event' '## Decomposition' 'DC-1 — orders plan — CT-9 — emits — contract test' > "$repo/docs/architecture/events.md"
 output=$(run_gate "$repo" dev-review-system 'docs/architecture/events.md')
 assert_block "$output" 'cites IDs it does not declare' 'a non-plan artifact is not told about a plan graph'
+
+# ── Chain review: review-feature gates every plan it names ──
+chain_repo() {
+  local repo
+  repo=$(new_repo)
+  write_plan "$repo/docs/plans/be.md" planning feature '#12' '' '## PR Pattern (provisional)'
+  write_plan "$repo/docs/plans/fe.md" planning feature '#12' '' '## PR Pattern (provisional)'
+  printf '%s\n' "$repo"
+}
+
+repo=$(chain_repo)
+output=$(run_gate "$repo" dev-review-feature 'docs/plans/be.md docs/plans/fe.md')
+assert_pass "$output" 'a chain of planning plans enters review-feature'
+output=$(run_gate "$repo" dev-review-feature $'review docs/plans/be.md\nthen docs/plans/fe.md docs/plans/be.md')
+assert_pass "$output" 'chain paths are collected across lines and deduplicated'
+
+repo=$(chain_repo)
+write_plan "$repo/docs/plans/fe.md" approved feature '#12' '' '## PR Pattern (provisional)'
+output=$(run_gate "$repo" dev-review-feature 'docs/plans/be.md docs/plans/fe.md')
+assert_block "$output" 'docs/plans/fe.md: Plan is already approved. Name only' 'a later approved plan in the chain blocks and is named'
+
+repo=$(chain_repo)
+write_plan "$repo/docs/plans/fe.md" planning feature '' '' '## PR Pattern (provisional)'
+output=$(run_gate "$repo" dev-review-feature 'docs/plans/be.md docs/plans/fe.md')
+assert_block "$output" 'docs/plans/fe.md: Plan has no linked issue' 'every chain plan needs its issue, not just the first'
+
+repo=$(chain_repo)
+write_plan "$repo/docs/plans/fe.md" planning feature '#12' '' '## PR Pattern (provisional)' "$(valid_graph)" main 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef'
+output=$(run_gate "$repo" dev-review-feature 'docs/plans/be.md docs/plans/fe.md')
+assert_block "$output" 'docs/plans/fe.md: Plan Snapshot' 'every chain plan needs a valid Snapshot'
+
+repo=$(chain_repo)
+output=$(run_gate "$repo" dev-review-feature 'docs/plans/be.md docs/plans/missing.md')
+assert_block "$output" 'Named plan not found: docs/plans/missing.md' 'a missing later path blocks instead of dropping out of review'
+output=$(run_gate "$repo" dev-review-feature 'docs/plans/be.md /elsewhere/docs/plans/fe.md')
+assert_block "$output" 'Named plan not found: /elsewhere/docs/plans/fe.md' 'a later path outside this repository is rejected'
+output=$(jq -cn '{hook_event_name:"UserPromptSubmit",prompt:"/dev-review-feature docs/plans/be.md docs/plans/missing.md"}' | (cd "$repo" && "$GATE"))
+assert_block "$output" 'Named plan not found: docs/plans/missing.md' 'a typed chain review gates every path in the prompt'
+
+# The later plan builds on the earlier plan's last slice branch, which does not
+# exist until that plan executes; its Snapshot still lies on Base.
+repo=$(chain_repo)
+sed -i 's/^Status:.*/&\nAfter: docs\/plans\/be.md/; s/| PR-1 | feature\/gate-test | main |/| PR-1 | feature\/fe | feature\/be-last |/' "$repo/docs/plans/fe.md"
+output=$(run_gate "$repo" dev-review-feature 'docs/plans/be.md docs/plans/fe.md')
+assert_pass "$output" 'a later plan parented on an unbuilt earlier branch enters review'
+
+# A pasted box-drawing table: every path cell is its own token.
+repo=$(chain_repo)
+prompt=$'/dev-review-feature \n\n┌───┬──────────────────┬───────┐\n│ 0 │ docs/plans/be.md │ Proto │\n├───┼──────────────────┼───────┤\n│ 1 │ docs/plans/fe.md │ Flag  │\n└───┴──────────────────┴───────┘\n\nThe chain is strictly linear: 0 → 1.'
+output=$(jq -cn --arg p "$prompt" '{hook_event_name:"UserPromptSubmit",prompt:$p}' | (cd "$repo" && "$GATE"))
+assert_pass "$output" 'a pasted plan table enters review-feature'
+write_plan "$repo/docs/plans/fe.md" planning feature '' '' '## PR Pattern (provisional)'
+output=$(jq -cn --arg p "$prompt" '{hook_event_name:"UserPromptSubmit",prompt:$p}' | (cd "$repo" && "$GATE"))
+assert_block "$output" 'docs/plans/fe.md: Plan has no linked issue' 'a pasted plan table gates its later rows'
+
+repo=$(chain_repo)
+output=$(run_gate "$repo" dev-review-feature 'review `docs/plans/be.md`, then (docs/plans/fe.md)')
+assert_pass "$output" 'markdown-wrapped chain paths resolve'
+output=$(run_gate "$repo" dev-review-feature 'review `docs/plans/be.md` and `/elsewhere/docs/plans/fe.md`')
+assert_block "$output" 'Named plan not found: /elsewhere/docs/plans/fe.md' 'unwrapping a path does not admit another repository'
+
+# Claude Code @-mentions are the usual way a message names a plan.
+repo=$(chain_repo)
+output=$(run_gate "$repo" dev-review-feature '@docs/plans/be.md @docs/plans/fe.md')
+assert_pass "$output" '@-mentioned chain plans resolve'
+output=$(jq -cn '{hook_event_name:"UserPromptSubmit",prompt:"/dev-review-feature review @docs/plans/be.md, then @docs/plans/fe.md."}' | (cd "$repo" && "$GATE"))
+assert_pass "$output" 'a typed chain review resolves @-mentions inside prose'
+output=$(run_gate "$repo" dev-review-feature '@docs/plans/be.md @docs/plans/../fe.md')
+assert_block "$output" 'Named plan not found: docs/plans/../fe.md' 'an @-mention does not admit traversal'
+write_plan "$repo/docs/plans/be.md" approved feature '#12' '' '## PR Pattern (provisional)'
+output=$(run_gate "$repo" dev-execute-feature '@docs/plans/be.md')
+assert_pass "$output" 'a single-plan skill resolves an @-mention'
+
+# Markdown emphasis, compact tables, and list separators wrap paths too.
+repo=$(chain_repo)
+output=$(run_gate "$repo" dev-review-feature '**docs/plans/be.md**, |docs/plans/fe.md|')
+assert_pass "$output" 'emphasis and compact table borders are not part of a path'
+output=$(run_gate "$repo" dev-review-feature 'docs/plans/be.md,docs/plans/fe.md')
+assert_pass "$output" 'comma-joined paths split'
+
+# A later plan cannot be reviewed alone while its predecessor is in planning.
+repo=$(chain_repo)
+sed -i 's/^Status:.*/&\nAfter: docs\/plans\/be.md/' "$repo/docs/plans/fe.md"
+output=$(run_gate "$repo" dev-review-feature '@docs/plans/fe.md')
+assert_block "$output" 'which is still in planning. Name it, and each' 'a planning predecessor must join the review'
+output=$(run_gate "$repo" dev-review-feature '@docs/plans/fe.md @docs/plans/be.md')
+assert_pass "$output" 'naming the predecessor admits the later plan'
+write_plan "$repo/docs/plans/be.md" approved feature '#12' '' '## PR Pattern (provisional)'
+output=$(run_gate "$repo" dev-review-feature '@docs/plans/fe.md')
+assert_pass "$output" 'an approved predecessor is read through After:'
+rm "$repo/docs/plans/be.md"
+output=$(run_gate "$repo" dev-review-feature '@docs/plans/fe.md')
+assert_pass "$output" 'a published and cleaned-up predecessor is past review'
+
+# A failure in a later plan's worktree check is named too.
+repo=$(chain_repo)
+write_plan "$repo/docs/plans/fe.md" planning feature '#12' "$repo-gone" '## PR Pattern (provisional)'
+output=$(run_gate "$repo" dev-review-feature 'docs/plans/be.md docs/plans/fe.md')
+assert_block "$output" 'docs/plans/fe.md: Plan records' 'a later plan failing load_plan is named'
+
+# Every named path must resolve, so a typo or foreign path cannot hand binding
+# to the next one.
+repo=$(chain_repo)
+write_plan "$repo/docs/plans/be.md" approved feature '#12' '' '## PR Pattern (provisional)'
+output=$(run_gate "$repo" dev-execute-feature 'docs/plans/be.md docs/plans/fe.md')
+assert_block "$output" 'do not form one After: chain' 'plans that no After: links are not a chain run'
+output=$(run_gate "$repo" dev-execute-feature 'docs/plans/be.md docs/plans/missing.md')
+assert_block "$output" 'Named plan not found: docs/plans/missing.md' 'a single-plan skill blocks on an unresolved later path'
+write_plan "$repo/docs/plans/pub.md" approved feature '#12' '' '## PR Pattern (provisional)'
+commit_plan "$repo" pub.md
+output=$(run_gate "$repo" dev-ship-feature '/elsewhere/docs/plans/x.md docs/plans/pub.md')
+assert_block "$output" 'Named plan not found: /elsewhere/docs/plans/x.md' 'a foreign first path does not let ship-feature fall through'
+output=$(run_gate "$repo" dev-ship-feature 'docs/plans/missing.md docs/plans/pub.md')
+assert_block "$output" 'Named plan not found: docs/plans/missing.md' 'a missing first path does not let ship-feature fall through'
+
+# ── Chain runs: execute-feature, review-code, and create-pr over an After: chain ──
+
+# Makes plan $2 After: plan $3 (empty for none), with PR-1 on branch
+# feature/<name> parented on $4.
+link_plan() {
+  local repo="$1" name="$2" after="$3" parent="$4" file="$1/docs/plans/$2.md"
+  [[ -z "$after" ]] || sed -i "s#^Status:.*#&\nAfter: docs/plans/$after.md#" "$file"
+  sed -i "s#| PR-1 | feature/gate-test | main |#| PR-1 | feature/$name | $parent |#" "$file"
+}
+
+# Plan $2 at status $3 with a registered worktree on feature/$2, branched from
+# $4, holding one RED/GREEN slice; After: $5 when given.
+chain_plan() {
+  local repo="$1" name="$2" status="$3" parent="$4" after="${5-}" pattern='## PR Pattern'
+  git -C "$repo" worktree add -q -b "feature/$name" "$repo-$name" "$parent"
+  wt_commit "$repo-$name" "test(red): $name" "tests/${name}_test.py"
+  wt_commit "$repo-$name" "feat($name): implement" "src/$name.py"
+  [[ "$status" == reviewed ]] || pattern='## PR Pattern (provisional)'
+  write_plan "$repo/docs/plans/$name.md" "$status" feature '#12' "$repo-$name" "$pattern"
+  link_plan "$repo" "$name" "$after" "$parent"
+}
+
+# be → fe → ui, each on the previous plan's branch.
+run_chain_repo() {
+  local repo
+  repo=$(new_repo)
+  chain_plan "$repo" be "$1" main
+  chain_plan "$repo" fe "$2" feature/be be
+  chain_plan "$repo" ui "$3" feature/fe fe
+  printf '%s\n' "$repo"
+}
+
+repo=$(run_chain_repo approved approved approved)
+output=$(run_gate "$repo" dev-execute-feature '@docs/plans/be.md @docs/plans/fe.md @docs/plans/ui.md')
+assert_pass "$output" 'an approved chain enters execute-feature'
+output=$(run_gate "$repo" dev-execute-feature 'docs/plans/ui.md docs/plans/be.md docs/plans/fe.md')
+assert_pass "$output" 'a chain run orders its plans by After:, not by the order named'
+sed -i 's#^After: docs/plans/be.md#After: `./docs/plans/be.md`#' "$repo/docs/plans/fe.md"
+output=$(run_gate "$repo" dev-execute-feature 'docs/plans/be.md docs/plans/fe.md docs/plans/ui.md')
+assert_pass "$output" 'an After: path in another written form links the chain'
+
+repo=$(run_chain_repo implemented approved approved)
+output=$(run_gate "$repo" dev-execute-feature 'docs/plans/be.md docs/plans/fe.md docs/plans/ui.md')
+assert_pass "$output" 'an implemented plan is skipped by a resumed chain execution'
+
+repo=$(run_chain_repo approved approved planning)
+output=$(run_gate "$repo" dev-execute-feature 'docs/plans/be.md docs/plans/fe.md docs/plans/ui.md')
+assert_block "$output" "docs/plans/ui.md: Plan status is 'planning' — not approved" 'every chain plan must be approved before execution'
+
+repo=$(run_chain_repo approved implemented approved)
+output=$(run_gate "$repo" dev-execute-feature 'docs/plans/be.md docs/plans/fe.md docs/plans/ui.md')
+assert_block "$output" "docs/plans/fe.md: Plan is 'implemented', ahead of docs/plans/be.md" 'a later plan ahead of an earlier one blocks'
+
+repo=$(run_chain_repo implemented implemented reviewed)
+output=$(run_gate "$repo" dev-execute-feature 'docs/plans/be.md docs/plans/fe.md docs/plans/ui.md')
+assert_block "$output" "docs/plans/ui.md: Plan is 'reviewed', ahead of docs/plans/fe.md" 'a reviewed plan after an implemented one is ahead too'
+repo=$(run_chain_repo implemented implemented implemented)
+output=$(run_gate "$repo" dev-execute-feature 'docs/plans/be.md docs/plans/fe.md docs/plans/ui.md')
+assert_block "$output" 'Every named plan is past execution' 'a fully executed chain points to review-code'
+
+repo=$(run_chain_repo approved approved approved)
+output=$(run_gate "$repo" dev-execute-feature 'docs/plans/be.md docs/plans/ui.md')
+assert_block "$output" 'docs/plans/be.md docs/plans/ui.md each start one' 'a gap in the chain blocks'
+chain_plan "$repo" alt approved feature/be be
+output=$(run_gate "$repo" dev-execute-feature 'docs/plans/be.md docs/plans/fe.md docs/plans/alt.md')
+assert_block "$output" 'are both After: docs/plans/be.md' 'a fork in the chain blocks'
+sed -i 's#^Status:.*#&\nAfter: docs/plans/ui.md#' "$repo/docs/plans/be.md"
+output=$(run_gate "$repo" dev-execute-feature 'docs/plans/be.md docs/plans/fe.md docs/plans/ui.md')
+assert_block "$output" 'form an After: cycle' 'a cycle blocks'
+
+# The first named plan's predecessor must already be past the phase.
+repo=$(run_chain_repo approved approved approved)
+output=$(run_gate "$repo" dev-execute-feature 'docs/plans/fe.md docs/plans/ui.md')
+assert_block "$output" "docs/plans/fe.md is After: docs/plans/be.md, which is 'approved' and not past execute-feature" 'an unexecuted predecessor must join the chain run'
+write_plan "$repo/docs/plans/be.md" implemented feature '#12' "$repo-be" '## PR Pattern (provisional)'
+output=$(run_gate "$repo" dev-execute-feature 'docs/plans/fe.md docs/plans/ui.md')
+assert_pass "$output" 'an implemented predecessor need not be named'
+rm "$repo/docs/plans/be.md"
+output=$(run_gate "$repo" dev-execute-feature 'docs/plans/fe.md docs/plans/ui.md')
+assert_pass "$output" 'a published and cleaned-up predecessor need not be named'
+
+# A failure deep in a later plan names that plan.
+repo=$(run_chain_repo approved approved approved)
+sed -i 's/| Issue: #12 |/| Issue: |/' "$repo/docs/plans/ui.md"
+output=$(run_gate "$repo" dev-execute-feature 'docs/plans/be.md docs/plans/fe.md docs/plans/ui.md')
+assert_block "$output" 'docs/plans/ui.md: Plan has no linked issue' 'each chain plan gets the execute-feature checks'
+
+repo=$(run_chain_repo approved approved approved)
+output=$(run_gate "$repo" dev-ship-feature 'docs/plans/be.md docs/plans/fe.md')
+assert_block "$output" 'ship-feature routes one plan, and 2 were named' 'ship-feature blocks on several named plans'
+
+# review-code: every plan implemented or reviewed, each with its own proof.
+repo=$(run_chain_repo implemented implemented implemented)
+output=$(run_gate "$repo" dev-review-code 'docs/plans/be.md docs/plans/fe.md docs/plans/ui.md')
+assert_pass "$output" 'an implemented chain enters review-code'
+repo=$(run_chain_repo reviewed implemented implemented)
+output=$(run_gate "$repo" dev-review-code 'docs/plans/be.md docs/plans/fe.md docs/plans/ui.md')
+assert_pass "$output" 'a reviewed plan is skipped by a resumed chain review'
+repo=$(run_chain_repo implemented reviewed implemented)
+output=$(run_gate "$repo" dev-review-code 'docs/plans/be.md docs/plans/fe.md docs/plans/ui.md')
+assert_block "$output" "returns to 'implemented' too" 'a reopened plan leaves no later plan reviewed'
+repo=$(run_chain_repo reviewed reviewed reviewed)
+output=$(run_gate "$repo" dev-review-code 'docs/plans/be.md docs/plans/fe.md docs/plans/ui.md')
+assert_block "$output" 'Every named plan is already reviewed' 'a fully reviewed chain points to create-pr'
+repo=$(run_chain_repo implemented approved approved)
+output=$(run_gate "$repo" dev-review-code 'docs/plans/be.md docs/plans/fe.md docs/plans/ui.md')
+assert_block "$output" "docs/plans/fe.md: Plan status is 'approved' — not yet implemented" 'every chain plan must be implemented before code review'
+repo=$(run_chain_repo reviewed implemented implemented)
+output=$(run_gate "$repo" dev-review-code 'docs/plans/fe.md docs/plans/ui.md')
+assert_pass "$output" 'a reviewed predecessor need not be named for code review'
+write_plan "$repo/docs/plans/be.md" implemented feature '#12' "$repo-be" '## PR Pattern (provisional)'
+output=$(run_gate "$repo" dev-review-code 'docs/plans/fe.md docs/plans/ui.md')
+assert_block "$output" "which is 'implemented' and not past review-code" 'an unreviewed predecessor must join the chain review'
+
+repo=$(new_repo)
+chain_plan "$repo" be implemented main
+git -C "$repo" worktree add -q -b feature/fe "$repo-fe" feature/be
+wt_commit "$repo-fe" 'feat(fe): no proof' src/fe.py
+write_plan "$repo/docs/plans/fe.md" implemented feature '#12' "$repo-fe" '## PR Pattern (provisional)'
+link_plan "$repo" fe be feature/be
+output=$(run_gate "$repo" dev-review-code 'docs/plans/be.md docs/plans/fe.md')
+assert_block "$output" 'docs/plans/fe.md: Found 0 test(red)' 'a later plan proves its own slices from its Parent'
+
+# A repair on an earlier plan reaches later plans by merging forward.
+repo=$(run_chain_repo implemented implemented implemented)
+wt_commit "$repo-be" 'test(red): be repair' tests/be_test.py
+wt_commit "$repo-be" 'fix(be): repair' src/be.py
+output=$(run_gate "$repo" dev-review-code 'docs/plans/be.md docs/plans/fe.md docs/plans/ui.md')
+assert_block "$output" 'docs/plans/fe.md: Plan PR Pattern Parent '"'"'feature/be'"'"' is missing or is not an ancestor of the reviewed branch. If a repair landed on it, merge it forward' 'an unmerged repair on the Parent blocks the later plan'
+git -C "$repo-fe" merge -q --no-edit feature/be
+output=$(run_gate "$repo" dev-review-code 'docs/plans/be.md docs/plans/fe.md docs/plans/ui.md')
+assert_block "$output" 'docs/plans/ui.md: Plan PR Pattern Parent' 'merge-forward continues to every later plan'
+git -C "$repo-ui" merge -q --no-edit feature/fe
+output=$(run_gate "$repo" dev-review-code 'docs/plans/be.md docs/plans/fe.md docs/plans/ui.md')
+assert_pass "$output" 'a repair merged forward through the chain keeps every proof sequence valid'
+
+# Within one plan, a repair to PR-1 merged into PR-2 reads as one line of
+# history even when commit dates interleave the two slices.
+repo=$(new_repo)
+git -C "$repo" worktree add -q -b feature/s1 "$repo-s1" main
+git -C "$repo" worktree add -q -b feature/s2 "$repo-s2" main
+dated_commit() {
+  local worktree="$1" stamp="$2" subject="$3" file="$4"
+  GIT_AUTHOR_DATE="@$stamp +0000" GIT_COMMITTER_DATE="@$stamp +0000" wt_commit "$worktree" "$subject" "$file"
+}
+dated_commit "$repo-s1" 1700000001 'test(red): s1' tests/s1_test.py
+dated_commit "$repo-s1" 1700000002 'feat(s1): implement' src/s1.py
+git -C "$repo-s2" reset -q --hard feature/s1
+dated_commit "$repo-s2" 1700000003 'test(red): s2' tests/s2_test.py
+dated_commit "$repo-s1" 1700000004 'test(red): s1 repair' tests/s1_test.py
+dated_commit "$repo-s2" 1700000005 'feat(s2): implement' src/s2.py
+dated_commit "$repo-s1" 1700000006 'fix(s1): repair' src/s1.py
+GIT_AUTHOR_DATE='@1700000007 +0000' GIT_COMMITTER_DATE='@1700000007 +0000' git -C "$repo-s2" merge -q --no-edit feature/s1
+write_plan "$repo/docs/plans/gate.md" implemented feature '#12' "$repo-s2" '## PR Pattern (provisional)' "$(valid_graph)
+ST-2 — second slice — satisfies TC-1"
+sed -i 's#| PR-1 | feature/gate-test | main | ST-1, ST-2 |#| PR-1 | feature/s1 | main | ST-1 |#; s#^| PR-1 | feature/s1 .*#&\n| PR-2 | feature/s2 | feature/s1 | ST-2 | test |#' "$repo/docs/plans/gate.md"
+output=$(run_gate "$repo" dev-review-code 'docs/plans/gate.md')
+assert_pass "$output" 'a repair merged into a later slice passes proof sequencing despite interleaved dates'
+
+# create-pr: every plan reviewed, published in chain order.
+repo=$(run_chain_repo reviewed reviewed reviewed)
+output=$(run_gate "$repo" dev-create-pr 'docs/plans/be.md docs/plans/fe.md docs/plans/ui.md')
+assert_pass "$output" 'a reviewed chain enters create-pr'
+repo=$(run_chain_repo reviewed reviewed implemented)
+output=$(run_gate "$repo" dev-create-pr 'docs/plans/be.md docs/plans/fe.md docs/plans/ui.md')
+assert_block "$output" "docs/plans/ui.md: Plan status is 'implemented' — run review-code first" 'every chain plan must be reviewed before publication'
+repo=$(run_chain_repo reviewed reviewed reviewed)
+output=$(run_gate "$repo" dev-create-pr 'docs/plans/fe.md docs/plans/ui.md')
+assert_block "$output" "which is 'reviewed' and not past create-pr" 'an unpublished predecessor must be published first'
+rm "$repo/docs/plans/be.md"
+output=$(run_gate "$repo" dev-create-pr 'docs/plans/fe.md docs/plans/ui.md')
+assert_pass "$output" 'a resumed chain publication names only unpublished plans'
+
+# ── Chain runs: After: lines, published plans, and single-plan predecessors ──
+repo=$(run_chain_repo approved approved approved)
+sed -i 's#^Status:.*#&\nAfter: docs/plans/be.md#' "$repo/docs/plans/be.md"
+output=$(run_gate "$repo" dev-execute-feature 'docs/plans/be.md docs/plans/fe.md docs/plans/ui.md')
+assert_block "$output" 'are both After: docs/plans/be.md' 'a self-After: among several plans blocks'
+
+repo=$(run_chain_repo approved approved approved)
+sed -i 's#^After: docs/plans/be.md#After: be.md#' "$repo/docs/plans/fe.md"
+output=$(run_gate "$repo" dev-execute-feature 'docs/plans/be.md docs/plans/fe.md docs/plans/ui.md')
+assert_block "$output" "docs/plans/fe.md: Plan has 'After: be.md', which names no docs/plans/<file>.md" 'a bare After: file name blocks instead of breaking the chain'
+sed -i 's#^After: be.md#After: /elsewhere/docs/plans/be.md#' "$repo/docs/plans/fe.md"
+output=$(run_gate "$repo" dev-execute-feature 'docs/plans/fe.md')
+assert_block "$output" 'names no docs/plans/<file>.md in this repository' 'a foreign After: blocks a single plan too'
+planning_repo=$(chain_repo)
+sed -i 's#^Status:.*#&\nAfter: /elsewhere/docs/plans/be.md#' "$planning_repo/docs/plans/fe.md"
+output=$(run_gate "$planning_repo" dev-review-feature 'docs/plans/fe.md')
+assert_block "$output" 'names no docs/plans/<file>.md in this repository' 'review-feature blocks a foreign After:'
+sed -i 's#^After: /elsewhere/docs/plans/be.md#After: docs/plans/bee.md#' "$repo/docs/plans/fe.md"
+output=$(run_gate "$repo" dev-execute-feature 'docs/plans/fe.md')
+assert_pass "$output" 'an After: target that no longer exists reads as published (a typo cannot be told apart)'
+
+repo=$(run_chain_repo approved approved approved)
+chain_plan "$repo" x approved main
+chain_plan "$repo" y approved main x
+sed -i 's#^Status:.*#&\nAfter: docs/plans/y.md#' "$repo/docs/plans/x.md"
+output=$(run_gate "$repo" dev-execute-feature 'docs/plans/be.md docs/plans/fe.md docs/plans/ui.md docs/plans/x.md docs/plans/y.md')
+assert_block "$output" 'include an After: cycle apart from the chain starting at docs/plans/be.md' 'a cycle beside the chain blocks'
+
+# Only a header After: line links plans; one in the body is prose.
+repo=$(run_chain_repo approved approved approved)
+sed -i '/^After:/d' "$repo/docs/plans/fe.md"
+printf '\nAfter: docs/plans/be.md\n' >> "$repo/docs/plans/fe.md"
+output=$(run_gate "$repo" dev-execute-feature 'docs/plans/fe.md')
+assert_pass "$output" 'an After: line below the first heading is not a predecessor'
+
+repo=$(run_chain_repo reviewed reviewed reviewed)
+commit_plan "$repo" be.md
+output=$(run_gate "$repo" dev-create-pr 'docs/plans/be.md docs/plans/fe.md docs/plans/ui.md')
+assert_block "$output" 'docs/plans/be.md: Plan is tracked by Git — a published record. Leave it out of the chain run' 'a published plan named in a chain run is left out'
+output=$(run_gate "$repo" dev-create-pr 'docs/plans/fe.md docs/plans/ui.md')
+assert_pass "$output" 'a tracked predecessor is published'
+
+# A single plan's predecessor must be past the phase too.
+repo=$(run_chain_repo approved approved approved)
+output=$(run_gate "$repo" dev-execute-feature 'docs/plans/fe.md')
+assert_block "$output" "docs/plans/fe.md is After: docs/plans/be.md, which is 'approved' and not past execute-feature. Run execute-feature on it first" 'a single plan waits for its predecessor execution'
+write_plan "$repo/docs/plans/be.md" implemented feature '#12' "$repo-be" '## PR Pattern (provisional)'
+output=$(run_gate "$repo" dev-execute-feature 'docs/plans/fe.md')
+assert_pass "$output" 'a single plan executes after its predecessor is implemented'
+repo=$(run_chain_repo reviewed implemented implemented)
+output=$(run_gate "$repo" dev-review-code 'docs/plans/ui.md')
+assert_block "$output" "which is 'implemented' and not past review-code" 'a single plan waits for its predecessor code review'
+repo=$(run_chain_repo reviewed reviewed reviewed)
+output=$(run_gate "$repo" dev-create-pr 'docs/plans/fe.md')
+assert_block "$output" "which is 'reviewed' and not past create-pr" 'a single plan waits for its predecessor publication'
+repo=$(run_chain_repo approved approved approved)
+output=$(run_gate "$repo" dev-execute-feature 'docs/plans/be.md')
+assert_pass "$output" 'a plan with no After: has no predecessor to wait for'
+
+# After the earlier plan publishes, its last slice carries its archive commit
+# and may exist only on origin; the later plan still enters code review.
+repo=$(run_chain_repo reviewed implemented implemented)
+mkdir -p "$repo-be/docs/plans" && cp "$repo/docs/plans/be.md" "$repo-be/docs/plans/be.md"
+git -C "$repo-be" add -f docs/plans/be.md && git -C "$repo-be" commit -qm 'docs(plan): archive be'
+output=$(run_gate "$repo" dev-review-code 'docs/plans/fe.md docs/plans/ui.md')
+assert_pass "$output" 'a Parent ahead only by its plan archive enters code review'
+git -C "$repo" update-ref refs/remotes/origin/feature/be feature/be
+git -C "$repo" worktree remove "$repo-be"
+git -C "$repo" branch -qD feature/be
+rm "$repo/docs/plans/be.md"
+output=$(run_gate "$repo" dev-review-code 'docs/plans/fe.md docs/plans/ui.md')
+assert_pass "$output" 'a Parent that exists only on origin resolves for code review'
+git -C "$repo" worktree add -q "$repo-late" origin/feature/be 2>/dev/null
+wt_commit "$repo-late" 'feat(be): late change' src/be.py
+git -C "$repo" update-ref refs/remotes/origin/feature/be "$(git -C "$repo-late" rev-parse HEAD)"
+output=$(run_gate "$repo" dev-review-code 'docs/plans/fe.md docs/plans/ui.md')
+assert_block "$output" "docs/plans/fe.md: Plan PR Pattern Parent 'feature/be' is missing or is not an ancestor" 'a code change on the Parent still blocks'
+repo=$(run_chain_repo reviewed implemented implemented)
+mkdir -p "$repo-be/docs/plans" && git -C "$repo-be" mv src/be.py docs/plans/moved.md
+git -C "$repo-be" commit -qm 'chore: move be'
+output=$(run_gate "$repo" dev-review-code 'docs/plans/fe.md docs/plans/ui.md')
+assert_block "$output" "docs/plans/fe.md: Plan PR Pattern Parent 'feature/be' is missing or is not an ancestor" 'code renamed into docs/plans/ on the Parent still blocks'
+
+# A merge commit implements nothing, so it cannot complete a slice: here the
+# slice merges an advanced Base after its RED and implements nothing.
+repo=$(new_repo)
+worktree=$(make_registered_plan "$repo" feature implemented '#12' '## PR Pattern (provisional)')
+wt_commit "$worktree" 'test(red): gate' tests/gate_test.py
+printf 'base moved\n' >> "$repo/README.md"
+git -C "$repo" commit -qam 'chore: base moves'
+git -C "$worktree" merge -q --no-edit main
+output=$(run_gate "$repo" dev-review-code 'docs/plans/gate.md')
+assert_block "$output" 'out of sequence' 'a slice whose RED is followed only by a merge has no implementation'
 
 printf 'All gate-check tests passed. Temporary fixtures: %s\n' "$TMP_ROOT"

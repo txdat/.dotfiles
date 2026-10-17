@@ -24,7 +24,7 @@ Before changing security, concurrency, data-integrity, or performance-critical b
 
 For changed contracts, inspect callers, consumers, and tests, including dependencies on errors, defaults, ordering, timing, and side effects beyond documented signatures. For shared state used as a decision input or signal, check writers and readers together: meaning, ownership, initialization, transitions, concurrency, and cleanup.
 
-Record decisive evidence with the design or verification results. Resolve broken consumers within scope; material compatibility uncertainty or additional work needs a decision before the change is ready. Plan-backed decisions follow [approval.md](skills/dev/approval.md).
+Record decisive evidence with the design or verification results. Resolve broken consumers within scope; material compatibility uncertainty or additional work needs a decision before the change is ready. Plan-backed decisions follow [plan.md — Changes](skills/dev/plan.md#changes).
 
 ## Tools
 
