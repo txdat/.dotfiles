@@ -1,6 +1,6 @@
 # Plan and Worktree Lifecycle
 
-Owns application plan identity, location, ownership, lifecycle, worktree operations, and archival. [design-feature.md](design-feature.md) owns schema; [approval.md](approval.md) owns consent and changes.
+Owns application plan identity, location, ownership, lifecycle, worktree operations, and archival. [design-feature.md](design-feature.md) owns schema; [ids.md](ids.md) owns the IDs inside it; [approval.md](approval.md) owns consent and changes.
 
 Use [language.md](language.md) for plan prose and subsequent updates.
 
@@ -36,7 +36,7 @@ A single-PR plan uses one recorded worktree through execution, review, and publi
 
 ```text
 ## Publication Inventory
-1 | <branch> | worktree: <path>
+Worktree: PR-1 (<branch>) at <path>
 ```
 
 - Create with [dev-worktree.sh](../../bin/dev-worktree.sh) `create <slug> <branch> <parent> [directory]`. Record its stdout path as `Worktree:` immediately.

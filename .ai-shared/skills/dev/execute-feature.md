@@ -2,13 +2,13 @@
 
 Read [PROCESS.md](../../PROCESS.md), [plan.md](plan.md), and the named plan. Entry is `approved`. Without a recorded `Worktree:`, create the first implementation slice's worktree under [plan.md — Worktree operations](plan.md#worktree-operations), using its explicit branch and Parent, and record it; with one, resume from the current slice in that worktree. Create each later slice's branch and worktree as it begins, after its parent slice passes verification, and update `Worktree:` to the active slice.
 
-Execute dependency-ordered slices. Before starting a step, run each of its `Precondition:` checks in the slice worktree and record the outcome beside the step. A failed check stops that step and its dependents; classify the required change under [approval.md](approval.md). Follow [verification.md — Test-first proof](verification.md#test-first-proof) for proof, implementation, and BLUE; fill each TC's test reference and record proof/results.
+Execute dependency-ordered slices. Before starting a step, run each of its `PC-n` checks in the slice worktree and append `— Result: <pass/fail> at <sha>` to that PC line. A failed check stops that step and its dependents; classify the required change under [approval.md](approval.md). Follow [verification.md — Test-first proof](verification.md#test-first-proof) for proof, implementation, and BLUE; fill each TC's test reference and record proof/results.
 
 Apply [CODING.md — Critical work](../../CODING.md#critical-work) to critical steps and [frontend-design.md](frontend-design.md) to UI work.
 
 Delegation follows [CODING.md](../../CODING.md): the main agent owns RED tests and commits; implementation workers receive those tests and exclusive source ownership. Workers do not edit tests or plans or spawn agents. Missing approved scope or tests, conflicting requirements, or work beyond the assignment stops the affected implementation: report the missing input or decision to the main agent rather than silently deviating. A task assigned to follow an existing pattern returns for a decision if no suitable pattern exists.
 
-Workers return changed files, implemented TC/AC IDs, verification results, and unresolved concerns. Critical work also reports invariant/failure-path evidence and residual risks under CODING.md's critical-work procedure.
+Workers return changed files, implemented ST/TC/AC IDs, verification results, and unresolved concerns. Critical work also reports invariant/failure-path evidence and residual risks under CODING.md's critical-work procedure.
 
 Run [verification.md — Local checks](verification.md#local-checks), TC tests, and affected existing tests at each slice's tip before starting a dependent slice. Apply [verification.md — Coverage](verification.md#coverage) and [CODING.md — Impact](../../CODING.md#impact). Resolve Open Risks through their approved TCs. Use [approval.md](approval.md) for spec changes, deviations, or new scope.
 

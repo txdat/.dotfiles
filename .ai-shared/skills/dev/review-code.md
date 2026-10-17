@@ -30,6 +30,6 @@ The main agent handles repairs and re-review under [independence.md](independenc
 
 On a passing review, reconcile actual slices with [design-feature.md](design-feature.md)'s PR Pattern. Changed parents or TC/slice ownership require a revised pattern, decided as a PR Pattern change under [approval.md](approval.md). Remove `(provisional)` only when it matches the verified work.
 
-For every slice, record `Slice N (<branch>): green at <sha>` in the finalized pattern. At each slice's own tip, run [verification.md — Local checks](verification.md#local-checks) and that slice's tests. Each slice keeps its own worktree ([plan.md — Worktree operations](plan.md#worktree-operations)); give the reviewer every slice's worktree path and expected tip. The reviewer confirms each checked-out SHA and runs verification there without switching branches or otherwise mutating Git. A final green tip does not prove earlier slices.
+For every slice, record `Green: PR-n (<branch>) at <sha>` under the finalized pattern. At each slice's own tip, run [verification.md — Local checks](verification.md#local-checks) and that slice's tests. Each slice keeps its own worktree ([plan.md — Worktree operations](plan.md#worktree-operations)); give the reviewer every slice's worktree path and expected tip. The reviewer confirms each checked-out SHA and runs verification there without switching branches or otherwise mutating Git. A final green tip does not prove earlier slices.
 
-Record review evidence and disposition of notes, set `reviewed`, and hand off to [create-pr.md](create-pr.md).
+Record review evidence and the disposition of each note as `RV-n`/`FD-n` entries under [ids.md](ids.md), set `reviewed`, and hand off to [create-pr.md](create-pr.md).

@@ -4,7 +4,7 @@
  * Claude Code fires `~/.dotfiles/.ai-shared/bin/gate-check` (a PreToolUse
  * hook) whenever a dev:* skill is invoked, enforcing the plan state machine
  * (planning → approved → implemented → reviewed → archived)
- * and the plan's AC/TC/Step graph, issue link, review marker, and worktree.
+ * and the plan's ID graph (skills/dev/ids.md), issue link, review marker, and worktree.
  *
  * Pi has no hooks, so this extension re-implements the same firing point:
  * it intercepts `read` calls that load a dev-* skill — either the SKILL.md

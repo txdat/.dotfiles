@@ -8,6 +8,8 @@ Symlink `~/.claude/CLAUDE.md` → `~/.dotfiles/.ai-shared/AGENTS.md`
 
 **skills** — create `~/.claude/skills/<name>/SKILL.md` per [template](#claude-template) and [references](#references)
 
+**hooks** — in `~/.claude/settings.json`, register `~/.dotfiles/.ai-shared/bin/gate-check` for `PreToolUse` with matcher `Skill` (model-invoked skills) and for `UserPromptSubmit` (user-typed `/dev-*` commands, which bypass the Skill tool)
+
 **marketplace** — add local marketplace (`~/.dotfiles/.claude/marketplace/`) via `claude plugin marketplace add <path>`, install plugins via `/plugin`
 
 ### claude template
@@ -100,7 +102,7 @@ The extension gates recognized reads, not phase execution: it cannot distinguish
 | ----- | ----------- | ------- | ------ | ----- |
 | dev-create-issue | Create a standalone GitHub issue with a specific problem, expected outcome, and requested metadata. Use for unplanned issue capture; use dev-design-feature for implementation-plan-linked issues. | skills/dev/create-issue.md | medium | haiku |
 | dev-create-pr | Publish reviewed plan work as draft or ready pull request(s), verify committed scope, archive the plan safely, and clean up its worktrees and local branches. | skills/dev/create-pr.md | medium | sonnet |
-| dev-design-feature | Design an issue-backed feature, fix, or refactor plan before implementation, including scope, test cases, impact, ordered steps, and provisional PR slicing. | skills/dev/design-feature.md | medium | sonnet |
+| dev-design-feature | Design an issue-backed feature, fix, or refactor plan before implementation, including scope, test cases, impact, ordered steps, and provisional PR slicing. | skills/dev/design-feature.md | high | sonnet |
 | dev-design-infra | Design a runnable infrastructure operations plan from live-state evidence, verification gates, and rollback requirements. | skills/dev/design-infra.md | high | sonnet |
 | dev-design-system | Design cross-cutting architecture changes such as new communication patterns, service boundaries, or integrations, with options, contracts, migration, rollback, and decomposition. | skills/dev/design-system.md | high | opus |
 | dev-execute-feature | Execute approved application work with test-first commits and per-slice verification. | skills/dev/execute-feature.md | high | sonnet |
@@ -108,7 +110,7 @@ The extension gates recognized reads, not phase execution: it cannot distinguish
 | dev-fix-bug | Diagnose a bug from evidence, propose fix options and follow-ups, and route a requested fix: plan-backed delivery when asked, otherwise a direct edit. | skills/dev/fix-bug.md | high | sonnet |
 | dev-frame-goal | Clarify ambiguous requirements or split independently useful goals, before design or when a plan bundles goals. | skills/dev/frame-goal.md | medium | opus |
 | dev-review-code | Review implemented plan changes for TDD proof, independent test results, correctness, security, architecture, scope, hygiene, and final PR slicing before create-pr. | skills/dev/review-code.md | high | sonnet |
-| dev-review-feature | Review a planning-stage feature/fix/refactor plan for approach, system fit, test completeness, impact, scope, and independently mergeable PR slices before human approval. | skills/dev/review-feature.md | medium | sonnet |
+| dev-review-feature | Review a planning-stage feature/fix/refactor plan for approach, system fit, test completeness, impact, scope, and independently mergeable PR slices before human approval. | skills/dev/review-feature.md | high | sonnet |
 | dev-review-infra | Review an infra/devops runbook against live state with read-only commands: phase ordering, rollback safety, DNS/traffic cutover sequencing, IaC completeness, and CI/CD coverage. | skills/dev/review-infra.md | high | sonnet |
 | dev-review-system | Review an architecture design for measurable outcomes, viable alternatives, boundary contracts, failure modes, migration and rollback safety, and dependency-ordered decomposition. | skills/dev/review-system.md | high | opus |
 | dev-recap | Session lessons and workflow improvement proposals from a plan-based session. | skills/dev/recap.md | — | — |

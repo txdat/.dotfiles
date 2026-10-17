@@ -18,4 +18,4 @@
 | Capture a standalone issue | [create-issue](create-issue.md) |
 | Extract session lessons | [recap](recap.md) |
 
-[frontend-design.md](frontend-design.md) supplies UI-specific guidance; [PROCESS.md — Repository conventions](../../PROCESS.md#repository-conventions) defines design notation.
+[ids.md](ids.md) registers every ID written into plans, runbooks, and architecture documents. [frontend-design.md](frontend-design.md) supplies UI-specific guidance; [PROCESS.md — Repository conventions](../../PROCESS.md#repository-conventions) defines design notation.

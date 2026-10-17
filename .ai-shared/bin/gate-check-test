@@ -19,7 +19,7 @@ new_repo() {
   printf '%s\n' "$repo"
 }
 
-# A schema-valid plan carries a closed AC/TC/Step graph; gate-check now blocks
+# A schema-valid plan carries a closed AC/TC/ST graph; gate-check now blocks
 # without one, so the default fixture has to be a real plan, not a header stub.
 # Pass argument 7 to substitute a broken graph for traceability cases.
 #
@@ -43,7 +43,7 @@ TC-1 — unapproved plan reaches execute-feature
   Then: the hook blocks
 
 ## Implementation Steps
-Step 1 — add the status gate — satisfies TC-1
+ST-1 — add the status gate — satisfies TC-1
 EOF
 }
 
@@ -54,6 +54,10 @@ write_plan() {
   # Default Snapshot: the Base tip of the repository holding the plan, empty
   # when the plan sits outside a repository with that branch.
   local snapshot="${9-$(git -C "${path%/docs/*}" rev-parse --verify -q "$base^{commit}" 2>/dev/null || true)}"
+  # The single PR row owns every step the graph declares.
+  local steps
+  steps=$(grep -oE '^[-* ]*ST-[0-9]+' <<<"$graph" | grep -oE 'ST-[0-9]+' | paste -sd, - | sed 's/,/, /g' || true)
+  steps="${steps:-ST-1}"
   {
     printf '# Task: gate test\n'
     printf 'Status: %s | Type: %s | Base: %s | Snapshot: %s | Issue: %s | Worktree: %s\n\n' \
@@ -61,9 +65,9 @@ write_plan() {
     printf '%s\n\n' "$graph"
     printf '%s\n' "$pattern"
     printf 'Type: single\n'
-    printf '| # | Branch | Parent | Steps | Summary |\n'
+    printf '| PR | Branch | Parent | Steps | Summary |\n'
     printf '|---|--------|--------|-------|---------|\n'
-    printf '| 1 | %s/gate-test | %s | 1 | test |\n' "$type" "$base"
+    printf '| PR-1 | %s/gate-test | %s | %s | test |\n' "$type" "$base" "$steps"
   } > "$path"
 }
 
@@ -72,7 +76,7 @@ run_gate() {
   TEST_NO=$((TEST_NO + 1))
   session="gate-check-test-$$-$TEST_NO"
   jq -cn --arg session "$session" --arg skill "$skill" --arg args "$args" \
-    '{session_id:$session,tool_input:{skill:$skill,arguments:$args}}' |
+    '{session_id:$session,tool_input:{skill:$skill,args:$args}}' |
     (cd "$repo" && "$GATE")
 }
 
@@ -81,7 +85,7 @@ run_gate() {
 run_gate_session() {
   local repo="$1" session="$2" skill="$3" args="$4"
   jq -cn --arg session "$session" --arg skill "$skill" --arg args "$args" \
-    '{session_id:$session,tool_input:{skill:$skill,arguments:$args}}' |
+    '{session_id:$session,tool_input:{skill:$skill,args:$args}}' |
     (cd "$repo" && "$GATE")
 }
 
@@ -294,14 +298,14 @@ assert_pass "$output" 'diagnose remains planless beside an active plan'
 output=$(run_gate "$repo" dev-execute-feature '')
 assert_block "$output" 'none was named' 'implementation cannot adopt the lone active plan'
 
-# ── AC <-> TC <-> Step referential closure ──
+# ── AC <-> TC <-> ST referential closure ──
 # The hook reads identifiers, never prose. Closure proves every ID is
 # referenced; whether an edge is *true* stays review-feature's judgment.
 
 repo=$(new_repo)
 write_plan "$repo/docs/plans/gate.md" planning feature '#12' '' '## PR Pattern (provisional)'
 output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
-assert_pass "$output" 'closed AC/TC/Step graph enters review-feature'
+assert_pass "$output" 'closed AC/TC/ST graph enters review-feature'
 
 # ── Plan size does not replace traceability or requirement checks ──
 
@@ -317,7 +321,7 @@ graph_with_acs() {
     for (i = 1; i <= n; i++) printf "TC-%d — scenario %d\n  Proves: AC-%d\n", i, i, i
     print ""
     print "## Implementation Steps"
-    for (i = 1; i <= n; i++) printf "Step %d — do %d — satisfies TC-%d\n", i, i, i
+    for (i = 1; i <= n; i++) printf "ST-%d — do %d — satisfies TC-%d\n", i, i, i
   }'
 }
 
@@ -336,7 +340,39 @@ repo=$(new_repo)
 write_plan "$repo/docs/plans/gate.md" planning feature '#12' '' '## PR Pattern (provisional)' "$(graph_with_acs 8)"
 printf '\n## Assumptions & Open Questions\nOpen Questions: which store owns the balance?\n' >> "$repo/docs/plans/gate.md"
 output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
-assert_block "$output" 'unresolved Open Question' 'larger plans still block unresolved requirements'
+assert_block "$output" 'parks Assumptions or Open Questions' 'larger plans still block unresolved requirements'
+
+# The schema has no open-questions container, so even an empty one is rejected;
+# the gate cannot judge whether a parked question is material.
+repo=$(new_repo)
+write_plan "$repo/docs/plans/gate.md" planning feature '#12' '' '## PR Pattern (provisional)'
+printf '\n## Open Questions\n- none\n' >> "$repo/docs/plans/gate.md"
+output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
+assert_block "$output" 'parks Assumptions or Open Questions' 'an Open Questions section blocks review whatever it holds'
+
+repo=$(new_repo)
+write_plan "$repo/docs/plans/gate.md" planning feature '#12' '' '## PR Pattern (provisional)'
+printf '\n## Design Decisions\nDD-1 — the open questions from the issue were resolved with the user\n' >> "$repo/docs/plans/gate.md"
+output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
+assert_pass "$output" 'prose that mentions open questions is not a container'
+
+repo=$(new_repo)
+write_plan "$repo/docs/plans/gate.md" planning feature '#12' '' '## PR Pattern (provisional)'
+printf '\n## Context\n- **Assumptions**: the cache is warm\n' >> "$repo/docs/plans/gate.md"
+output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
+assert_block "$output" 'parks Assumptions or Open Questions' 'a bold Assumptions field is a container'
+
+repo=$(new_repo)
+write_plan "$repo/docs/plans/gate.md" planning feature '#12' '' '## PR Pattern (provisional)'
+printf '\n## Open questions (draft)\n' >> "$repo/docs/plans/gate.md"
+output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
+assert_block "$output" 'parks Assumptions or Open Questions' 'heading case and a trailing parenthetical do not hide the container'
+
+repo=$(new_repo)
+write_plan "$repo/docs/plans/gate.md" planning feature '#12' '' '## PR Pattern (provisional)'
+printf '\n## Context\n### Assumptions API returns 404 for archived users\n' >> "$repo/docs/plans/gate.md"
+output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
+assert_pass "$output" 'a heading that merely contains the word is not a container'
 
 # Size does not block implemented work with valid proof.
 repo=$(new_repo)
@@ -376,7 +412,7 @@ AC-2 — second outcome
 TC-1 — scenario
   Proves: AC-1
 ## Implementation Steps
-Step 1 — action — satisfies TC-1'
+ST-1 — action — satisfies TC-1'
 output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
 assert_block "$output" 'AC-2 has no TC' 'an AC no TC proves is an unreferenced ID'
 
@@ -390,7 +426,7 @@ TC-1 — scenario
 TC-2 — second scenario
   Proves: AC-1
 ## Implementation Steps
-Step 1 — action — satisfies TC-1'
+ST-1 — action — satisfies TC-1'
 output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
 assert_block "$output" 'TC-2 is not named by any Implementation Step' 'a TC no step names is an unreferenced ID'
 
@@ -402,8 +438,8 @@ AC-1 — outcome
 TC-1 — scenario
   Proves: AC-1
 ## Implementation Steps
-Step 1 — action — satisfies TC-1
-Step 2 — unrelated cleanup'
+ST-1 — action — satisfies TC-1
+ST-2 — unrelated cleanup'
 output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
 assert_block "$output" 'names no TC' 'a step citing no TC is an unreferenced ID'
 
@@ -416,7 +452,7 @@ AC-1 — outcome
 TC-1 — scenario
   Proves: AC-1
 ## Implementation Steps
-Step 1 — action — satisfies TC-1 through TC-4'
+ST-1 — action — satisfies TC-1 through TC-4'
 output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
 assert_block "$output" 'cannot read' 'an ID range is unreadable input, not an unreferenced ID'
 assert_block "$output" 'uses an ID range' 'the range block names the offending line'
@@ -436,7 +472,7 @@ TC-3 — scenario
 TC-4 — scenario
   Proves: AC-1
 ## Implementation Steps
-Step 1 — action — satisfies TC-1 to TC-4'
+ST-1 — action — satisfies TC-1 to TC-4'
 output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
 assert_block "$output" 'uses an ID range' 'a "to" range between two IDs is unreadable input, not orphaned middle IDs'
 
@@ -447,7 +483,7 @@ AC-1 — outcome
 TC-1 — scenario
   Proves: the login AC
 ## Implementation Steps
-Step 1 — action — satisfies TC-1'
+ST-1 — action — satisfies TC-1'
 output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
 assert_block "$output" 'unparseable Proves:' 'a Proves: naming no AC ID is unreadable input'
 
@@ -458,7 +494,7 @@ AC-1 — outcome
 TC-1 — scenario
   Proves: AC-1, AC-2
 ## Implementation Steps
-Step 1 — action — satisfies TC-1'
+ST-1 — action — satisfies TC-1'
 output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
 assert_block "$output" 'exactly one is required' 'a TC proving two ACs is unreadable input'
 
@@ -473,7 +509,7 @@ write_plan "$repo/docs/plans/gate.md" planning feature '#12' '' '## PR Pattern (
 - TC-1 — scenario
   - Proves: AC-1
 ## Implementation Steps
-- Step 1 — action — satisfies TC-1'
+- ST-1 — action — satisfies TC-1'
 output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
 assert_pass "$output" 'a bulleted plan resolves the same graph'
 
@@ -495,7 +531,7 @@ AC-1 — a different outcome wearing the same ID
 TC-1 — scenario
   Proves: AC-1
 ## Implementation Steps
-Step 1 — action — satisfies TC-1' 'declared more than once'
+ST-1 — action — satisfies TC-1' 'declared more than once'
 
 bad_graph 'a duplicate TC ID is unreadable input' '## Acceptance Criteria
 AC-1 — outcome
@@ -505,11 +541,10 @@ TC-1 — scenario
 TC-1 — another scenario
   Proves: AC-1
 ## Implementation Steps
-Step 1 — action — satisfies TC-1' 'declared more than once'
+ST-1 — action — satisfies TC-1' 'declared more than once'
 
-# Steps are keyed by occurrence, but their numbers are IDs the plan cites —
-# a reused number is two steps wearing one name, same as a duplicate AC/TC.
-bad_graph 'a duplicate Step number is unreadable input' '## Acceptance Criteria
+# A reused ST-n is two steps wearing one name, same as a duplicate AC/TC.
+bad_graph 'a duplicate ST ID is unreadable input' '## Acceptance Criteria
 AC-1 — outcome
 ## Test Cases
 TC-1 — scenario
@@ -517,8 +552,8 @@ TC-1 — scenario
 TC-2 — second scenario
   Proves: AC-1
 ## Implementation Steps
-Step 1 — action — satisfies TC-1
-Step 1 — a different action wearing the same number — satisfies TC-2' 'declared more than once'
+ST-1 — action — satisfies TC-1
+ST-1 — a different action wearing the same number — satisfies TC-2' 'declared more than once'
 
 bad_graph 'two Proves: lines on one TC are unreadable input' '## Acceptance Criteria
 AC-1 — outcome
@@ -528,7 +563,7 @@ TC-1 — scenario
   Proves: AC-1
   Proves: AC-2
 ## Implementation Steps
-Step 1 — action — satisfies TC-1' 'more than one Proves:'
+ST-1 — action — satisfies TC-1' 'more than one Proves:'
 
 # A TC with no Proves: at all used to slip through whenever another TC already
 # covered the AC and a step named the malformed one.
@@ -540,7 +575,7 @@ TC-1 — scenario
 TC-2 — scenario with no Proves line
   Given: setup
 ## Implementation Steps
-Step 1 — action — satisfies TC-1 and TC-2' 'TC-2 has no Proves: line'
+ST-1 — action — satisfies TC-1 and TC-2' 'TC-2 has no Proves: line'
 
 bad_graph 'a step citing an undeclared TC is reported' '## Acceptance Criteria
 AC-1 — outcome
@@ -548,8 +583,8 @@ AC-1 — outcome
 TC-1 — scenario
   Proves: AC-1
 ## Implementation Steps
-Step 1 — action — satisfies TC-1
-Step 2 — action — satisfies TC-99' 'TC-99, which is not declared'
+ST-1 — action — satisfies TC-1
+ST-2 — action — satisfies TC-99' 'TC-99, which is not declared'
 
 # ── plan path must be exact ──
 repo=$(new_repo)
@@ -578,7 +613,7 @@ TC-1 — scenario intent
   Proves: AC-1
   Test: tests/refund_test.py::test_over_balance_rejected
 ## Implementation Steps
-Step 1 — action — satisfies TC-1'
+ST-1 — action — satisfies TC-1'
 output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
 assert_pass "$output" 'an intent-line plan with a Test: field resolves the same graph'
 
@@ -591,7 +626,7 @@ AC-1 — the endpoint returns 200 on success
 TC-1 — 200 returned for a valid request
   Proves: AC-1
 ## Implementation Steps
-Step 1 — add the handler — satisfies TC-1'
+ST-1 — add the handler — satisfies TC-1'
 output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
 assert_pass "$output" 'a numeric em-dash summary is not read as an ID range'
 
@@ -607,20 +642,21 @@ TC-1 — scenario
 TC-2 — added during execution
   Proves: AC-1
 ## Implementation Steps
-Step 1 — action — satisfies TC-1' >/dev/null
+ST-1 — action — satisfies TC-1' >/dev/null
 output=$(run_gate "$repo" dev-review-code 'docs/plans/gate.md')
 assert_block "$output" 'TC-2 is not named by any Implementation Step' 'review-code re-checks closure after execution edits'
 
-# Row 1's Parent is required at plan review, not after execution has finished.
+# PR-1's Parent is required at plan review, not after execution has finished.
 repo=$(new_repo)
 write_plan "$repo/docs/plans/gate.md" planning feature '#12' '' '## PR Pattern (provisional)'
-sed -i 's/| 1 | feature\/gate-test | main |/| 1 | feature\/gate-test | |/' "$repo/docs/plans/gate.md"
+sed -i 's/| PR-1 | feature\/gate-test | main |/| PR-1 | feature\/gate-test | |/' "$repo/docs/plans/gate.md"
 output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
-assert_block "$output" 'no Parent for row 1' 'plan review requires an explicit parent for the first slice'
+assert_block "$output" 'no Parent for PR-1' 'plan review requires an explicit parent for the first slice'
 
 repo=$(new_repo)
-write_plan "$repo/docs/plans/gate.md" planning feature '#12' '' '## PR Pattern (provisional)'
-printf '| 2 | feature/gate-test-2 | | 2 | second |\n' >> "$repo/docs/plans/gate.md"
+write_plan "$repo/docs/plans/gate.md" planning feature '#12' '' '## PR Pattern (provisional)' "$(graph_with_acs 2)"
+sed -i 's/| ST-1, ST-2 |/| ST-1 |/' "$repo/docs/plans/gate.md"
+printf '| PR-2 | feature/gate-test-2 | | ST-2 | second |\n' >> "$repo/docs/plans/gate.md"
 output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
 assert_block "$output" 'without a Parent' 'a later chain row may not omit its parent either'
 
@@ -666,7 +702,7 @@ output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
 assert_block "$output" 'is not in the history' 'a Snapshot off Base and the first Parent is rejected'
 
 # A plan extending an unmerged branch inspects that branch's code.
-sed -i 's/| 1 | feature\/gate-test | main |/| 1 | feature\/gate-test | side |/' "$repo/docs/plans/gate.md"
+sed -i 's/| PR-1 | feature\/gate-test | main |/| PR-1 | feature\/gate-test | side |/' "$repo/docs/plans/gate.md"
 output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
 assert_pass "$output" 'a Snapshot on the first slice'"'"'s unmerged Parent enters review'
 
@@ -688,7 +724,7 @@ assert_pass "$output" 'a Snapshot on origin/<base> enters review'
 # origin/main so only that Parent contains the Snapshot.
 git -C "$repo" update-ref refs/remotes/origin/main "$(git -C "$repo" rev-parse main)"
 git -C "$repo" update-ref refs/remotes/origin/feature-base "$upstream_tip"
-sed -i 's/| 1 | feature\/gate-test | main |/| 1 | feature\/gate-test | origin\/feature-base |/' "$repo/docs/plans/gate.md"
+sed -i 's/| PR-1 | feature\/gate-test | main |/| PR-1 | feature\/gate-test | origin\/feature-base |/' "$repo/docs/plans/gate.md"
 output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
 assert_pass "$output" 'a Snapshot on a remote-tracking first Parent enters review'
 
@@ -786,5 +822,332 @@ output=$(run_gate "$repo" dev-ship-feature 'docs/plans/gate.md')
 assert_block "$output" 'abandoned' 'ship-feature stops at an abandoned plan'
 output=$(run_gate "$repo" dev-ship-feature 'redo the work in docs/plans/gate.md')
 assert_block "$output" 'without the old plan path' 'a mentioned terminal plan tells the caller how to start new work'
+
+# ── Hook input shapes ──
+# Claude Code's Skill tool sends the argument string as tool_input.args; the Pi
+# extension sends tool_input.arguments. Both must reach plan resolution.
+repo=$(new_repo)
+write_plan "$repo/docs/plans/gate.md" approved feature '#12' '' '## PR Pattern (provisional)'
+output=$(jq -cn '{hook_event_name:"PreToolUse",tool_name:"Skill",tool_input:{skill:"dev-review-feature",arguments:"docs/plans/gate.md"}}' | (cd "$repo" && "$GATE"))
+assert_block "$output" 'already approved' 'the Pi arguments shape still resolves the named plan'
+
+# A user-typed /dev-<skill> expands without a Skill tool call; only
+# UserPromptSubmit sees it.
+prompt_gate() {
+  local repo="$1" prompt="$2"
+  jq -cn --arg prompt "$prompt" '{hook_event_name:"UserPromptSubmit",prompt:$prompt}' | (cd "$repo" && "$GATE")
+}
+output=$(prompt_gate "$repo" '/dev-review-feature docs/plans/gate.md')
+assert_block "$output" 'already approved' 'a typed /dev-review-feature is gated'
+output=$(prompt_gate "$repo" '/dev-execute-feature')
+assert_block "$output" 'none was named' 'a typed plan phase without a path blocks'
+output=$(prompt_gate "$repo" 'please review-feature docs/plans/gate.md later')
+assert_pass "$output" 'prose that mentions a skill is not gated'
+output=$(prompt_gate "$repo" 'explain /dev-review-feature to me')
+assert_pass "$output" 'a slash command not at the start is not gated'
+nogit=$(mktemp -d "$TMP_ROOT/nogit.XXXXXX")
+output=$(prompt_gate "$nogit" '/dev-explore where is auth handled')
+assert_pass "$output" 'an ungated skill runs outside a Git repository'
+
+# ── ID format (skills/dev/ids.md) ──
+id_plan() {
+  local r
+  r=$(new_repo)
+  write_plan "$r/docs/plans/gate.md" planning feature '#12' '' '## PR Pattern (provisional)' "$1"
+  printf '%s\n' "$r"
+}
+
+bad_graph 'an old Step ordinal is unreadable input' '## Acceptance Criteria
+AC-1 — outcome
+## Test Cases
+TC-1 — scenario
+  Proves: AC-1
+## Implementation Steps
+Step 1 — action — satisfies TC-1' 'write ST-n'
+
+bad_graph 'a leading zero is unreadable input' '## Acceptance Criteria
+AC-01 — outcome
+## Test Cases
+TC-1 — scenario
+  Proves: AC-01
+## Implementation Steps
+ST-1 — action — satisfies TC-1' 'leading zero'
+
+repo=$(id_plan "$(valid_graph)")
+sed -i 's/| PR-1 | feature\/gate-test |/| 1 | feature\/gate-test |/' "$repo/docs/plans/gate.md"
+output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
+assert_block "$output" 'is numbered' 'a numbered PR row is unreadable input'
+
+repo=$(id_plan '## Acceptance Criteria
+AC-1 — the response carries UTC-7 offsets and an SHA-256 digest
+## Test Cases
+TC-1 — scenario
+  Proves: AC-1
+## Implementation Steps
+ST-1 — action — satisfies TC-1
+## Related Plans
+Consumer: docs/plans/fe.md#AC-9 depends on AC-1')
+output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
+assert_pass "$output" 'word-embedded and path-qualified tokens are not IDs here'
+
+repo=$(id_plan '## Acceptance Criteria
+AC-1 — outcome
+## Test Fixtures
+FX-1 — captured = 50; refunds = []
+## Test Cases
+TC-1 — scenario
+  Proves: AC-1
+  Fixture: FX-1 with refunds = [30]
+## Implementation Steps
+ST-1 — action — satisfies TC-1
+  PC-1 — the handler exists — Check: rg refund_handler
+## Design Decisions
+DD-1 — reuse the ledger check
+## Open Risks
+RK-1 — timing under load — TC-1
+## Review History
+RV-1 — review-feature: NEEDS CHANGES
+  FD-1 — TC-4 duplicated TC-1; removed (AC-3 retired)')
+output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
+assert_pass "$output" 'every plan prefix declares cleanly; history may cite retired IDs'
+
+bad_graph 'a TC citing an undeclared fixture is reported' '## Acceptance Criteria
+AC-1 — outcome
+## Test Fixtures
+FX-1 — data
+## Test Cases
+TC-1 — scenario
+  Proves: AC-1
+  Fixture: FX-1
+TC-2 — scenario
+  Proves: AC-1
+  Fixture: FX-2
+## Implementation Steps
+ST-1 — action — satisfies TC-1, TC-2' 'cites FX-2, which is not declared: no line in ## Test Fixtures'
+
+bad_graph 'an unused shared fixture is reported' '## Acceptance Criteria
+AC-1 — outcome
+## Test Fixtures
+FX-1 — data
+## Test Cases
+TC-1 — scenario
+  Proves: AC-1
+## Implementation Steps
+ST-1 — action — satisfies TC-1' 'FX-1 is not used by any Test Case'
+
+bad_graph 'a reference to an undeclared decision is reported' '## Acceptance Criteria
+AC-1 — outcome per DD-2
+## Test Cases
+TC-1 — scenario
+  Proves: AC-1
+## Implementation Steps
+ST-1 — action — satisfies TC-1' 'cites DD-2, which is not declared: no line in ## Design Decisions'
+
+repo=$(id_plan "$(graph_with_acs 2)")
+sed -i 's/| ST-1, ST-2 |/| ST-1 |/' "$repo/docs/plans/gate.md"
+output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
+assert_block "$output" 'ST-2 is not assigned to any PR row' 'every step belongs to a PR slice'
+
+# ── Runbook and architecture IDs ──
+write_runbook() {
+  mkdir -p "$1/docs/runbooks"
+  printf '%s\n' '# Runbook: move workers' 'Status: draft | Date: 2026-10-17 | Issue: #3 | Review:' '' "$2" > "$1/docs/runbooks/move.md"
+}
+valid_runbook='## Success Criteria
+SC-1 — workers healthy on the new pool — Check: kubectl get pods
+## Evidence
+CL-1 — 3 replicas — kubectl get deploy — 2026-10-17 — verified
+## Resources
+RS-1 — deploy/worker — move
+## Phases
+### PH-1 — scale up on the new pool
+Verification / gate: SC-1 holds; CL-1 revalidated
+### PH-2 — drain the old pool
+Prerequisites: PH-1 gate passed
+## Open Questions
+OQ-1 — drain window — blocks PH-2'
+
+repo=$(new_repo)
+write_runbook "$repo" "$valid_runbook"
+output=$(run_gate "$repo" dev-review-infra 'docs/runbooks/move.md')
+assert_pass "$output" 'a well-formed runbook enters review-infra'
+output=$(run_gate "$repo" dev-review-infra 'check the drain plan')
+assert_pass "$output" 'review-infra without a named runbook is not blocked'
+output=$(run_gate "$repo" dev-review-infra 'docs/runbooks/missing.md')
+assert_block "$output" 'Named document not found' 'a mistyped runbook path blocks'
+
+write_runbook "$repo" "${valid_runbook/PH-1 gate passed/PH-3 gate passed}"
+output=$(run_gate "$repo" dev-review-infra 'docs/runbooks/move.md')
+assert_block "$output" 'cites PH-3, which is not declared: no line in ## Phases' 'a runbook reference to an undeclared phase blocks'
+
+write_runbook "$repo" "${valid_runbook/'### PH-2'/'### Phase 2'}"
+output=$(run_gate "$repo" dev-review-infra 'docs/runbooks/move.md')
+assert_block "$output" 'write ST-n, PH-n, or PR-n' 'an old Phase ordinal in a runbook is unreadable'
+
+mkdir -p "$repo/docs/architecture"
+printf '%s\n' '# Events' 'Status: draft' '' '## Goal and Constraints' 'SC-1 — p99 under 200 ms' '## Options' 'OP-1 — queue' 'OP-1 — direct calls' '## Contracts' 'CT-1 — order event' > "$repo/docs/architecture/events.md"
+output=$(run_gate "$repo" dev-review-system 'docs/architecture/events.md')
+assert_block "$output" 'OP-1 is declared more than once' 'a duplicate architecture option is unreadable'
+
+# ── Missing prerequisites never block ordinary prompts ──
+# UserPromptSubmit sees every prompt; only dev-skill input may be blocked.
+shim=$(mktemp -d "$TMP_ROOT/shim.XXXXXX")
+real_realpath=$(command -v realpath)
+printf '#!/bin/bash\n[[ "$1" == -m ]] && exit 1\nexec %q "$@"\n' "$real_realpath" > "$shim/realpath"
+chmod +x "$shim/realpath"
+repo=$(new_repo)
+write_plan "$repo/docs/plans/gate.md" approved feature '#12' '' '## PR Pattern (provisional)'
+shim_prompt() {
+  jq -cn --arg prompt "$2" '{hook_event_name:"UserPromptSubmit",prompt:$prompt}' | (cd "$repo" && PATH="$1" "$GATE")
+}
+assert_pass "$(shim_prompt "$shim:$PATH" 'fix the login bug')" 'a realpath without -m does not block a plain prompt'
+assert_pass "$(shim_prompt "$shim:$PATH" '/dev-explore auth flow')" 'a realpath without -m does not block an ungated skill'
+assert_block "$(shim_prompt "$shim:$PATH" '/dev-review-feature docs/plans/gate.md')" 'realpath with -m support' 'a gated skill still reports the missing realpath -m'
+nojq=$(mktemp -d "$TMP_ROOT/nojq.XXXXXX")
+ln -s "$(command -v cat)" "$nojq/cat"
+assert_pass "$(shim_prompt "$nojq" 'fix the login bug')" 'missing jq does not block a plain prompt'
+output=$(jq -cn '{hook_event_name:"UserPromptSubmit",prompt:"/dev-review-feature docs/plans/gate.md"}' | (cd "$repo" && PATH="$nojq" "$GATE"))
+assert_block "$output" 'requires jq' 'missing jq still blocks a dev skill'
+
+# ── Review regressions ──
+bad_graph 'an ID joined by / is still checked' '## Acceptance Criteria
+AC-1 — outcome
+## Test Cases
+TC-1 — scenario
+  Proves: AC-1
+## Implementation Steps
+ST-1 — action — satisfies TC-1/TC-9' 'cites TC-9'
+
+bad_graph 'a bare-number range is unreadable input' '## Acceptance Criteria
+AC-1 — outcome
+## Test Cases
+TC-1 — scenario
+  Proves: AC-1
+## Implementation Steps
+ST-1 — action — satisfies TC-1–9' 'uses an ID range'
+
+bad_graph 'an old Precondition: line is unreadable input' '## Acceptance Criteria
+AC-1 — outcome
+## Test Cases
+TC-1 — scenario
+  Proves: AC-1
+## Implementation Steps
+ST-1 — action — satisfies TC-1
+  Precondition: the handler exists — Check: rg handler' 'uses Precondition:'
+
+bad_graph 'an ID of zero says IDs start at 1' '## Acceptance Criteria
+AC-0 — outcome
+## Test Cases
+TC-1 — scenario
+  Proves: AC-0
+## Implementation Steps
+ST-1 — action — satisfies TC-1' 'IDs start at 1'
+
+bad_graph 'a checkbox TC is not a declaration and does not steal the previous TC'"'"'s Proves:' '## Acceptance Criteria
+AC-1 — outcome
+## Test Cases
+TC-1 — scenario
+  Proves: AC-1
+- [ ] TC-2 — scenario
+  Proves: AC-1
+## Implementation Steps
+ST-1 — action — satisfies TC-1, TC-2' 'cites TC-2, which is not declared'
+
+repo=$(id_plan '## Acceptance Criteria
+AC-1 — outcome
+## Test Cases
+TC-1 — scenario
+  Proves: AC-1
+~~~text
+TC-9 sample output
+~~~
+## Implementation Steps
+ST-1 — action — satisfies TC-1')
+output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
+assert_pass "$output" 'a tilde fence is not parsed for IDs'
+
+repo=$(id_plan "$(graph_with_acs 2)")
+sed -i 's/| ST-1, ST-2 | test |/| ST-1 | test |/' "$repo/docs/plans/gate.md"
+printf '| PR-2 | feature/gate-test-2 | feature/gate-test | ST-2 | builds on ST-1 |\n' >> "$repo/docs/plans/gate.md"
+output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
+assert_pass "$output" 'a Summary that mentions a step does not own it'
+
+repo=$(new_repo)
+write_plan "$repo/docs/plans/gate.md" planning feature '#12' '' '## PR Pattern (provisional)'
+output=$(prompt_gate "$repo" '/dev-execute-feature, docs/plans/gate.md')
+assert_block "$output" 'not approved' 'punctuation after a typed skill still gates it'
+output=$(prompt_gate "$repo" '/Dev-execute-feature docs/plans/gate.md')
+assert_block "$output" 'not approved' 'a typed skill is gated regardless of case'
+assert_pass "$(shim_prompt "$nojq" 'restart the dev-server')" 'missing jq does not block a prompt that mentions dev-'
+
+# ── Second review round regressions ──
+# The design-feature template, filled in verbatim, enters review.
+repo=$(id_plan '## Context
+Balances are read on every checkout.
+## Acceptance Criteria
+AC-1 — an archived user cannot check out
+  Source: issue #12
+  Success: checkout returns 403
+  Failure: an order is created
+## Test Fixtures
+FX-1 — user u1, archived, cart with one item
+## Test Cases (intent)
+TC-1 — archived user checks out
+  Proves: AC-1
+  Fixture: FX-1 with no overrides
+  Action: POST /checkout as u1
+  Expected: 403 and no order row
+  Test: <path::name, filled during execution>
+## Implementation Steps
+ST-1 — guard checkout in api/checkout.py — satisfies TC-1
+  PC-1 — checkout reads the user before writing — Check: rg -n "get_user" api/checkout.py
+## Design Decisions
+DD-1 — reject at the API, not the UI, so every client gets AC-1
+## Open Risks
+RK-1 — the archive flag may lag replication — TC-1')
+output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
+assert_pass "$output" 'a template-verbatim plan enters review-feature'
+
+repo=$(id_plan '## Acceptance Criteria
+AC-1 — outcome
+## Test Cases
+TC-1 — scenario
+Proves: AC-1
+## Implementation Steps
+ST-1 — action — satisfies TC-1')
+output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
+assert_pass "$output" 'an unindented Proves: still belongs to its TC'
+
+repo=$(id_plan '## Acceptance Criteria
+AC-1 — outcome
+## Test Cases
+TC-1 — scenario
+  Proves: AC-1
+TC-2 — TC-1 variant with an empty cart
+  Proves: AC-1
+## Implementation Steps
+ST-1 — action — satisfies TC-1, TC-2')
+output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
+assert_pass "$output" 'an em-dash title that names another ID is not a range'
+
+for heading in '## Open question' '## Questions' '## Assumption'; do
+  repo=$(new_repo)
+  write_plan "$repo/docs/plans/gate.md" planning feature '#12' '' '## PR Pattern (provisional)'
+  printf '\n%s\n' "$heading" >> "$repo/docs/plans/gate.md"
+  output=$(run_gate "$repo" dev-review-feature 'docs/plans/gate.md')
+  assert_block "$output" 'parks Assumptions or Open Questions' "'$heading' is an open-questions container"
+done
+
+repo=$(new_repo)
+write_plan "$repo/docs/plans/gate.md" planning feature '#12' '' '## PR Pattern (provisional)'
+output=$(jq -cn '{hook_event_name:"PreToolUse",tool_name:"run_shell_command",tool_input:{command:"git commit -m \"dev-review-code notes\""}}' | (cd "$repo" && "$GATE"))
+assert_pass "$output" 'a shell command that mentions a dev skill is not an invocation'
+output=$(jq -cn '{hook_event_name:"PreToolUse",tool_name:"SlashCommand",tool_input:{command:"/dev-execute-feature docs/plans/gate.md"}}' | (cd "$repo" && "$GATE"))
+assert_block "$output" 'not approved' 'a slash command in a command field still gates'
+
+mkdir -p "$repo/docs/architecture"
+printf '%s\n' '# Events' 'Status: draft' '' '## Contracts' 'CT-1 — order event' '## Decomposition' 'DC-1 — orders plan — CT-9 — emits — contract test' > "$repo/docs/architecture/events.md"
+output=$(run_gate "$repo" dev-review-system 'docs/architecture/events.md')
+assert_block "$output" 'cites IDs it does not declare' 'a non-plan artifact is not told about a plan graph'
 
 printf 'All gate-check tests passed. Temporary fixtures: %s\n' "$TMP_ROOT"
