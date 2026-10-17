@@ -6,6 +6,7 @@ Read [PROCESS.md](../../PROCESS.md). Start from the supplied requirement or reso
 |---|---|
 | No plan | design-feature |
 | planning | Resolve requirements, review-feature, then approval.md |
+| planning, with a bundled goal from design or `NEEDS SPLIT` from review | frame-goal; then design-feature for a narrowed plan, or review-feature if the user keeps the goal whole |
 | approved | execute-feature |
 | implemented | review-code |
 | reviewed | create-pr |

@@ -5,7 +5,7 @@
 | Need | Skill |
 |---|---|
 | Deliver or resume a feature/fix/refactor | [ship-feature](ship-feature.md) |
-| Clarify or split an ambiguous requirement | [frame-goal](frame-goal.md) |
+| Clarify or split a requirement, including a plan that bundles goals | [frame-goal](frame-goal.md) |
 | Understand existing code | [explore](explore.md) |
 | Plan application changes | [design-feature](design-feature.md) |
 | Review a plan before approval | [review-feature](review-feature.md) |

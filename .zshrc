@@ -142,7 +142,7 @@ claude() {
     local args=()
     for arg in "$@"; do
         case "$arg" in
-            --key=*)
+            -k=*|--key=*)
                 local token="CLAUDE${arg#*=}_API_KEY"
                 env_vars+=("ANTHROPIC_AUTH_TOKEN=${(P)token}")
                 ;;

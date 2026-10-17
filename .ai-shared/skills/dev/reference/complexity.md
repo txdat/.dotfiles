@@ -10,7 +10,7 @@ State cost criteria as the bound itself; for data access, name what limits the e
 
 ## Structure
 
-Assess abstraction, dependency, state, and coordination complexity separately from runtime cost. When cost threatens required limits or complexity outweighs its benefit, warn with cause and consequence, compare a simpler viable alternative's costs and maintenance tradeoffs, and recommend one, or explain why none preserves the requirements. Record the selected approach and rationale; changes to agreed behavior follow [approval.md](../approval.md).
+Assess abstraction, dependency, state, and coordination complexity separately from runtime cost. Include mutation surface: the code paths that must each enforce a rule the design introduces. An approach that is cheap at its core but requires every writer or reader of a class to apply the rule separately carries that surface as cost against one that enforces the rule at one point. When cost threatens required limits or complexity outweighs its benefit, warn with cause and consequence, compare a simpler viable alternative's costs and maintenance tradeoffs, and recommend one, or explain why none preserves the requirements. Record the selected approach and rationale; changes to agreed behavior follow [approval.md](../approval.md).
 
 ### Necessity check
 
