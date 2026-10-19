@@ -1,34 +1,13 @@
-# /create-pr — Publish Reviewed Work
+# /create-pr — Publish a Reviewed Stack
 
-Read [PROCESS.md](../../PROCESS.md) and resolve the named plan under [plan.md](plan.md). Entry is `reviewed` with a finalized PR Pattern. Default to draft unless `ready` is requested. [`~/.dotfiles/.ai-shared/bin/dev-publish.sh`](../../bin/dev-publish.sh) (`dev-publish.sh` below) performs every mechanical step and rechecks state on each run; on `BLOCK` or failure, stop and report its output rather than working around it.
+Publish a `reviewed` plan, with every plan stacked on it, as one PR per slice, draft unless the user asks for ready. Pass the stack's root ([plan.md — Stacks](plan.md#stacks)); the gate checks the plans above it. [dev-publish.sh](../../bin/dev-publish.sh) does the mechanical checks; `dev-publish.sh stack <root>` lists the stack's plans, parents before children. Run each step on every plan in that order, and finish it for all of them before the next step. No PR merges until every PR in the stack is published. When a step blocks, fix what it names and rerun that step; a changed slice returns its plan to review-code.
 
-## Publish
+1. `dev-publish.sh check <plan>` — each slice branch is at its `Green:` SHA, or plan archive commits above it on the final slice after an earlier run, and parents match the PR Pattern. A block here stops publication before anything is archived.
+2. Read the live plan for sensitive content, then `dev-publish.sh archive <plan>` — it commits the plan copy, with an empty `Worktree:`, on the final slice branch. This archive-only commit is the one change allowed above the final Green SHA; a rerun after a repair refreshes the copy.
+3. For each slice, first to last: `git push -u origin <branch>` (never force), then `gh pr create --base <Parent> --head <branch> --title <title> --body-file <file> [--draft]`, titled from the row's Summary. On a rerun, still push, but skip `gh pr create` for a slice whose open PR already targets its Parent; after a repair, edit the final PR body to link the refreshed plan copy.
+4. `dev-publish.sh verify <plan>` — each slice has one open PR on its Parent, each pushed branch matches its reviewed tip, plus the archive commit on the last, and the final PR body links the archived plan.
+5. Once every plan verifies, `dev-publish.sh cleanup <plan>`, children before parents (the stack list reversed) — removes the worktree, deletes local slice branches that match `origin`, and deletes the live plan. If it lists ignored files, check them for unrelated work, then rerun with `--ignored-checked`. If cleanup stops partway, rerun it on the plans whose live copy remains.
 
-1. Run `dev-publish.sh preflight <plan>`. It checks each slice against its recorded Parent and `Green:` record, its diff and artifacts, and existing PRs, and prints each slice's base. A recorded Parent that no longer exists follows [plan.md — Changes](plan.md#changes).
-2. Run `dev-publish.sh archive <plan>` and inspect the printed diff of the plan copy for sensitive content. Then run `dev-publish.sh archive --commit <plan>`.
-3. For each slice, first to last, write its body under [PR bodies](#pr-bodies), then run `dev-publish.sh create <plan> <PR-n> <title> <body-file> [--ready]`. Each body links PRs created before it, so it is written only after they exist. The script pushes without force and creates the PR against the recorded Parent. `EXISTS` means the slice's PR already exists from an earlier run: continue.
-4. Run `dev-publish.sh verify <plan>`. Fix body mismatches with `gh pr edit --body-file`, then rerun; any other `BLOCK` stops publication.
-5. Update issues under [Issue links](#issue-links).
-6. Run `dev-publish.sh cleanup <plan>`. When it lists ignored content, check it for unrelated files, then rerun with `--ignored-checked`.
+PR bodies follow the project template and [plan.md](plan.md#artifact)'s language rule: the change, why, how it was verified, and limitations. Add `Refs #N` when an issue is linked, never a closing keyword. List the PRs before this one in the stack, in order; each plan's final PR links its archived plan at its commit SHA.
 
-## Merge handoff
-
-PR bodies give the maintainer merge context: the intended integration branch, external parent PR dependencies, dependency order, and any repository-prescribed merge strategy. Identify the integration branch from project configuration, check live merge/protection settings for constraints, and record it separately from publication Parents, which may be unmerged dependency branches. Resolve ambiguity before publication.
-
-For dependent PRs, note that downstream bases must be reconciled as parents merge, and that squash or rebase merges can alter a replayed diff, so the maintainer re-verifies it against the reviewed slice. These are maintainer notes; the workflow never merges or retargets PRs and never rewrites branches.
-
-## PR bodies
-
-Use [language.md](language.md) and the project template: the change, rationale, verification, and limitations, with `Refs #N` and no issue-closing keywords. Include the ordered branch/parent table linking every earlier PR; later entries use branch names only, without predicted numbers or placeholders, and created bodies are not backfilled. The final PR links the archive by its full 40-character commit SHA: `…/blob/<archive-sha>/<plan path>`. After verify passes, read the fetched bodies for language and the merge handoff.
-
-## Issue links
-
-For each represented issue, mark only the delivered goal's checklist items complete and attach their PR numbers after all its PRs exist. Preserve other goals; resolve an ambiguous goal entry before editing. PRs only reference issues; closing one is a QA or maintainer decision.
-
-## Chain publication
-
-When the invocation names several plans of one `After:` chain, follow [related plans — Chain runs](reference/related-plans.md#chain-runs). Every named plan must be `reviewed`. Publish each plan completely under [Publish](#publish), through verify and cleanup, before starting the next. A later plan's PR-1 targets the earlier plan's last slice branch, so that branch must already be pushed; preflight accepts the earlier plan's archive commit as the only thing the later branch lacks. In each plan's PR bodies, list the earlier plans' PRs as external parent PR dependencies under [Merge handoff](#merge-handoff). On resume, a plan whose publication stopped midway is named again, and its rerun reports `EXISTS` for the PRs already created.
-
-## Complete
-
-Return the PR URLs and the cleanup output, and end the turn. Claim completion only after verify and cleanup pass; otherwise report the script output for manual handling. A failed cleanup resumes by rerunning `dev-publish.sh cleanup <plan>`, not create-pr. Once any PR of the plan is merged or closed, stop and report it; the user finishes as under [plan.md — Lifecycle](plan.md#lifecycle) Stopping. Publication does not establish CI success, merge, or deployment. Follow-up changes use a new plan whose Parent follows [design-feature.md — PR slicing](design-feature.md#pr-slicing).
+Return the PR URLs.

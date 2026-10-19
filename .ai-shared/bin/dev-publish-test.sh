@@ -61,22 +61,23 @@ new_repo() {
   REPO="$dir/main"
 }
 
-# A slice worktree with one commit on top of its parent; prints its path.
-slice() {
-  local branch="$1" parent="$2" file="$3" wt
-  wt=$(cd "$REPO" && bash "$SCRIPT_DIR/dev-worktree.sh" create "${branch//\//-}" "$branch" "$parent" "$(dirname "$REPO")/wt" 2>/dev/null) || fail "worktree for $branch"
-  printf '%s\n' "$file" > "$wt/$file"
-  git -C "$wt" add . && git -C "$wt" commit -qm "feat: $file"
+# A commit of $2 on the worktree's current branch.
+commit_file() { printf '%s\n' "$2" > "$1/$2"; git -C "$1" add . && git -C "$1" commit -qm "feat: $2"; }
+
+# The plan's worktree on slice $1 from $2; prints its path.
+plan_worktree() {
+  local wt
+  wt=$(cd "$REPO" && bash "$SCRIPT_DIR/dev-worktree.sh" create "${1//\//-}" "$1" "$2" "$(dirname "$REPO")/wt" 2>/dev/null) || fail "worktree for $1"
   printf '%s\n' "$wt"
 }
 
-PLAN=docs/plans/demo_2026-10-17_feature_publish.md
+PLAN=docs/plans/7_feature_publish.spec.md
 write_plan() {
   mkdir -p "$REPO/docs/plans"
   {
-    printf '# Task: publish demo\n'
-    printf 'Status: reviewed | Type: feature | Base: main | Snapshot: %s | Issue: #7 | Worktree: %s\n\n' "$(git -C "$REPO" rev-parse main)" "$2"
-    printf '## PR Pattern\nType: chain\n| PR | Branch | Parent | Steps | Summary |\n|---|---|---|---|---|\n%s\n\n' "$1"
+    printf '# Publish demo\n'
+    printf 'Status: reviewed | Type: feature | Base: main | Issue: #7 | Worktree: %s\n\n' "$2"
+    printf '## PR Pattern\n| PR | Branch | Parent | Steps | Summary |\n|---|---|---|---|---|\n%s\n\n' "$1"
     printf '%s\n' "$3"
   } > "$REPO/$PLAN"
 }
@@ -90,178 +91,256 @@ expect_fail() {
   [[ "$out" == *"$want"* ]] || fail "$label: missing '$want' in: $out"
   pass "$label"
 }
+# What the agent does per slice in create-pr step 3.
+open_pr() { # <branch> <base> <body-file> [--draft]
+  git -C "$REPO" push -q -u origin "$1"
+  (cd "$REPO" && gh pr create --base "$2" --head "$1" --title "feat: $1" --body-file "$3" ${4-}) >/dev/null
+}
+set_body() { jq --argjson i "$1" --arg b "$2" '.[$i].body = $b' "$GH_STORE" > "$GH_STORE.tmp" && mv "$GH_STORE.tmp" "$GH_STORE"; }
 
-# ── a two-slice chain from preflight through cleanup ──
+# ── two stacked slices in one worktree, from check through cleanup ──
 new_repo chain
-wt1=$(slice feat/demo-1 main one.txt)
-wt2=$(slice feat/demo-2 feat/demo-1 two.txt)
-g1=$(git -C "$wt1" rev-parse HEAD); g2=$(git -C "$wt2" rev-parse HEAD)
+wt=$(plan_worktree feat/demo-1 main)
+commit_file "$wt" one.txt
+git -C "$wt" switch -q -c feat/demo-2 feat/demo-1
+commit_file "$wt" two.txt
+g1=$(git -C "$REPO" rev-parse feat/demo-1); g2=$(git -C "$REPO" rev-parse feat/demo-2)
 rows='| PR-1 | feat/demo-1 | main | ST-1 | one |
 | PR-2 | feat/demo-2 | feat/demo-1 | ST-2 | two |'
 records="Green: PR-1 (feat/demo-1) at $g1
-Green: PR-2 (feat/demo-2) at $g2
+Green: PR-2 (feat/demo-2) at $g2"
+write_plan "$rows" "$wt" "$records"
 
-## Publication Inventory
-Worktree: PR-1 (feat/demo-1) at $wt1
-Worktree: PR-2 (feat/demo-2) at $wt2"
-write_plan "$rows" "$wt2" "$records"
+out=$(run check "$PLAN")
+[[ "$out" == *$'PR-1\tfeat/demo-1\tbase=main'* && "$out" == *$'PR-2\tfeat/demo-2\tbase=feat/demo-1'* && "$out" == *'PASS check'* ]] || fail "check: $out"
+pass 'check resolves each slice against its Parent'
+printf 'other\n' > "$REPO/other.txt" && git -C "$REPO" add other.txt && git -C "$REPO" commit -qm 'feat: unrelated' && git -C "$REPO" push -q origin main
+run check "$PLAN" >/dev/null
+pass 'an unrelated Base advance does not block check'
+write_plan "$rows" "$wt" "${records/$g2/$g1}"
+expect_fail 'a tip that differs from its Green record blocks' 'differs from Green' check "$PLAN"
+write_plan "$rows" "$wt" "$records"
 
-out=$(run preflight "$PLAN")
-[[ "$out" == *$'PR-1\tfeat/demo-1\tbase=main'* && "$out" == *$'PR-2\tfeat/demo-2\tbase=feat/demo-1'* ]] || fail "preflight bases: $out"
-pass 'preflight resolves a chain to Base and the previous slice'
-
-write_plan "$rows" "$wt2" "${records/$g2/$g1}"
-expect_fail 'a tip that differs from its Green record blocks' 'differs from Green' preflight "$PLAN"
-write_plan "$rows" "$wt2" "$records"
-
-out=$(run archive "$PLAN")
-[[ "$out" == *'+Status: reviewed'*'| Worktree:'$'\n'* && "$out" == *STAGED* ]] || fail "archive prepare: $out"
-pass 'archive stages a reviewed copy with an empty Worktree and shows its diff'
-run archive --commit "$PLAN" >/dev/null
-[[ "$(git -C "$wt2" log -1 --format=%s)" == "docs(plan): archive demo_2026-10-17_feature_publish" ]] || fail 'archive commit subject'
-grep -q '| Worktree:$' <(git -C "$wt2" show "HEAD:$PLAN") || fail 'archive clears Worktree'
+git -C "$wt" switch -q feat/demo-1
+expect_fail 'archive needs the worktree on the final slice' 'not on the final slice feat/demo-2' archive "$PLAN"
+git -C "$wt" switch -q feat/demo-2
+printf 'x\n' > "$wt/stray.txt"
+expect_fail 'archive needs a clean worktree' 'is not clean' archive "$PLAN"
+rm "$wt/stray.txt"
+[[ "$(run archive "$PLAN")" == 'PASS archive committed at '* ]] || fail 'archive'
+[[ "$(git -C "$wt" log -1 --format=%s)" == 'docs(plan): archive 7_feature_publish' ]] || fail 'archive subject'
+[[ "$(git -C "$wt" show --format= --name-only HEAD)" == "$PLAN" ]] || fail 'archive commits only the plan'
+grep -q '| Worktree:$' <(git -C "$wt" show "HEAD:$PLAN") || fail 'archive clears Worktree'
 [[ "$(run archive "$PLAN")" == *'already committed'* ]] || fail 'archive rerun'
-pass 'archive commits once and a rerun is a no-op'
-
-run preflight "$PLAN" >/dev/null
-pass 'preflight accepts an archive-only commit above the final Green'
+pass 'archive commits the plan copy once, with an empty Worktree'
+run check "$PLAN" >/dev/null
+pass 'check accepts the archive commit above the final Green'
 
 body1="$TEST_ROOT/body1.md"; printf 'First slice. Refs #7\n' > "$body1"
-expect_fail 'a PR whose base branch is not on origin is refused' 'not on origin' create "$PLAN" PR-2 'feat: two' "$body1"
-out=$(run create "$PLAN" PR-1 'feat: one' "$body1")
-[[ "$out" == 'CREATED PR-1 https://github.test/o/r/pull/1' ]] || fail "create PR-1: $out"
-grep -q '^Status: reviewed' "$REPO/$PLAN" || fail 'create changed the live plan'
-[[ "$(jq -r '.[0].isDraft' "$GH_STORE")" == true ]] || fail 'PRs default to draft'
-pass 'the first PR is a draft and leaves the live plan unchanged'
-out=$(run create "$PLAN" PR-1 'feat: one' "$body1")
-[[ "$out" == 'EXISTS PR-1 https://github.test/o/r/pull/1' && "$(jq length "$GH_STORE")" -eq 1 ]] || fail "duplicate create: $out"
-pass 'an open PR at the recorded Parent and slice tip is reported, never recreated'
-run preflight "$PLAN" >/dev/null
-pass 'preflight accepts the slice own open PR on resume'
+open_pr feat/demo-1 main "$body1" --draft
+run check "$PLAN" >/dev/null
+pass 'check accepts the slice own open PR on resume'
 jq '.[0].baseRefName = "other"' "$GH_STORE" > "$GH_STORE.tmp" && mv "$GH_STORE.tmp" "$GH_STORE"
-expect_fail 'preflight blocks an open PR with another base' 'open PR not based on main' preflight "$PLAN"
-expect_fail 'create refuses an open PR with another base' 'not main at' create "$PLAN" PR-1 'feat: one' "$body1"
+expect_fail 'check blocks an open PR with another base' 'open PR not based on main' check "$PLAN"
 jq '.[0].baseRefName = "main"' "$GH_STORE" > "$GH_STORE.tmp" && mv "$GH_STORE.tmp" "$GH_STORE"
-head1=$(jq -r '.[0].headRefOid' "$GH_STORE")
-jq '.[0].headRefOid = "0000000000000000000000000000000000000000"' "$GH_STORE" > "$GH_STORE.tmp" && mv "$GH_STORE.tmp" "$GH_STORE"
-expect_fail 'preflight blocks an open PR at another head' 'open PR not based on main at' preflight "$PLAN"
-expect_fail 'create refuses an open PR at another head' 'not main at' create "$PLAN" PR-1 'feat: one' "$body1"
-jq --arg o "$head1" '.[0].headRefOid = $o' "$GH_STORE" > "$GH_STORE.tmp" && mv "$GH_STORE.tmp" "$GH_STORE"
+first_archive=$(git -C "$wt" rev-parse HEAD)
+# A repair after the PRs open: new commits on both slices, re-reviewed, then
+# check and archive rerun before the push.
+git -C "$wt" switch -q feat/demo-1 && printf 'fixed\n' >> "$wt/one.txt" && git -C "$wt" commit -qam 'fix: one'
+git -C "$wt" switch -q feat/demo-2 && git -C "$wt" merge -q --no-edit feat/demo-1
+g1=$(git -C "$REPO" rev-parse feat/demo-1); g2=$(git -C "$REPO" rev-parse feat/demo-2)
+records="$records
+Green: PR-1 (feat/demo-1) at $g1
+Green: PR-2 (feat/demo-2) at $g2"
+write_plan "$rows" "$wt" "$records"
+run check "$PLAN" >/dev/null
+pass 'check accepts the slice own open PR behind a repaired tip'
+[[ "$(run archive "$PLAN")" == 'PASS archive committed at '* ]] || fail 'archive after repair'
+[[ "$(git -C "$wt" show HEAD:"$PLAN" | grep -c "at $g2")" -eq 1 ]] || fail 'archive refreshes the copy'
+run check "$PLAN" >/dev/null
+git -C "$REPO" push -q origin feat/demo-1
+jq --arg o "$g1" '.[0].headRefOid = $o' "$GH_STORE" > "$GH_STORE.tmp" && mv "$GH_STORE.tmp" "$GH_STORE"  # GitHub follows the push
+pass 'archive refreshes its own earlier copy after a repair'
 
-archive_sha=$(git -C "$wt2" rev-parse HEAD)
+archive_sha=$(git -C "$wt" rev-parse HEAD)
 body2="$TEST_ROOT/body2.md"
 printf 'After https://github.test/o/r/pull/1. Plan: https://github.test/o/r/blob/%s/%s\n' "$archive_sha" "$PLAN" > "$body2"
-run create "$PLAN" PR-2 'feat: two' "$body2" --ready >/dev/null
-[[ "$(jq -r '.[1].baseRefName + " " + (.[1].isDraft|tostring)' "$GH_STORE")" == 'feat/demo-1 false' ]] || fail 'PR-2 base and ready'
-pass 'a later slice targets the previous slice and honours --ready'
-
+open_pr feat/demo-2 feat/demo-1 "$body2"
 run verify "$PLAN" >/dev/null
-pass 'verify accepts bases, tips, links, and the immutable archive link'
-jq '.[1].body = "no links"' "$GH_STORE" > "$GH_STORE.tmp" && mv "$GH_STORE.tmp" "$GH_STORE"
+pass 'verify accepts bases, tips, Green, links, and the immutable archive link'
+set_body 1 "After #1. Plan: https://github.test/o/r/blob/$first_archive/$PLAN"
+expect_fail 'verify blocks a link to the copy archived before a repair' 'not the latest plan copy' verify "$PLAN"
+set_body 1 'no links'
 expect_fail 'verify reports a missing earlier-PR link' 'does not link earlier PR-1' verify "$PLAN"
 expect_fail 'verify reports a missing archive link' 'no immutable' verify "$PLAN"
 expect_fail 'cleanup keeps everything while verification fails' 'not verified' cleanup "$PLAN"
-[[ -d "$wt1" && -f "$REPO/$PLAN" ]] || fail 'cleanup touched state before verification'
-jq --arg b "After #12. Plan: https://github.test/o/r/blob/$archive_sha/$PLAN" '.[1].body = $b' "$GH_STORE" > "$GH_STORE.tmp" && mv "$GH_STORE.tmp" "$GH_STORE"
+[[ -d "$wt" && -f "$REPO/$PLAN" ]] || fail 'cleanup touched state before verification'
+set_body 1 "After #12. Plan: https://github.test/o/r/blob/$archive_sha/$PLAN"
 expect_fail 'verify does not take #12 as a link to #1' 'does not link earlier PR-1' verify "$PLAN"
-jq --arg b "After https://github.test/o/r/pull/12. Plan: https://github.test/o/r/blob/$archive_sha/$PLAN" '.[1].body = $b' "$GH_STORE" > "$GH_STORE.tmp" && mv "$GH_STORE.tmp" "$GH_STORE"
+set_body 1 "After https://github.test/o/r/pull/12. Plan: https://github.test/o/r/blob/$archive_sha/$PLAN"
 expect_fail 'verify does not take pull/12 as a link to pull/1' 'does not link earlier PR-1' verify "$PLAN"
-jq --arg b "After #1. Plan: https://github.test/o/r/blob/$archive_sha/$PLAN" '.[1].body = $b' "$GH_STORE" > "$GH_STORE.tmp" && mv "$GH_STORE.tmp" "$GH_STORE"
+set_body 1 "After #1. Plan: https://github.test/o/r/blob/$archive_sha/$PLAN"
 run verify "$PLAN" >/dev/null
 pass 'verify accepts #1 as a link to PR-1'
-jq --arg b "$(cat "$body2")" '.[1].body = $b' "$GH_STORE" > "$GH_STORE.tmp" && mv "$GH_STORE.tmp" "$GH_STORE"
+write_plan "$rows" "$wt" "${records/$g1/$(git -C "$REPO" rev-parse main)}"
+expect_fail 'verify checks a non-final slice against its Green' 'origin/feat/demo-1 differs from Green' verify "$PLAN"
+write_plan "$rows" "$wt" "$records"
 
-mkdir -p "$wt1/build" && printf 'x\n' > "$wt1/build/out"
+mkdir -p "$wt/build" && printf 'x\n' > "$wt/build/out"
 code=0; out=$(run cleanup "$PLAN" 2>&1) || code=$?
-[[ "$code" -eq 4 && "$out" == *'IGNORED PR-1'* && -d "$wt1" && -d "$wt2" ]] || fail "ignored content: $code $out"
-pass 'cleanup shows ignored content before removing any worktree'
+[[ "$code" -eq 4 && "$out" == *'IGNORED in'* && -d "$wt" ]] || fail "ignored content: $code $out"
+pass 'cleanup shows ignored content before removing the worktree'
 out=$(run cleanup "$PLAN" --ignored-checked)
-[[ "$out" == *$'PR-1\tdeleted feat/demo-1'* && "$out" == *$'PR-2\tdeleted feat/demo-2'* && "$out" == *'PLAN deleted (untracked)'* ]] || fail "cleanup: $out"
-[[ ! -e "$wt1" && ! -e "$wt2" && ! -e "$REPO/$PLAN" ]] || fail 'cleanup left state behind'
-pass 'cleanup removes worktrees, local branches, and the untracked live plan'
+[[ "$out" == *'deleted feat/demo-2'* && "$out" == *$'PR-1\tdeleted feat/demo-1'* && "$out" == *'live plan deleted'* ]] || fail "cleanup: $out"
+[[ ! -e "$wt" && ! -e "$REPO/$PLAN" ]] || fail 'cleanup left state behind'
+git -C "$REPO" rev-parse --verify -q refs/heads/feat/demo-1 >/dev/null && fail 'cleanup kept a pushed slice branch'
+pass 'cleanup removes the worktree, every pushed slice branch, and the live plan'
 [[ "$(run cleanup "$PLAN")" == *'already complete'* ]] || fail 'cleanup rerun'
 pass 'a cleanup rerun after completion is a no-op'
+expect_fail 'cleanup of a plan that never existed fails' 'Live plan not found' cleanup docs/plans/7_feature_typo.spec.md
+
+# ── an unpushed local commit keeps its branch and the live plan ──
+new_repo unpushed
+wt=$(plan_worktree feat/u-1 main)
+commit_file "$wt" u1.txt
+git -C "$wt" switch -q -c feat/u-2 feat/u-1
+commit_file "$wt" u2.txt
+rows='| PR-1 | feat/u-1 | main | ST-1 | one |
+| PR-2 | feat/u-2 | feat/u-1 | ST-2 | two |'
+write_plan "$rows" "$wt" "Green: PR-1 (feat/u-1) at $(git -C "$REPO" rev-parse feat/u-1)
+Green: PR-2 (feat/u-2) at $(git -C "$REPO" rev-parse feat/u-2)"
+run archive "$PLAN" >/dev/null
+open_pr feat/u-1 main "$body1"
+printf 'After #1. Plan: https://github.test/o/r/blob/%s/%s\n' "$(git -C "$wt" rev-parse HEAD)" "$PLAN" > "$TEST_ROOT/body-u.md"
+open_pr feat/u-2 feat/u-1 "$TEST_ROOT/body-u.md"
+git -C "$REPO" worktree add -q "$TEST_ROOT/unpushed/side" feat/u-1 2>/dev/null
+git -C "$TEST_ROOT/unpushed/side" commit -q --allow-empty -m 'wip: local only'
+git -C "$REPO" worktree remove "$TEST_ROOT/unpushed/side"
+expect_fail 'verify reports a local tip ahead of origin' 'local tip of feat/u-1 differ' verify "$PLAN"
+git -C "$REPO" branch -q -f feat/u-1 origin/feat/u-1
+# A cleanup that stopped after removing the worktree resumes from the branches.
+git -C "$REPO" worktree remove "$wt"
+out=$(run cleanup "$PLAN")
+[[ "$out" == *$'PR-1\tdeleted feat/u-1'* && "$out" == *$'PR-2\tdeleted feat/u-2'* && ! -e "$REPO/$PLAN" ]] || fail "cleanup resume: $out"
+pass 'a cleanup rerun after the worktree is gone deletes the branches and the plan'
 
 # ── the live plan is untracked; a tracked plan is a published record ──
 new_repo collide
-wtc=$(slice feat/collide main c.txt)
-write_plan '| PR-1 | feat/collide | main | ST-1 | c |' "$wtc" "Green: PR-1 (feat/collide) at $(git -C "$wtc" rev-parse HEAD)"
-mkdir -p "$wtc/docs/plans" && printf 'Status: reviewed | Worktree:\n' > "$wtc/$PLAN"
-git -C "$wtc" add -f "$PLAN" && git -C "$wtc" commit -qm 'docs(plan): archive older'
+wt=$(plan_worktree feat/collide main)
+commit_file "$wt" c.txt
+write_plan '| PR-1 | feat/collide | main | ST-1 | c |' "$wt" "Green: PR-1 (feat/collide) at $(git -C "$wt" rev-parse HEAD)"
+mkdir -p "$wt/docs/plans" && printf 'Status: reviewed | Worktree:\n' > "$wt/$PLAN"
+git -C "$wt" add -f "$PLAN" && git -C "$wt" commit -qm 'docs(plan): archive older'
 expect_fail 'archive refuses a published plan at the same path' 'path collision' archive "$PLAN"
 git -C "$REPO" add -f "$PLAN" && git -C "$REPO" commit -qm 'docs(plan): archive demo'
-expect_fail 'a tracked plan is not a live plan' 'published record' preflight "$PLAN"
+expect_fail 'a tracked plan is not a live plan' 'published record' check "$PLAN"
 git -C "$REPO" rm -q --cached "$PLAN"
-expect_fail 'a plan in HEAD but not the index is not a live plan' 'published record' preflight "$PLAN"
+expect_fail 'a plan in HEAD but not the index is not a live plan' 'published record' check "$PLAN"
+expect_fail 'a plan name outside the format is refused' 'Plan must be docs/plans/<issue>_<type>_<slug>.spec.md' check docs/plans/demo.md
 
 # ── archive clears only the Worktree field ──
 new_repo order
-wto=$(slice feat/order main o.txt)
-write_plan '| PR-1 | feat/order | main | ST-1 | o |' "$wto" "Green: PR-1 (feat/order) at $(git -C "$wto" rev-parse HEAD)"
-sed -i "s#| Worktree: $wto\$#| Worktree: $wto | Owner: dev#" "$REPO/$PLAN"
+wt=$(plan_worktree feat/order main)
+commit_file "$wt" o.txt
+write_plan '| PR-1 | feat/order | main | ST-1 | o |' "$wt" "Green: PR-1 (feat/order) at $(git -C "$wt" rev-parse HEAD)"
+sed -i "s#| Worktree: $wt\$#| Worktree: $wt | Owner: dev#" "$REPO/$PLAN"
 run archive "$PLAN" >/dev/null
-grep -q '^Status: reviewed | .* | Worktree: | Owner: dev$' "$wto/$PLAN" || fail "a field after Worktree: $(grep '^Status:' "$wto/$PLAN")"
+grep -q '^Status: reviewed | .* | Worktree: | Owner: dev$' "$wt/$PLAN" || fail "a field after Worktree: $(grep '^Status:' "$wt/$PLAN")"
 pass 'archive clears Worktree and keeps a field after it'
 
-# ── the final PR needs a committed copy with an empty Worktree ──
-new_repo copy
-wtp=$(slice feat/copy main p.txt)
-write_plan '| PR-1 | feat/copy | main | ST-1 | p |' "$wtp" "Green: PR-1 (feat/copy) at $(git -C "$wtp" rev-parse HEAD)"
-mkdir -p "$wtp/docs/plans" && cp "$REPO/$PLAN" "$wtp/$PLAN"
-git -C "$wtp" add -f "$PLAN" && git -C "$wtp" commit -qm 'docs(plan): archive demo_2026-10-17_feature_publish'
-expect_fail 'a committed copy that keeps its Worktree is not the plan copy' 'no committed plan copy' create "$PLAN" PR-1 'feat: p' "$body1"
-
-# ── a repair merged forward into a later slice (plan.md#worktree-operations) ──
+# ── a repair merged forward into a later slice (plan.md#worktree) ──
 new_repo forward
-wtf1=$(slice feat/fwd-1 main f1.txt)
-wtf2=$(slice feat/fwd-2 feat/fwd-1 f2.txt)
-printf 'fixed\n' >> "$wtf1/f1.txt"
-git -C "$wtf1" commit -qam 'fix: f1 repair'
-git -C "$wtf2" merge -q --no-edit feat/fwd-1
+wt=$(plan_worktree feat/fwd-1 main)
+commit_file "$wt" f1.txt
+git -C "$wt" switch -q -c feat/fwd-2 feat/fwd-1
+commit_file "$wt" f2.txt
+git -C "$wt" switch -q feat/fwd-1
+printf 'fixed\n' >> "$wt/f1.txt" && git -C "$wt" commit -qam 'fix: f1 repair'
+git -C "$wt" switch -q feat/fwd-2
+git -C "$wt" merge -q --no-edit feat/fwd-1
 rows='| PR-1 | feat/fwd-1 | main | ST-1 | one |
 | PR-2 | feat/fwd-2 | feat/fwd-1 | ST-2 | two |'
-write_plan "$rows" "$wtf2" "Green: PR-1 (feat/fwd-1) at $(git -C "$wtf1" rev-parse HEAD)
-Green: PR-2 (feat/fwd-2) at $(git -C "$wtf2" rev-parse HEAD)
+write_plan "$rows" "$wt" "Green: PR-1 (feat/fwd-1) at $(git -C "$REPO" rev-parse feat/fwd-1)
+Green: PR-2 (feat/fwd-2) at $(git -C "$REPO" rev-parse feat/fwd-2)"
+out=$(run check "$PLAN") || fail "check after merge-forward: $out"
+[[ "$out" == *$'PR-2\tfeat/fwd-2\tbase=feat/fwd-1\tparent='"$(git -C "$REPO" rev-parse feat/fwd-1)"* ]] || fail "merge-forward parent: $out"
+pass 'check accepts a repair merged forward and diffs from the repaired parent'
 
-## Publication Inventory
-Worktree: PR-1 (feat/fwd-1) at $wtf1
-Worktree: PR-2 (feat/fwd-2) at $wtf2"
-out=$(run preflight "$PLAN") || fail "preflight after merge-forward: $out"
-[[ "$out" == *$'PR-2\tfeat/fwd-2\tbase=feat/fwd-1\tparent='"$(git -C "$wtf1" rev-parse HEAD)"* ]] || fail "merge-forward parent: $out"
-pass 'preflight accepts a repair merged forward and diffs the later slice from the repaired parent'
+# ── a stacked plan parented on its published parent plan's last branch ──
+new_repo befe
+wta=$(plan_worktree feat/be main)
+commit_file "$wta" be.txt
+PLAN=docs/plans/7_feature_orders-api.spec.md
+write_plan '| PR-1 | feat/be | main | ST-1 | be |' "$wta" "Green: PR-1 (feat/be) at $(git -C "$wta" rev-parse HEAD)"
+wtb=$(plan_worktree feat/fe feat/be)
+commit_file "$wtb" fe.txt
+run archive "$PLAN" >/dev/null
+printf 'Parent. Plan: https://github.test/o/r/blob/%s/%s\n' "$(git -C "$wta" rev-parse HEAD)" "$PLAN" > "$TEST_ROOT/body-be.md"
+open_pr feat/be main "$TEST_ROOT/body-be.md"
+run verify "$PLAN" >/dev/null && run cleanup "$PLAN" >/dev/null
+PLAN=docs/plans/7_feature_orders-web.spec.md
+write_plan '| PR-1 | feat/fe | feat/be | ST-1 | fe |' "$wtb" "Green: PR-1 (feat/fe) at $(git -C "$wtb" rev-parse HEAD)"
+out=$(run check "$PLAN") || fail "check after the parent plan published: $out"
+[[ "$out" == *$'PR-1\tfeat/fe\tbase=feat/be\tparent='"$(git -C "$wtb" rev-parse HEAD~1)"* ]] || fail "stacked parent: $out"
+pass 'a stacked plan lacking only its parent archive commit passes check'
+late="$TEST_ROOT/befe/late"
+git -C "$REPO" worktree add -q "$late" origin/feat/be 2>/dev/null
+printf 'late\n' > "$late/late.txt" && git -C "$late" add late.txt && git -C "$late" commit -qm 'feat: late be'
+git -C "$late" push -q origin HEAD:feat/be
+expect_fail 'a code commit on the Parent that the stacked plan lacks blocks' 'does not contain its Parent feat/be' check "$PLAN"
+git -C "$late" reset -q --hard HEAD~1
+mkdir -p "$late/docs" && printf 'notes\n' > "$late/docs/notes.md"
+git -C "$late" add docs/notes.md && git -C "$late" commit -qm 'docs: notes'
+git -C "$late" push -q -f origin HEAD:feat/be
+expect_fail 'a non-plan docs change on the Parent blocks' 'does not contain its Parent feat/be' check "$PLAN"
+git -C "$late" reset -q --hard HEAD~1
+git -C "$late" mv be.txt docs/plans/moved.md && git -C "$late" commit -qm 'chore: move be'
+git -C "$late" push -q -f origin HEAD:feat/be
+expect_fail 'code renamed into docs/plans/ on the Parent blocks' 'does not contain its Parent feat/be' check "$PLAN"
 
-# ── a chain publication: plan b's PR-1 is parented on plan a's last slice ──
-new_repo plans
-wta=$(slice feat/a main a.txt)
-wtb=$(slice feat/b feat/a b.txt)
-PLAN_B=docs/plans/demo_2026-10-17_feature_b.md
-PLAN=docs/plans/demo_2026-10-17_feature_a.md
-write_plan '| PR-1 | feat/a | main | ST-1 | a |' "$wta" "Green: PR-1 (feat/a) at $(git -C "$wta" rev-parse HEAD)"
-run archive "$PLAN" >/dev/null && run archive --commit "$PLAN" >/dev/null
-bodya="$TEST_ROOT/body-a.md"
-printf 'A. Plan: https://github.test/o/r/blob/%s/%s\n' "$(git -C "$wta" rev-parse HEAD)" "$PLAN" > "$bodya"
-run create "$PLAN" PR-1 'feat: a' "$bodya" >/dev/null && run verify "$PLAN" >/dev/null && run cleanup "$PLAN" >/dev/null
-PLAN=$PLAN_B
-write_plan '| PR-1 | feat/b | feat/a | ST-1 | b |' "$wtb" "Green: PR-1 (feat/b) at $(git -C "$wtb" rev-parse HEAD)"
-out=$(run preflight "$PLAN") || fail "preflight after the earlier plan published: $out"
-[[ "$out" == *$'PR-1\tfeat/b\tbase=feat/a\tparent='"$(git -C "$wtb" rev-parse HEAD~1)"* ]] || fail "later plan parent: $out"
-pass 'a later plan lacking only the earlier plan archive commit passes preflight'
-git -C "$REPO" fetch -q origin
-git -C "$REPO" worktree add -q "$TEST_ROOT/plans/late-a" origin/feat/a 2>/dev/null
-printf 'late\n' > "$TEST_ROOT/plans/late-a/late.txt"
-git -C "$TEST_ROOT/plans/late-a" add late.txt && git -C "$TEST_ROOT/plans/late-a" commit -qm 'feat: late a'
-git -C "$TEST_ROOT/plans/late-a" push -q origin HEAD:feat/a
-expect_fail 'a code commit on the Parent that the later plan lacks still blocks' 'does not contain its Parent feat/a' preflight "$PLAN"
-git -C "$TEST_ROOT/plans/late-a" reset -q --hard HEAD~1
-mkdir -p "$TEST_ROOT/plans/late-a/docs"
-printf 'notes\n' > "$TEST_ROOT/plans/late-a/docs/notes.md"
-git -C "$TEST_ROOT/plans/late-a" add docs/notes.md && git -C "$TEST_ROOT/plans/late-a" commit -qm 'docs: notes'
-git -C "$TEST_ROOT/plans/late-a" push -q -f origin HEAD:feat/a
-expect_fail 'a non-plan docs change on the Parent still blocks' 'does not contain its Parent feat/a' preflight "$PLAN"
-git -C "$TEST_ROOT/plans/late-a" reset -q --hard HEAD~1
-git -C "$TEST_ROOT/plans/late-a" mv a.txt docs/plans/moved.md
-git -C "$TEST_ROOT/plans/late-a" commit -qm 'chore: move a'
-git -C "$TEST_ROOT/plans/late-a" push -q -f origin HEAD:feat/a
-expect_fail 'code renamed into docs/plans/ on the Parent still blocks' 'does not contain its Parent feat/a' preflight "$PLAN"
+# ── a stack tree publishing at once: root -> child -> grandchild, root -> sibling ──
+# create-pr runs each step on every plan, parents first, before the next step.
+new_repo tree
+wtr=$(plan_worktree feat/root main); commit_file "$wtr" root.txt
+wtc=$(plan_worktree feat/child feat/root); commit_file "$wtc" child.txt
+wtg=$(plan_worktree feat/grand feat/child); commit_file "$wtg" grand.txt
+wts=$(plan_worktree feat/sib feat/root); commit_file "$wts" sib.txt
+stack=(root:feat/root:main:"$wtr" child:feat/child:feat/root:"$wtc" grand:feat/grand:feat/child:"$wtg" sib:feat/sib:feat/root:"$wts")
+for entry in "${stack[@]}"; do
+  IFS=: read -r name branch parent wt <<<"$entry"
+  PLAN="docs/plans/7_feature_$name.spec.md"
+  write_plan "| PR-1 | $branch | $parent | ST-1 | $name |" "$wt" "Green: PR-1 ($branch) at $(git -C "$wt" rev-parse HEAD)"
+  [[ "$parent" == main ]] || sed -i "2a Stacks On: docs/plans/7_feature_${parent#feat/}.spec.md" "$REPO/$PLAN"
+  [[ "$PLAN" != *child* ]] || sed -i '2a ```\nStacks On: docs/plans/7_feature_sib.spec.md\n```' "$REPO/$PLAN"
+done
+out=$(run stack docs/plans/7_feature_root.spec.md)
+[[ "$out" == docs/plans/7_feature_root.spec.md$'\n'docs/plans/7_feature_child.spec.md$'\n'docs/plans/7_feature_sib.spec.md$'\n'docs/plans/7_feature_grand.spec.md ]] || fail "stack: $out"
+pass 'stack lists the root, then every stacked plan, parents first'
+expect_fail 'stack needs the root' 'pass the stack' stack docs/plans/7_feature_child.spec.md
+for step in check archive; do
+  for entry in "${stack[@]}"; do
+    IFS=: read -r name _ _ _ <<<"$entry"
+    out=$(run "$step" "docs/plans/7_feature_$name.spec.md" 2>&1) || fail "$step $name: $out"
+  done
+done
+pass 'every plan in the tree checks, then archives'
+for entry in "${stack[@]}"; do
+  IFS=: read -r name branch parent wt <<<"$entry"
+  printf 'Plan: https://github.test/o/r/blob/%s/docs/plans/7_feature_%s.spec.md\n' "$(git -C "$wt" rev-parse HEAD)" "$name" > "$TEST_ROOT/tree-$name.md"
+  open_pr "$branch" "$parent" "$TEST_ROOT/tree-$name.md" --draft
+done
+for entry in "${stack[@]}"; do
+  IFS=: read -r name _ _ _ <<<"$entry"
+  out=$(run verify "docs/plans/7_feature_$name.spec.md" 2>&1) || fail "verify $name: $out"
+done
+expect_fail 'cleanup keeps a parent while a plan stacked on it is live' 'Live plans stack on docs/plans/7_feature_root.spec.md: docs/plans/7_feature_child.spec.md docs/plans/7_feature_sib.spec.md' cleanup docs/plans/7_feature_root.spec.md
+[[ -d "$wtr" ]] || fail 'the parent guard touched the worktree'
+for (( k = ${#stack[@]} - 1; k >= 0; k-- )); do
+  IFS=: read -r name _ _ _ <<<"${stack[$k]}"
+  out=$(run cleanup "docs/plans/7_feature_$name.spec.md" 2>&1) || fail "cleanup $name: $out"
+done
+[[ "$(jq -r '[.[].baseRefName] | join(",")' "$GH_STORE")" == 'main,feat/root,feat/child,feat/root' ]] || fail "tree PR bases: $(jq -c . "$GH_STORE")"
+[[ -z "$(ls "$REPO/docs/plans")" ]] || fail "live plans left: $(ls "$REPO/docs/plans")"
+pass 'the tree verifies with every PR on its parent branch, then cleans up'
 
 printf 'All dev-publish tests passed. Temporary fixtures: %s\n' "$TEST_ROOT"

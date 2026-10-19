@@ -63,12 +63,13 @@ git branch explicit-parent HEAD
 git commit --allow-empty -qm 'main diverged'
 main_tip=$(git rev-parse HEAD)
 parent_tip=$(git rev-parse explicit-parent)
+mkdir -p docs/plans && printf 'Status: approved\n' > docs/plans/0_feature_live.spec.md
 worktree=$(bash "$WORKTREES" create task feature/task explicit-parent "$TEST_ROOT/worktrees")
 equal "$worktree" "$TEST_ROOT/worktrees/main repo-task" 'worktree destination'
 equal "$(git -C "$worktree" rev-parse HEAD)" "$parent_tip" 'explicit parent used instead of main HEAD'
 equal "$(git rev-parse HEAD)" "$main_tip" 'main branch untouched'
 equal "$(cd "$worktree" && bash "$UTILS" main-root)" "$repo" 'root from linked worktree'
-[[ ! -e "$worktree/docs/plans/live.md" ]] || fail 'plan copied to worktree'
+[[ ! -e "$worktree/docs/plans/0_feature_live.spec.md" ]] || fail 'plan copied to worktree'
 reject bash "$WORKTREES" create task feature/other explicit-parent "$TEST_ROOT/worktrees"
 reject bash "$WORKTREES" create ../escape feature/escape explicit-parent "$TEST_ROOT/worktrees"
 reject bash "$WORKTREES" create missing feature/missing no-such-parent "$TEST_ROOT/worktrees"

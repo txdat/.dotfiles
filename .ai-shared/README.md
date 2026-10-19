@@ -79,9 +79,31 @@ Symlink `~/.pi/agent/themes` → `~/.dotfiles/.pi/agent/themes`
 
 **phase loading and gates** — to enter a development phase, use Pi's `read` tool on its Claude `SKILL.md` wrapper or the shared `.ai-shared/skills/dev/<phase>.md` instructions. The [gate extension](../.pi/agent/extensions/gate-check.ts) checks that read using the latest user message as the phase arguments, including the exact plan path where required. A shell read does not invoke this check and is not a substitute for gated phase loading.
 
-The extension gates recognized reads, not phase execution: it cannot distinguish an audit read from invocation, and shell reads or previously loaded instructions are outside its interception. For documentation-only inspection, source may be read without invoking a phase; this grants no authority to execute it. The extension also permits reads on timeout, process failure, or invalid output, so it is a workflow aid rather than comprehensive enforcement. Agents must still establish the phase prerequisites under PROCESS.md. Stronger enforcement would require a separate phase-entry operation.
+The extension gates recognized reads, not phase execution: it cannot distinguish an audit read from invocation, and shell reads or previously loaded instructions are outside its interception. For documentation-only inspection, source may be read without invoking a phase; this grants no authority to execute it. The extension also permits reads on timeout, process failure, or invalid output, so it is a workflow aid rather than comprehensive enforcement. Agents must still establish the phase prerequisites under skills/dev/plan.md. Stronger enforcement would require a separate phase-entry operation.
 
-**mcp** — reuses Claude mcp; set `"imports": ["claude-code"]` in `mcp.json`
+**mcp** — reuses Claude mcp; set `"imports": ["claude-code"]` in `mcp-adapter.json`
+
+## dsh
+
+Symlink `~/.dsh/AGENTS.md` → `~/.dotfiles/.ai-shared/AGENTS.md`
+
+Symlink `~/.dsh/.agent-presets` → `~/.dotfiles/.dsh/.agent-presets`
+
+**skills** — create `~/.dsh/skills/<name>/SKILL.md` per [template](#dsh-template). The `minimal-skills` preset ([agent.cordis.yml](../.dsh/.agent-presets/minimal-skills/agent.cordis.yml)) mounts `@deepseek-ai/dsh-skill-filesystem`, which scans the user root `~/.dsh/skills`. Take each skill's name, description, `model`, and `effort` from [references](#references), using the Claude column.
+
+### dsh template
+
+```
+---
+name: <name>
+description: <description>
+user-invocable: true
+model: <dsh model>
+effort: <effort>
+---
+
+Read <md file> and follow all instructions exactly.
+```
 
 ## references
 
@@ -100,21 +122,19 @@ The extension gates recognized reads, not phase execution: it cannot distinguish
 
 | skill | description | md file | effort | model |
 | ----- | ----------- | ------- | ------ | ----- |
-| dev-create-issue | Create a standalone GitHub issue with a specific problem, expected outcome, and requested metadata. Use for unplanned issue capture; use dev-design-feature for implementation-plan-linked issues. | skills/dev/create-issue.md | medium | haiku |
-| dev-create-pr | Publish reviewed plan work, one plan or an After: chain of plans, as draft or ready pull request(s), verify committed scope, archive the plan safely, and clean up its worktrees and local branches. | skills/dev/create-pr.md | medium | sonnet |
-| dev-design-feature | Design an issue-backed feature, fix, or refactor plan before implementation, including scope, test cases, impact, ordered steps, and provisional PR slicing. | skills/dev/design-feature.md | high | sonnet |
+| dev-create-issue | Create a GitHub issue with a specific problem, expected outcome, and requested metadata, standalone or for a plan to link. | skills/dev/create-issue.md | medium | haiku |
+| dev-create-pr | Publish a reviewed plan, with every plan stacked on it, as draft or ready pull requests, one per slice, archive the plans, and clean up their worktrees and branches. | skills/dev/create-pr.md | medium | sonnet |
+| dev-design-feature | Design a feature, fix, or refactor plan before implementation: decisions, acceptance criteria, concrete test cases, ordered steps, and PR slices. | skills/dev/design-feature.md | high | sonnet |
 | dev-design-infra | Design a runnable infrastructure operations plan from live-state evidence, verification gates, and rollback requirements. | skills/dev/design-infra.md | high | sonnet |
 | dev-design-system | Design cross-cutting architecture changes such as new communication patterns, service boundaries, or integrations, with options, contracts, migration, rollback, and decomposition. | skills/dev/design-system.md | high | opus |
-| dev-execute-feature | Execute approved application work, one plan or an After: chain of plans, with test-first commits and per-slice verification. | skills/dev/execute-feature.md | high | sonnet |
+| dev-execute-feature | Implement an approved plan with test-first commits and per-slice verification. | skills/dev/execute-feature.md | high | sonnet |
 | dev-explore | Read-only exploration of a codebase area to identify entry points, key files, data flow, established patterns, gotchas, and planning questions. | skills/dev/explore.md | medium | haiku |
 | dev-fix-bug | Diagnose a bug from evidence, propose fix options and follow-ups, and route a requested fix: plan-backed delivery when asked, otherwise a direct edit. | skills/dev/fix-bug.md | high | sonnet |
-| dev-frame-goal | Clarify ambiguous requirements or split independently useful goals, before design or when a plan bundles goals. | skills/dev/frame-goal.md | medium | opus |
-| dev-review-code | Review implemented plan changes, one plan or an After: chain of plans, for TDD proof, independent test results, correctness, security, architecture, scope, hygiene, and final PR slicing before create-pr. | skills/dev/review-code.md | high | sonnet |
-| dev-review-feature | Review a planning-stage feature/fix/refactor plan, or an After: chain of plans, for approach, system fit, test completeness, impact, and scope before human approval. | skills/dev/review-feature.md | high | sonnet |
+| dev-review-code | Independently review an implemented plan for TDD proof, test results, correctness, security, scope, and hygiene, then record each slice's reviewed tip. | skills/dev/review-code.md | high | sonnet |
+| dev-review-feature | Independently review a planning-stage plan for missing obligations, untraced decisions, weak test cases, delivery order, and simpler designs before human approval. | skills/dev/review-feature.md | high | sonnet |
 | dev-review-infra | Review an infra/devops runbook against live state with read-only commands: phase ordering, rollback safety, DNS/traffic cutover sequencing, IaC completeness, and CI/CD coverage. | skills/dev/review-infra.md | high | sonnet |
 | dev-review-system | Review an architecture design for measurable outcomes, viable alternatives, boundary contracts, failure modes, migration and rollback safety, and dependency-ordered decomposition. | skills/dev/review-system.md | high | opus |
 | dev-recap | Session lessons and workflow improvement proposals from a plan-based session. | skills/dev/recap.md | — | — |
-| dev-ship-feature | Orchestrate application delivery and resume the named plan at its current phase. | skills/dev/ship-feature.md | — | — |
 
 #### sre
 

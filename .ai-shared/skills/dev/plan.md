@@ -1,69 +1,119 @@
-# Plan and Worktree Lifecycle
+# Plan-Backed Delivery
 
-Owns application plan identity, location, ownership, lifecycle, changes, worktree operations, and archival. [design-feature.md](design-feature.md) owns schema; [ids.md](ids.md) owns the IDs inside it.
+The shared contract for application plans. Phase skills say how to do each phase; this file owns what they share.
 
-Use [language.md](language.md) for plan prose and subsequent updates.
+## Scope
 
-## Live artifact
+The workflow applies when the user invokes a phase: design-feature, review-feature, execute-feature, review-code, or create-pr. It governs application code and developer tooling other than this dev flow, with their tests, including refactors. Docs, declarative config, and this dev flow — its skills and its [scripts](../../bin) with their tests — take the direct-edit path under [AGENTS.md — Work](../../AGENTS.md#work), even inside plan work; mixed changes follow the workflow for their governed part.
 
-Every consumer names one exact `docs/plans/<file>.md`, except that a [chain review](review-feature.md#chain-review) or a [chain run](reference/related-plans.md#chain-runs) names each plan of the chain; design creates a new artifact. Do not select by slug, recency, or whichever plan happens to exist. Ask for an exact path when identity is missing or ambiguous.
+## Sequence
 
-Resolve the main working tree with [dev-utils.sh](../../bin/dev-utils.sh) `main-root`. The live file must be a direct child of that root's `docs/plans/`; nested paths, traversal, and cross-repository substitution are invalid. The live plan is untracked; a plan tracked in the main root is a published record, which no phase resumes or edits. Inspect root HEAD, index, and working-tree state before editing or cleanup. All consumers read the authoritative root file; the only worktree copy is its [archive](#archive-and-cleanup).
+**design-feature → review-feature → user sets `Status: approved` → execute-feature → review-code → create-pr**
 
-The main agent edits the plan; only the user sets `Status: approved`.
-
-## Lifecycle
-
-The plan follows `planning → approved → implemented → reviewed`, and each phase advances it at most one status:
-
-| Phase | Sets |
+| Status | Set by |
 |---|---|
-| [design-feature](design-feature.md) | `planning` |
-| [review-feature](review-feature.md) | none; reports its verdict |
-| the user | `approved` |
-| [execute-feature](execute-feature.md) | `implemented` |
-| [review-code](review-code.md) | `reviewed` |
-| [create-pr](create-pr.md) | none; commits the plan copy |
+| `planning` | design-feature, or any revision |
+| `approved` | the user only |
+| `implemented` | execute-feature, or any change that voids a Green line |
+| `reviewed` | review-code |
 
-An `approved` plan with a recorded `Worktree:` is mid-execution and resumes there. Phase skills own completion conditions; a [change](#changes) may return a plan to `planning`. A code repair that reaches a `reviewed` plan, made on its own slices or [merged forward](#worktree-operations) from an earlier plan, voids its `Green:` records: the main agent returns it to `implemented`, along with every later plan the repair reaches, and review-code reviews each again. Delivery ends in one of two ways, and neither resumes; follow-up starts a new plan:
+create-pr publishes the plan and deletes the live copy. A gate blocks each phase until its entry status holds.
 
-- Publication: create-pr commits the plan copy with the final PR, then deletes the live plan and its worktrees. Once merged, the copy is the tracked record.
-- Stopping: the user deletes the live plan and removes its worktrees.
+## Artifact
 
-Keep the live root plan until publication and cleanup below succeed. Committed copies are historical records; never edit one after its commit. Recap may read an exact committed path/permalink or legacy issue-comment URL without recreating a live plan or worktree; identify the repository and plan from the source.
+The live plan is `docs/plans/<issue>_<type>_<slug>.spec.md` in the main working tree (resolve it with [dev-utils.sh](../../bin/dev-utils.sh) `main-root`). `<issue>` is the issue number, or `0` when none is linked; `<type>` is `feature`, `fix`, or `refactor`. The live plan is untracked; a tracked plan is a published record, which no phase resumes or edits. Every phase takes exactly one plan path; never pick a plan by slug or recency.
+
+Write plan, PR, and review prose in the linked issue's primary language, or English without one. Keep headings, field names, statuses, IDs, code, and paths as written below.
+
+## Schema
+
+Write these lines unfenced in the plan:
+
+```text
+# <title>
+Status: planning | Type: feature|fix|refactor | Base: <branch> | Issue: #N|none | Worktree:
+Stacks On: <docs/plans/... of the parent plan; stacked plans only, omit otherwise>
+## Goal
+## Scope
+<in / out>
+## Design Decisions
+DD-1 — <decision>
+  Options: <considered> | Choice: <chosen, by whom> | Why: <rationale, derivation>
+## Acceptance Criteria
+AC-1 — <observable outcome>
+  Source: <goal, contract, or requirement>
+  Success: <observable result>
+  Failure: <violating result>
+## Test Cases
+TC-1 — <scenario>
+  Proves: AC-1
+  Fixture: <concrete inputs and starting state>
+  Action: <operation or event sequence>
+  Expected: <exact result and final state, including what must not change>
+  Test: <path::name> — RED at <sha>: <failure>, or baseline at <sha> for a refactor; filled by execute-feature
+## Implementation Steps
+ST-1 — <change, files/symbols> — satisfies TC-1
+  PC-1 — <fact about current code the step relies on> — Check: <command that fails when the fact is false>
+## PR Pattern
+| PR | Branch | Parent | Steps | Summary |
+|---|---|---|---|---|
+| PR-1 | feat/x-1 | <Base> | ST-1 | <outcome> |
+Green: PR-1 (feat/x-1) at <sha>, recorded by review-code
+```
+
+Optional sections: `## Context`, `## Affected Existing Tests` (how to find them and the expected effect). Omit Design Decisions when there are none.
+
+IDs are `AC`, `TC`, `ST`, `PC`, `PR`, and `DD`, numbered from 1, never renumbered or reused. Declare each at the start of a line in its own section — PR IDs in the table's first cell — outside code fences. List IDs one by one, never as ranges. Cite only this plan's IDs; refer to other artifacts by path. Each TC proves exactly one AC and belongs to the one PR row whose steps include its tests and the code they need. Every AC, TC, and ST is linked; each ST belongs to exactly one PR row; every row has a Parent. The gate checks this shape at review-feature and review-code.
 
 ## Changes
 
-An approved plan's spec (its DDs, ACs, TCs, fixtures, steps, and PR Pattern) is not edited. Execution and review add only records: PC results, `Test:` lines and proof, Green records, `Worktree:` and the Publication Inventory, Coverage Gaps, and Discovered Scope; review-code also removes `(provisional)` from the PR Pattern heading once the slices match the verified work. Execution decides only implementation details that are not design choices, such as names and internal structure.
+An approved spec — Goal, Scope, DDs, ACs, TCs, steps, PR Pattern — is frozen. Execution and review only add records: `Worktree:`, `Test:` lines with their RED results, and `Green:` lines; a PR's last Green line is the current one. Execution decides only details that are not design choices, such as names and internal structure.
 
-Anything else stops the affected work: a failed PC, a fixture or obligation that cannot be met as specified, a step that cannot be followed, a different PR Pattern, or new scope (recorded as a `DS-n` entry). Present it to the user with options, tradeoffs, and one recommendation. If the user chooses to revise, set `planning`, revise under [design-feature.md](design-feature.md), re-review under [independence.md — Re-review](independence.md#re-review), and wait for the user to set `approved`. A revision reopens every later plan whose `After:` chain includes it.
+Anything else stops the affected work: a failed PC, an unmeetable fixture or obligation, a step that cannot be followed, a different PR Pattern, or new scope. Bring the user options, tradeoffs, and a recommendation. If the user chooses to revise: set `planning`, revise, re-review, and wait for approval again. The worktree stays; existing Green lines are void until review-code records them again.
 
-## Worktree operations
+## Stacks
 
-A single-PR plan uses one recorded worktree through execution, review, and publication. A `Type: chain` plan gives every slice its own worktree, kept until publication cleanup, so each tip is reviewed and published without switching branches. `Worktree:` records the active slice's worktree, and the final slice's from review onward. For a `Type: chain` plan, record every slice's worktree:
+When a goal spans several plans, they form a stack that shares the issue. Each plan stacks on at most one parent, a parent may carry several children, and the stack never cycles; a plan's parent, the parent's parent, and so on are the plans below it. Two plans neither of which is below the other change disjoint files; when they cannot, stack one on the other. A contract between plans belongs to the plan that provides it, in its Design Decisions or a contract file it ships, proven by its ACs and TCs.
 
-```text
-## Publication Inventory
-Worktree: PR-1 (<branch>) at <path>
-```
+A child names its parent in `Stacks On:` and is designed against the specs below it as if implemented. It cites none of their IDs: it restates each contract fact it relies on as a PC. It uses the parent's Base, and its PR-1 Parent is the parent's last branch. Its review requires the parent `approved` or later; its execution and code review require it `reviewed`. Its integration TCs exercise the real code below it; mocks of the contract do not prove integration.
 
-- Create with [dev-worktree.sh](../../bin/dev-worktree.sh) `create <slug> <branch> <parent> [directory]`. Record its stdout path immediately as `Worktree:` and, in a chain, as the slice's Publication Inventory line.
-- Before tests, `link-deps <worktree> [dependency names...]` links missing installed dependencies from the main root. This is valid only while dependency versions agree.
-- Before any command that can change a linked dependency directory, run `isolate-dep <worktree> <dependency-name>`, for example `isolate-dep <worktree> node_modules`. The dependency must be a direct-child directory name. Proceed only after isolation succeeds; installing through a symlink changes the main root's dependencies that other worktrees rely on.
-- Resume the recorded path only after checking Git registration and branch ancestry against its Parent. Missing or mismatched state requires investigation, not a replacement plan.
-- Remove with `remove <worktree>`, at publication cleanup or when the user stops the plan. It refuses the main root, an unregistered path, and a dirty or detached worktree; otherwise it removes the worktree, then deletes the local branch only when a fresh fetch shows `origin/<branch>` at the same tip. It prints `deleted <branch>` or `kept <branch>`, with the reason on stderr: unpushed commits, no origin counterpart, or origin unreachable. First check ignored content for unrelated files; removal deletes it without inspection, except that linked dependencies go as symlinks and their main-root targets remain.
+The stack publishes at once as the last step: when every plan in it is `reviewed`, create-pr runs once, on the root, and publishes every plan. A published plan never becomes a parent; later work waits for the stack to merge and starts a new stack on Base.
 
-A repair to a slice after a later slice has branched from it is committed on that slice's branch, in its worktree. Then merge it forward, in order: each later slice's branch merges its Parent in its own worktree. This includes a later plan's PR-1, whose Parent is this plan's last slice. Each slice then reruns its verification. Never rebase, reset, or force-push to propagate a repair, because the recorded PC results, proof, and `Green:` SHAs must stay in the branch history. Resolve conflicts in the merge commit; a resolution that changes approved behavior follows [Changes](#changes).
+Whoever revises a plan returns every plan above it to `planning` when the contract changes. Only the user drops a plan, and only while it is `planning` with no `Worktree:`; a plan executed once is revised instead. Delete its live plan. Each of its children returns to `planning` and stacks on the dropped plan's parent, or, when the root was dropped, deletes its `Stacks On:` line and uses Base as PR-1's Parent.
 
-Run code, tests, and branch Git operations in the worktree. Preserve unpublished work and unrelated root/worktree changes; do not stash, reset, clean, or commit them to enable cleanup. Report removal refusals without forcing.
+## Worktree
 
-## Archive and cleanup
+One worktree per plan; slices are stacked branches in it.
 
-The final PR — the only PR of a single-PR plan, or a `Type: chain` plan's last slice — archives the plan in its own worktree at the plan's `docs/plans/<file>.md` path; there is no separate archive PR. [dev-publish.sh](../../bin/dev-publish.sh) is the only tool that copies or deletes the live plan, acting for the main agent:
+- Create it only with [dev-worktree.sh](../../bin/dev-worktree.sh) `create <slug> <branch> <parent>`, with the plan filename's `<slug>` and no directory argument, and record the printed path, `$HOME/work/ai-worktrees/<repo>-<slug>`, as `Worktree:`. Create each later slice's branch inside it with `git switch -c <branch> <parent-branch>` once the parent slice passes its checks.
+- The worktree stays until create-pr's cleanup. If it is missing earlier, stop and report it.
+- `link-deps <worktree>` links installed dependencies from the main root. Before any command that changes a linked dependency directory, run `isolate-dep <worktree> <name>`; installing through the symlink corrupts the main root.
+- Run code, tests, and branch Git operations in the worktree. Never stash, reset, or clean to get past unrelated changes in the worktree or the main root.
+- Fix an earlier slice on its own branch, then merge it forward into each later slice and rerun their checks. A change to a parent's last branch after a child branched from it merges forward into the child's slices the same way, and on up the stack. Never rebase, reset, or force-push.
 
-- `archive` writes the copy, unchanged except for an empty `Worktree:`, and refuses a tracked plan already at that path; `archive --commit` commits it as `docs(plan): archive <plan-file-stem>`. Archive-only commits are the sole permitted additions above the final reviewed code tip; code proof, green SHAs, and artifact scans end there.
-- `create` leaves the live plan unchanged. On a rerun it reports `EXISTS` for an open PR that targets the recorded Parent at the slice tip, and fails on any other open PR. PR URLs go in the final report, not the plan.
-- `verify` checks the copy at the final PR's remote head and the body's link to it at an immutable commit.
-- `cleanup` removes each slice's worktree, each of which must report `deleted`, then deletes the live plan.
+## Review
 
-On failure the script retains the live plan, remaining worktrees, and local branches; report its output for manual handling. A failed cleanup resumes by rerunning `cleanup`. Completion requires a passing verify and cleanup.
+When this session wrote the artifact, run the review in a fresh subagent without the conversation. Give it only [CODING.md](../../CODING.md), the review skill and the files it links, the artifact path, the user's request, the worktree and refs it needs, and, for a re-review, the prior findings and what changed. A stacked plan's reviewer also reads the plans below it. If no subagent is available, review directly and say so.
+
+Preferences and style never block. The reviewer is read-only: it may read, run tests, and inspect Git, but never edits files, mutates Git or switches branches, or changes status. The main agent repairs. A review-only request returns findings and changes nothing.
+
+Round 1 covers the whole artifact. A re-review covers the prior findings and what the repair changed. After two re-reviews in one review phase, stop and report the remaining blockers; the user decides whether to narrow, decide, or grant more rounds.
+
+## Verification
+
+Test-first, per slice:
+
+1. **RED.** Turn each TC's fixture, action, and expected result into a test. Run it against the unchanged parent: it must fail for the intended missing behavior — fixture, import, and syntax failures do not count. Refactors instead start with passing tests of the behavior they preserve.
+2. Commit only the tests, plus throwing stubs where a new API needs them, as `test(red): <scope>`, or `test: baseline <scope>` for a refactor. The gate counts these subjects. Run `~/.dotfiles/.ai-shared/bin/dev-check proof <commit> [--test <path>] [--stub <path>]` and read the diff. Fill each TC's `Test:` line with the test, the commit SHA, and its RED failure, or the baseline result for a refactor.
+3. **GREEN.** Implement, run the tests, and commit the implementation separately. When it is unclear whether an assertion really depends on the behavior, break the behavior briefly and confirm the test fails.
+
+Rules:
+
+- If a fixture cannot be built or an expected result would need invented semantics, stop under [Changes](#changes). Never take an expected result from production output, and never relax an obligation to make a test pass.
+- Restructuring test code must keep each scenario's distinguishing conditions and expected result.
+- Assertions must tell the required result from a plausible wrong one. Snapshots, mock-call checks, and mocked adapters standing in for queries or transactions are weak evidence.
+- At each slice tip, run the project's local checks (lint, build, whatever CI runs), the slice's TC tests, and affected existing tests.
+
+## Git identity
+
+Use the configured Git identity and active `gh` account. Never invent authors, switch accounts, or inject tokens; missing identity or auth blocks the operation.

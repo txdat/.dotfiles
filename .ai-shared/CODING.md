@@ -2,44 +2,40 @@
 
 ## Changes and evidence
 
-Follow project patterns. Keep changes within the request; avoid speculative abstractions and unrelated cleanup. Prefer root-cause fixes. Label a temporary mitigation with its limits and removal condition.
+Follow project patterns and stay within the request: no speculative abstractions or unrelated cleanup. Fix root causes; label a temporary mitigation with its limits and removal condition.
 
-Duplication is cheaper than the wrong abstraction: extract an established shared concept, not an anticipated one.
+Duplication is cheaper than the wrong abstraction: extract an established shared concept, not an anticipated one. Reuse code that implements the same concept (same data meaning and contract, not merely similar steps); do not bend shared code with flags to serve a different concept.
 
-Verify changed calls, fields, imports, and assumptions against actual definitions or focused runtime evidence. Design failure paths deliberately, preserve error causes, and comment only non-obvious reasons or invariants.
+Verify changed calls, fields, imports, and assumptions against actual definitions or runtime evidence. Design failure paths deliberately and preserve error causes. Comment only non-obvious reasons or invariants. UI work follows [frontend-design.md](skills/dev/frontend-design.md).
 
-Tests should assert required observable behavior. Never special-case test inputs or replace required behavior with canned results. Distinguish inspected facts, inference, and unrun checks; report decisive file locations or command results without exposing secrets.
+Tests assert required observable behavior; never special-case test inputs or replace behavior with canned results. Start with affected tests and callers plus required project checks; broaden to the full suite when requested, required, cheap, or needed to cover the impact. Plan-backed work adds [test-first proof](skills/dev/plan.md#verification).
 
-Start verification with affected tests and callers, plus required project checks. Broaden to the full suite when requested, required, inexpensive, or necessary to cover the impact. Development-specific proof and coverage rules live in [verification.md](skills/dev/verification.md).
+Report inspected facts, inference, and unrun checks distinctly, with decisive file locations or command results and no secrets.
 
 ## Critical work
 
 Before changing security, concurrency, data-integrity, or performance-critical behavior:
 
-1. State the invariants and relevant failure modes: races, partial failure, ordering, retries, resource exhaustion, and security boundaries.
-2. Inspect the affected contracts and existing pattern against those conditions. If the pattern cannot preserve the required behavior or a material decision is unresolved, stop the affected implementation and report the conflict; do not silently change the contract.
-3. Implement and verify against those obligations, including failure paths. Report any residual risk or missing evidence.
+1. State the invariants and failure modes: races, partial failure, ordering, retries, resource exhaustion, security boundaries.
+2. Check the affected contracts and existing pattern against them. If the pattern cannot preserve the required behavior or a material decision is open, stop and report the conflict; never silently change the contract.
+3. Implement and verify against those obligations, including failure paths. Report residual risk and missing evidence.
 
 ## Impact
 
-For changed contracts, inspect callers, consumers, and tests, including dependencies on errors, defaults, ordering, timing, and side effects beyond documented signatures. For shared state used as a decision input or signal, check writers and readers together: meaning, ownership, initialization, transitions, concurrency, and cleanup.
+For changed contracts, inspect callers, consumers, and tests, including reliance on errors, defaults, ordering, timing, and side effects beyond the signature. For shared state used as a decision input or signal, check writers and readers together: meaning, ownership, initialization, transitions, concurrency, cleanup.
 
-Record decisive evidence with the design or verification results. Resolve broken consumers within scope; material compatibility uncertainty or additional work needs a decision before the change is ready. Plan-backed decisions follow [plan.md — Changes](skills/dev/plan.md#changes).
+Record decisive evidence with the design or verification results. Fix broken consumers within scope; material compatibility uncertainty or extra work needs a decision first, under [plan.md — Changes](skills/dev/plan.md#changes) for plan-backed work.
 
 ## Tools
 
 Prefer semantic navigation for definitions and callers. Reuse evidence until its inputs change.
 
-Before writing a query or aggregation through a database MCP, list the target collection's or table's existing indexes with the MCP's index tool and shape the query to use them. If no existing index supports it, report that; don't create them.
+Before writing a query or aggregation through a database MCP, list the target's existing indexes with the MCP's index tool and shape the query to use them. If none supports it, report that; never create indexes.
 
-Shared shell helpers live in `~/.dotfiles/.ai-shared/bin/`; invoke them by full path with Bash. Python helpers use Python 3. Follow the owning skill's arguments and invocation conditions.
+Shared shell helpers live in `~/.dotfiles/.ai-shared/bin/`; invoke them by full path with Bash, as their owning skill specifies. Python helpers use Python 3.
 
 ## Ownership
 
-Preserve unrelated work. The main agent owns Git mutations unless a task explicitly delegates them. Confirm destructive actions only when they exceed existing authorization.
+Preserve unrelated work. The main agent owns Git mutations unless a task explicitly delegates them. Confirm destructive actions only when they exceed existing authorization. Never bypass required checks or discard unfamiliar files to get past an obstacle; fix the failure or report the blocker.
 
-Do not bypass required checks or discard unfamiliar files to get past an obstacle; resolve the failure or report the blocker.
-
-Default to direct work. Delegate a substantial, independent chunk only when a platform-provided general-purpose subagent is available, delegation is permitted, and useful concurrent work exists; otherwise work directly. Instruct the subagent to read this file and the owning skill. Assign exclusive file ownership, required inputs, verification, and off-limits actions; tell workers they share the codebase and must preserve others' edits. The main agent integrates and verifies the result. Review isolation and disclosure of its limits are owned by [independence.md](skills/dev/independence.md).
-
-An explicitly requested code audit without a plan follows [independence.md](skills/dev/independence.md).
+Work directly by default. Delegate only a substantial, independent chunk, when a general-purpose subagent is available and concurrent work justifies it. Tell the subagent to read this file and the owning skill; give it exclusive files, inputs, verification, and off-limits actions, and remind it that others share the codebase. The main agent integrates and verifies the result. Review isolation follows [plan.md — Review](skills/dev/plan.md#review).

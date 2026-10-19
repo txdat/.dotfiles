@@ -1,49 +1,31 @@
 #!/bin/bash
-# Gate checker — enforces dev skill workflow state-machine transitions.
-# Reads hook JSON from stdin, validates gate conditions per skill, and outputs
-# blocking JSON if a gate fails. Two events reach it: PreToolUse for a
-# model-invoked Skill call (the skill's argument string is tool_input.args;
-# the Pi extension sends tool_input.arguments), and UserPromptSubmit for a
-# user-typed /dev-<skill> command, which expands without any Skill tool call.
+# Gate checker for the plan-backed phases (../skills/dev/plan.md#sequence).
+# Reads hook JSON from stdin and prints block JSON when a phase's entry
+# condition fails. Two events reach it: PreToolUse for a model-invoked Skill
+# call (arguments in tool_input.args; the Pi extension sends
+# tool_input.arguments), and UserPromptSubmit for a user-typed /dev-<skill>.
 #
-# Plan states and the end of delivery: ../skills/dev/plan.md#lifecycle.
-# Required delivery phases: ../PROCESS.md#delivery.
-# Each skill's entry gate checks its prerequisite status.
-# review-feature requires planning of every plan it names and leaves that
-# status unchanged (../skills/dev/review-feature.md#chain-review).
-# execute-feature, review-code, and create-pr gate every plan of a named
-# After: chain in chain order (../skills/dev/reference/related-plans.md#chain-runs).
-# fix-bug has no plan gate; it diagnoses and routes (../skills/dev/fix-bug.md).
-# Review-code additionally requires proof-commit sequencing for every slice.
-# A live plan is untracked. A plan tracked in the main root is a published
-# record, so no plan-consuming skill resumes it (../skills/dev/plan.md#lifecycle).
+# Only review-feature, execute-feature, review-code, and create-pr are gated.
+# Each checks its entry status; review-feature and review-code also check the
+# plan's ID shape (id_report), and review-code the RED/GREEN commit sequence.
+# The hook reads identifiers and fields, never prose: whether an AC is right
+# or a step satisfies its TC is the reviewer's judgment. It cannot tell who
+# set `Status: approved`; only the user does.
 #
-# Approval is the user's action: only the user sets `Status: approved`
-# (../skills/dev/plan.md#lifecycle). The hook checks that the status is there
-# before execution. It cannot tell who wrote the field, and it
-# deliberately does not validate plan prose. Artifact IDs (../skills/dev/ids.md)
-# are checked for format and referential closure (see id_report) at
-# review-feature and review-code for each named plan, and at
-# review-infra and review-system for a named runbook or architecture
-# document — identifiers only. Whether the ACs are right, whether a TC can admit a wrong
-# implementation, and whether a step actually satisfies the TC it cites are
-# judgment calls owned by the reviewing skill, not by a parser.
-#
-# Plan resolution is by explicit path only (see resolve_plans). Governance binds
-# to a named artifact: a plan-consuming skill either names its
-# docs/plans/<file>.md or blocks asking for it. No slug matching, no session
-# pin, no lone-plan adoption — a dormant plan can never capture unrelated work,
-# and a gate never fires merely because some plan exists in the repository.
-#
-# Plan storage and archive rules: skills/dev/plan.md. Gates read the live
-# main-tree plan; proof checks use the worktree HEAD (the slice branch).
+# Plans resolve by exact path only. A dormant plan never captures unrelated
+# work, and a gate fires only for its own plan, except that create-pr reads
+# every live plan's Stacks On line so a stack publishes together.
+# Gates read the live plan in the main root; proof checks run in its worktree.
 
 set -euo pipefail
+# Byte-wise text handling: plan IDs and paths are ASCII, and a multibyte
+# locale has crashed awk on invalid bytes, which the hook would read as a pass.
+export LC_ALL=C
 
 HOOK_INPUT=$(cat)
 
-# UserPromptSubmit runs this hook on every prompt, so a missing prerequisite
-# must only block input that could invoke a dev skill, never ordinary prompts.
+# UserPromptSubmit runs on every prompt, so a missing prerequisite blocks only
+# input that could invoke a dev skill.
 if ! command -v jq >/dev/null 2>&1; then
   if [[ "$HOOK_INPUT" == *'"UserPromptSubmit"'* ]]; then
     [[ "$HOOK_INPUT" =~ \"prompt\"[[:space:]]*:[[:space:]]*\"[[:space:]]*/[Dd][Ee][Vv][-:] ]] || exit 0
@@ -54,44 +36,24 @@ if ! command -v jq >/dev/null 2>&1; then
   exit 0
 fi
 
-DEV_SKILL_SLUG_RE='create-issue|create-pr|design-feature|design-infra|design-system|execute-feature|explore|fix-bug|frame-goal|review-code|review-feature|review-infra|review-system|ship-feature'
-
-is_dev_skill_slug() {
-  [[ "$1" =~ ^($DEV_SKILL_SLUG_RE)$ ]]
-}
-
-emit_skill_slug() {
-  local slug="$1"
-  is_dev_skill_slug "$slug" || return 1
-  echo "$slug"
-}
+DEV_SKILL_SLUG_RE='create-issue|create-pr|design-feature|design-infra|design-system|execute-feature|explore|fix-bug|review-code|review-feature|review-infra|review-system'
 
 extract_skill_slug() {
   local raw="${1#/}"
   raw="${raw,,}"
   raw="${raw//_/-}"
-
   case "$raw" in
-    dev:*) emit_skill_slug "${raw#dev:}" && return 0 ;;
-    dev-*) emit_skill_slug "${raw#dev-}" && return 0 ;;
+    dev:*|dev-*) raw="${raw:4}"; [[ "$raw" =~ ^($DEV_SKILL_SLUG_RE)$ ]] && { echo "$raw"; return; } ;;
   esac
-
-  if [[ "$raw" =~ dev[:-]($DEV_SKILL_SLUG_RE) ]]; then
-    emit_skill_slug "${BASH_REMATCH[1]}" && return 0
-  fi
-
-  if [[ "$raw" =~ (^|[[:space:]/])($DEV_SKILL_SLUG_RE)([[:space:]]|$) ]]; then
-    emit_skill_slug "${BASH_REMATCH[2]}" && return 0
-  fi
-
+  if [[ "$raw" =~ dev[:-]($DEV_SKILL_SLUG_RE) ]]; then echo "${BASH_REMATCH[1]}"; return; fi
+  if [[ "$raw" =~ (^|[[:space:]/])($DEV_SKILL_SLUG_RE)([[:space:]]|$) ]]; then echo "${BASH_REMATCH[2]}"; return; fi
   echo ""
 }
 
 HOOK_EVENT=$(jq -r '.hook_event_name? // ""' <<<"$HOOK_INPUT" 2>/dev/null || true)
-
 if [[ "$HOOK_EVENT" == UserPromptSubmit ]]; then
-  # Only a leading slash command invokes a skill. Prose that merely mentions
-  # one ("then explore the code", "before create-pr") must never be gated.
+  # Only a leading slash command invokes a skill; prose that mentions one is
+  # never gated.
   PROMPT=$(jq -r '.prompt? // ""' <<<"$HOOK_INPUT" 2>/dev/null || true)
   [[ "$PROMPT" =~ ^[[:space:]]*/([Dd][Ee][Vv][-:][A-Za-z_-]+)([^A-Za-z0-9_-]|$) ]] || exit 0
   RAW_SKILL="${BASH_REMATCH[1]}"
@@ -99,16 +61,11 @@ else
   RAW_SKILL=$(
     jq -r '
       [
-        .tool_input.skill?,
-        .tool_input.skill_name?,
-        .tool_input.name?,
-        .tool_input.arguments?,
-        .skill?,
-        .skill_name?,
-        .arguments.skill?,
-        # A command field names a skill only as a slash command. Gemini runs
-        # this hook for every tool, and a shell command that mentions
-        # dev-review-code is not an invocation.
+        .tool_input.skill?, .tool_input.skill_name?, .tool_input.name?, .tool_input.arguments?,
+        .skill?, .skill_name?, .arguments.skill?,
+        # A command field names a skill only as a slash command: Gemini runs
+        # this hook for every tool, and a shell command mentioning one is not
+        # an invocation.
         (.tool_input.command?, .command? | select(type == "string" and test("^\\s*/dev[-:]"; "i")))
       ]
       | map(select(type == "string" and length > 0))
@@ -117,398 +74,250 @@ else
   )
 fi
 SKILL_SLUG=$(extract_skill_slug "$RAW_SKILL")
-[[ -n "$SKILL_SLUG" ]] || exit 0
-
 case "$SKILL_SLUG" in
-  # Plan-consuming phases, and the document reviews whose named artifact gets
-  # its IDs checked (../skills/dev/ids.md).
-  review-feature|execute-feature|review-code|create-pr|ship-feature|review-infra|review-system) ;;
-  # Entry-point skills: read-only, or they produce a plan/issue/architecture
-  # doc/runbook rather than touching application code. Nothing that mutates
-  # application code reaches this branch: plan-backed code changes happen only
-  # in gated phases, and direct edits outside a plan are ungated by design
-  # (PROCESS.md, Scope). Exiting before root resolution keeps them usable
-  # outside a Git repository. Listed rather than left to fall off the slug
-  # regex, so the ungated set stays explicit and auditable.
-  design-feature|design-system|design-infra|explore|create-issue|fix-bug|frame-goal) exit 0 ;;
+  review-feature|execute-feature|review-code|create-pr) ;;
+  # Everything else is ungated and runs outside a Git repository too.
   *) exit 0 ;;
 esac
 
-# find_explicit_doc canonicalises with realpath -m; without it every named
-# path would fail to resolve and report as "no plan named", which hides the real
-# cause. Probe the flag, not just the binary — macOS ships a realpath without
-# -m, and `command -v` alone would pass it. Probed only for gated skills.
-if ! realpath -m -- / >/dev/null 2>&1; then
-  printf '{"continue":false,"stopReason":"gate-check requires realpath with -m support (GNU coreutils) to validate plan paths.","decision":"block","reason":"gate-check requires realpath with -m support (GNU coreutils) to validate plan paths."}\n'
-  exit 0
-fi
-
-STATUS=""
-PLAN=""
-ACTIVE_WORKTREE=""
-# Names the failing plan when one invocation gates several (a chain review or run).
-BLOCK_PREFIX=""
-
 block() {
-  local reason="${BLOCK_PREFIX}$1"
-  jq -cn --arg reason "$reason" \
-    '{continue:false, stopReason:$reason, decision:"block", reason:$reason}'
+  jq -cn --arg reason "$1" '{continue:false, stopReason:$reason, decision:"block", reason:$reason}'
   exit 0
 }
 
-# Share root resolution with phase skills; never substitute the linked tree.
+# A gated phase fails closed: a crash or unexpected error prints no verdict,
+# which the hook would take as a pass.
+trap 'rc=$?; (( rc == 0 )) || block "gate-check failed (exit $rc) before reaching a verdict; this blocks rather than passing. Check the plan for invalid bytes or report the failure."' EXIT
+
+# Exact-path checks canonicalise with realpath -m; probe the flag, since
+# macOS ships a realpath without it.
+realpath -m -- / >/dev/null 2>&1 || block "gate-check requires realpath with -m support (GNU coreutils) to validate plan paths."
+
 GATE_DIR=$(dirname -- "$(realpath -- "${BASH_SOURCE[0]}")")
-REPO_ROOT=$(bash "$GATE_DIR/dev-utils.sh" main-root 2>/dev/null) || block "Cannot resolve the main working-tree root. Follow skills/dev/plan.md; do not substitute the current linked worktree."
+REPO_ROOT=$(bash "$GATE_DIR/dev-utils.sh" main-root 2>/dev/null) || block "Cannot resolve the main working-tree root; do not substitute the current linked worktree."
 cd "$REPO_ROOT" || block "Cannot access the main working-tree root: $REPO_ROOT"
-# Tree that git history checks run against — repointed to the plan's worktree
-# when one is recorded (skills/dev/plan.md#worktree-operations).
+# Git history checks run here, repointed to the plan's worktree when recorded.
 GIT_TREE="$REPO_ROOT"
 
 HOOK_TEXT=$(
-  jq -r '
-    [
-      .tool_input.args?,
-      .tool_input.arguments?,
-      .tool_input.command?,
-      .arguments?,
-      .command?,
-      .prompt?
-    ]
-    | map(select(type == "string"))
-    | join(" ")
-  ' <<<"$HOOK_INPUT" 2>/dev/null || true
+  jq -r '[.tool_input.args?, .tool_input.arguments?, .tool_input.command?, .arguments?, .command?, .prompt?]
+    | map(select(type == "string")) | join(" ")' <<<"$HOOK_INPUT" 2>/dev/null || true
 )
 
-# ── helpers ───────────────────────────────────────────────────────────
+# dev-publish.sh mirrors PLAN_NAME_RE, field, and plan_parents (as plan_rows);
+# change both together.
+PLAN_NAME_RE='^docs/plans/[0-9]+_(feature|fix|refactor)_[a-z0-9-]+\.spec\.md$'
+PLAN_FORMAT='docs/plans/<issue>_<type>_<slug>.spec.md'
 
-# "Exact path" has to mean exact. A bare substring match would accept
-# /another/repo/docs/plans/x.md (matching from its own "docs/plans/" and then
-# resolving *this* repo's file) and docs/plans/../escape.md, and would pick a
-# plan out of surrounding prose. Canonicalise and require a direct child of
-# $REPO_ROOT/<dir> (docs/plans, docs/runbooks, or docs/architecture).
-#
-# Known limit: the hook reads tokens, not intent. A valid plan path *mentioned*
-# in free text still resolves ("ship-feature follow up on docs/plans/old.md
-# but different" adopts old.md). Every named path is gated (find_explicit_docs);
-# ship-feature, which routes one plan, blocks when several are named.
-# Mention versus naming is the caller's ambiguity to avoid — a parser cannot
-# tell them apart.
-canonical_doc() {
-  local dir="$1" candidate="$2" real base
-  real=$(realpath -m -- "$candidate" 2>/dev/null) || return 1
-  base=$(realpath -m -- "$REPO_ROOT/$dir" 2>/dev/null) || return 1
-  # Direct child only: no nesting, no traversal, no other repository.
-  [[ "$real" == "$base/"* && "${real#"$base"/}" != */* ]] || return 1
-  [[ -f "$real" ]] || return 1
-  # Emit the repo-relative form the rest of the script expects.
-  printf '%s\n' "$dir/${real#"$base"/}"
+# ── paths ─────────────────────────────────────────────────────────────
+
+# Every docs/plans/<file>.spec.md mention in $1, in order. A path stops at
+# whitespace and the punctuation messages put around it (@, quotes, backticks,
+# brackets, emphasis, table borders). / and . never stop it, so a foreign
+# prefix ("/other/repo/docs/plans/x.spec.md", "../docs/plans/x.spec.md") stays
+# attached and fails canonical_plan.
+plan_mentions() {
+  local stop="][[:space:]@\`\"'()<>{}|│*,;:!?"
+  grep -oE "[^${stop}]*docs/plans/[^${stop}]+\\.spec\\.md" <<<"$1" || true
 }
 
-# Every <dir>/<file>.md mention, in order. A path stops at whitespace and at
-# the punctuation messages put around it — @-mentions, quotes, backticks,
-# brackets, emphasis, table borders, list separators — so "@docs/plans/x.md"
-# and "|**docs/plans/x.md**|" yield docs/plans/x.md. Path characters (/ and .)
-# are never stops, so a foreign prefix ("/other/repo/docs/plans/x.md",
-# "../docs/plans/x.md") stays attached and fails canonical_doc. Known limit: a
-# file name containing a stop character, or ending in .MD, is not matched;
-# design-feature names plans <area>_<date>_<type>_<slug>.md. $2 replaces the
-# hook text, for paths written inside a plan.
-doc_mentions() {
-  local dir="$1" text="${2-$HOOK_TEXT}" stop="][[:space:]@\`\"'()<>{}|│*,;:!?"
-  grep -oE "[^${stop}]*${dir}/[^${stop}]+\\.md" <<<"$text" || true
-}
-
-find_explicit_doc() {
-  local dir="$1" first
-  first=$(doc_mentions "$dir")
-  first="${first%%$'\n'*}"
-  [[ -n "$first" ]] || return 1
-  canonical_doc "$dir" "$first"
-}
-
-# Every path the invocation names under <dir>, deduplicated, for a skill that
-# reviews a chain of plans (skills/dev/review-feature.md#chain-review). Fills
-# NAMED_DOCS with resolved paths and UNRESOLVED_DOCS with the rest: a path
-# that silently dropped out would leave a named plan ungated.
-NAMED_DOCS=()
-UNRESOLVED_DOCS=()
-find_explicit_docs() {
-  local dir="$1" mention doc seen=$'\n'
-  while IFS= read -r mention; do
-    [[ -n "$mention" ]] || continue
-    if doc=$(canonical_doc "$dir" "$mention"); then
-      [[ "$seen" == *$'\n'"$doc"$'\n'* ]] && continue
-      seen+="$doc"$'\n'
-      NAMED_DOCS+=("$doc")
-    else
-      UNRESOLVED_DOCS+=("$mention")
-    fi
-  done < <(doc_mentions "$dir")
-}
-
-# A bare path was given but resolves to no file (e.g. "docs/plans/x.md" typo).
-explicit_path_given_but_missing() {
-  local dir="${1:-docs/plans}" re
-  re="${dir}/[^[:space:]]+\\.md"
-  [[ "$HOOK_TEXT" =~ $re ]] || return 1
-  find_explicit_doc "$dir" >/dev/null 2>&1 && return 1
-  return 0
-}
-
-# Plan resolution is by explicit path, and only by explicit path.
-#
-# Ambient resolution — unique-slug matching, a session pin, adopting the lone
-# active plan — used to make plan-taking skills convenient. It also meant a
-# dormant plan sitting in docs/plans/ could capture unrelated work, and that a
-# gate fired because a plan existed *somewhere in the repository* rather than
-# because this invocation was about that plan. Governance now binds to a named
-# artifact: the caller says which plan, or the command blocks asking for one.
-# Every named path must resolve: a typo or a foreign path among them blocks
-# rather than leaving the next path to bind, or a named plan ungated.
-resolve_plans() {
-  find_explicit_docs docs/plans
-  if (( ${#UNRESOLVED_DOCS[@]} > 0 )); then
-    block "Named plan not found: ${UNRESOLVED_DOCS[*]}. Pass existing docs/plans/<file>.md paths."
-  fi
-  PLANS=("${NAMED_DOCS[@]}")
-}
-
-plan_status() {
-  awk '
-    /^Status:/ {
-      sub(/^Status:[[:space:]]*/, "")
-      sub(/[[:space:]]*\|.*/, "")
-      gsub(/^[[:space:]]+|[[:space:]]+$/, "")
-      print
-      exit
-    }
-  ' "$1" 2>/dev/null
-}
-
-# Plan header Type — feature | fix | refactor (lives on the Status line:
-# "Status: ... | Type: <type> | Issue:"). Distinct from PR Pattern's single/chain.
-plan_type() {
-  awk '
-    /^Status:/ {
-      if (match($0, /Type:[[:space:]]*[^|]+/)) {
-        t = substr($0, RSTART, RLENGTH)
-        sub(/^Type:[[:space:]]*/, "", t)
-        gsub(/^[[:space:]]+|[[:space:]]+$/, "", t)
-        print tolower(t)
-      }
-      exit
-    }
-  ' "$1" 2>/dev/null
-}
-
-# Plan header Issue value (same Status line: "... | Issue: <ref> | Worktree:").
-plan_issue() {
-  awk '
-    /^Status:/ {
-      if (match($0, /Issue:[[:space:]]*[^|]+/)) {
-        t = substr($0, RSTART, RLENGTH)
-        sub(/^Issue:[[:space:]]*/, "", t)
-        gsub(/^[[:space:]]+|[[:space:]]+$/, "", t)
-        print t
-      }
-      exit
-    }
-  ' "$1" 2>/dev/null
-}
-
-# Plan header Base branch (same Status line: "... | Base: <branch> | ...").
-plan_base() {
-  awk '
-    /^Status:/ {
-      if (match($0, /Base:[[:space:]]*[^|]+/)) {
-        t = substr($0, RSTART, RLENGTH)
-        sub(/^Base:[[:space:]]*/, "", t)
-        gsub(/^[[:space:]]+|[[:space:]]+$/, "", t)
-        print t
-      }
-      exit
-    }
-  ' "$1" 2>/dev/null
-}
-
-# Plan header Snapshot commit (same Status line: "... | Snapshot: <sha> | ...").
-plan_snapshot() {
-  awk '
-    /^Status:/ {
-      if (match($0, /Snapshot:[[:space:]]*[^|]+/)) {
-        t = substr($0, RSTART, RLENGTH)
-        sub(/^Snapshot:[[:space:]]*/, "", t)
-        gsub(/^[[:space:]]+|[[:space:]]+$/, "", t)
-        print t
-      }
-      exit
-    }
-  ' "$1" 2>/dev/null
-}
-
-# Plan header After line: the immediately earlier plan of an ordered split
-# (../skills/dev/reference/related-plans.md#order).
-plan_after() {
-  awk '
-    /^## / { exit }
-    /^After:/ {
-      sub(/^After:[[:space:]]*/, "")
-      gsub(/^[[:space:]@]+|[[:space:]]+$/, "")
-      print
-      exit
-    }
-  ' "$1" 2>/dev/null
-}
-
-# Sets AFTER_DOC to the plan's After: target in canonical form, so
-# "./docs/plans/x.md" or a backticked path matches the named
-# "docs/plans/x.md". AFTER_DOC is empty when the plan has no After: line or
-# its target no longer exists: cleanup deletes a published predecessor, and a
-# mistyped name cannot be told apart from one. A line that names no
-# docs/plans/<file>.md of this repository blocks. Called directly, not in a
-# command substitution, so that block exits the hook.
-AFTER_DOC=""
-resolve_after() {
-  local raw mention real base
-  AFTER_DOC=""
-  raw=$(plan_after "$1")
-  [[ -n "$raw" ]] || return 0
-  mention=$(doc_mentions docs/plans "$raw" | awk 'NR==1')
+# The repo-relative path of a direct child of docs/plans/, whether or not it
+# exists; fails for another repository, traversal, or nesting.
+canonical_plan() {
+  local real base
+  real=$(realpath -m -- "$1" 2>/dev/null) || return 1
   base=$(realpath -m -- "$REPO_ROOT/docs/plans")
-  real=$(realpath -m -- "${mention:-/}")
-  if [[ -z "$mention" || "$real" != "$base/"* || "${real#"$base"/}" == */* ]]; then
-    block "Plan has 'After: $raw', which names no docs/plans/<file>.md in this repository. Write the earlier plan's path (skills/dev/reference/related-plans.md#order), then re-run."
-  fi
-  [[ ! -f "$real" ]] || AFTER_DOC="docs/plans/${real#"$base"/}"
+  [[ "$real" == "$base/"* && "${real#"$base"/}" != */* ]] || return 1
+  printf 'docs/plans/%s\n' "${real#"$base"/}"
 }
 
-# A published record: tracked in the main root (../skills/dev/plan.md#live-artifact).
+# One field of the Status line ("Status: x | Base: y | ..."), trimmed.
+field() {
+  awk -v key="$2" '
+    /^Status:/ {
+      n = split($0, f, /\|/)
+      for (i = 1; i <= n; i++) {
+        x = f[i]; gsub(/^[[:space:]]+|[[:space:]]+$/, "", x)
+        if (index(x, key ":") == 1) { sub("^" key ":[[:space:]]*", "", x); print x; exit }
+      }
+      exit
+    }' "$1" 2>/dev/null
+}
+
+# The plan's parent from its Stacks On line, as a canonical path; empty
+# without one. Fails closed on any line that reads as a Stacks On line but is
+# not exactly one unindented, plain `Stacks On: <path>` in the header —
+# indented, bulleted, emphasized, repeated, empty, or below the header — since
+# a missed line would read the plan as a root.
+stacks_on() {
+  local raw mention
+  raw=$(awk '/^[[:space:]]*(```|~~~)/ { fenced = !fenced; next }
+    fenced { next }
+    /^## / { body = 1 }
+    { l = $0; sub(/^[[:space:]>*_-]+/, "", l) }
+    tolower(l) ~ /^stacks[[:space:]]+on/ {
+      n++; if (body || $0 !~ /^Stacks On:/) bad = 1
+      sub(/^Stacks On:[[:space:]]*/, ""); line = $0
+    }
+    END { if (fenced || n > 1 || bad || (n && line ~ /^[[:space:]]*$/)) exit 1; if (n) print line }' "$1" 2>/dev/null) || return 1
+  [[ -n "$raw" ]] || return 0
+  mention=$(plan_mentions "$raw" | awk 'NR==1')
+  # Only the literal path, which dev-publish.sh stack also reads.
+  [[ "$mention" =~ $PLAN_NAME_RE ]] || return 1
+  canonical_plan "$mention"
+}
+
+# A published record: tracked in the main root.
 is_tracked_plan() {
   git -C "$REPO_ROOT" ls-files --error-unmatch -- "$1" >/dev/null 2>&1 ||
     git -C "$REPO_ROOT" cat-file -e "HEAD:$1" 2>/dev/null
 }
 
-# Lifecycle position of a status (../skills/dev/plan.md#lifecycle); empty for
-# anything else.
-status_rank() {
-  case "$1" in
-    planning) echo 0 ;;
-    approved) echo 1 ;;
-    implemented) echo 2 ;;
-    reviewed) echo 3 ;;
-  esac
-}
-
-# True when commit $1 is in the history of any of the given branches. Each
-# name is tried as a local branch, as origin's tracking branch (a designer may
-# inspect a freshly fetched origin/<base> without updating the local one), and
-# as a remote-tracking name already qualified, such as origin/main.
-commit_on_any_branch() {
-  local commit="$1" branch ref
-  shift
-  for branch in "$@"; do
-    [[ -n "$branch" ]] || continue
-    for ref in "refs/heads/$branch" "refs/remotes/origin/$branch" "refs/remotes/$branch"; do
-      git -C "$REPO_ROOT" rev-parse --verify -q "$ref^{commit}" >/dev/null 2>&1 || continue
-      git -C "$REPO_ROOT" merge-base --is-ancestor "$commit" "$ref" 2>/dev/null && return 0
-    done
+# Live plans stacked on plan $1; "!<plan>" for one whose Stacks On is
+# malformed or names no live plan, or that is a symlink, since it may mean $1.
+child_plans() {
+  local f spec
+  for f in docs/plans/*.spec.md; do
+    [[ -f "$f" && "$f" != "$1" ]] && ! is_tracked_plan "$f" || continue
+    if [[ -L "$f" ]] || ! spec=$(stacks_on "$f" 2>/dev/null); then printf '!%s\n' "$f"
+    elif [[ "$spec" == "$1" ]]; then printf '%s\n' "$f"
+    elif [[ -n "$spec" && ! -f "$spec" ]]; then printf '!%s\n' "$f"; fi
   done
-  return 1
 }
 
-# Plan header Worktree path (same Status line: "... | Worktree: <path> | ...").
-plan_worktree() {
-  awk '
-    /^Status:/ {
-      if (match($0, /Worktree:[[:space:]]*[^|]+/)) {
-        t = substr($0, RSTART, RLENGTH)
-        sub(/^Worktree:[[:space:]]*/, "", t)
-        gsub(/^[[:space:]]+|[[:space:]]+$/, "", t)
-        print t
-      }
-      exit
-    }
-  ' "$1" 2>/dev/null
+# Every live plan stacked above plan $1, breadth first, each once.
+descendant_plans() {
+  local queue=("$1") seen=$'\n'"$1"$'\n' cur child
+  while (( ${#queue[@]} > 0 )); do
+    cur="${queue[0]}"; queue=("${queue[@]:1}")
+    while IFS= read -r child; do
+      [[ "$child" == '!'* || "$seen" != *$'\n'"$child"$'\n'* ]] || continue
+      printf '%s\n' "$child"
+      [[ "$child" != '!'* ]] || continue
+      seen+="$child"$'\n'
+      queue+=("$child")
+    done < <(child_plans "$cur")
+  done
 }
 
-# True when the Issue field holds a real issue reference — the skills require
-# "#<number>", so anything without one (empty, none, TBD, placeholder) fails.
-has_issue() {
-  local v
-  v=$(plan_issue "$1")
-  [[ "$v" =~ ^\#[1-9][0-9]*$ ]]
+status_rank() {
+  case "$1" in planning) echo 0 ;; approved) echo 1 ;; implemented) echo 2 ;; reviewed) echo 3 ;; esac
 }
 
 is_registered_worktree() {
-  local target="$1" line
-  [[ "$target" != "$REPO_ROOT" ]] || return 1
-  while IFS= read -r line; do
-    [[ "$line" == "worktree $target" ]] && return 0
-  done < <(git -C "$REPO_ROOT" worktree list --porcelain 2>/dev/null)
-  return 1
+  [[ "$1" != "$REPO_ROOT" ]] || return 1
+  grep -qxF "worktree $1" <<<"$(git -C "$REPO_ROOT" worktree list --porcelain 2>/dev/null)"
 }
 
-# The plan schema has no place for open questions: design-feature resolves
-# material ones through its ambiguity gate before drafting, and optional
-# follow-ups stay out of the plan. A section or field that parks them is a
-# schema violation, whatever it contains — the gate cannot judge whether a
-# parked question is material, so it rejects the container.
-open_questions_line() {
-  awk '
-    /^[[:space:]]*(```|~~~)/ { fenced = !fenced; next }
-    fenced { next }
-    # A heading named for them ("## Assumptions & Open Questions (draft)"),
-    # or a field ("Open Questions:", "- **Assumptions**:"). A heading that
-    # merely contains the word, such as "### TC-3 — Assumptions API 404", is
-    # not a container.
-    {
-      l = tolower($0)
-      if (l ~ /^#+[[:space:]]+(assumptions?|(open )?questions?)([[:space:]]*(&|and)[[:space:]]*(assumptions?|(open )?questions?))?[[:space:]]*(\(.*\))?[[:space:]]*$/ ||
-          l ~ /^[[:space:]]*([-*][[:space:]]*)?(\*\*)?(assumptions?|(open )?questions?)(\*\*)?:/) {
-        print NR
-        exit
-      }
-    }
-  ' "$1" 2>/dev/null
+# ── plan resolution ───────────────────────────────────────────────────
+
+# Exactly one plan path, which must resolve: a typo or foreign path blocks
+# rather than leaving another path to bind.
+resolve_plan() {
+  local mention doc seen=$'\n' named=()
+  while IFS= read -r mention; do
+    [[ -n "$mention" ]] || continue
+    doc=$(canonical_plan "$mention") || block "Named plan not found: $mention. Pass an existing $PLAN_FORMAT of this repository."
+    if [[ "$seen" == *$'\n'"$doc"$'\n'* ]]; then continue; fi
+    seen+="$doc"$'\n'
+    named+=("$doc")
+  done < <(plan_mentions "$HOOK_TEXT")
+  (( ${#named[@]} > 0 )) || block "${SKILL_SLUG} operates on a plan and none was named. Pass its exact path: ${SKILL_SLUG} $PLAN_FORMAT. A slug or the only plan in docs/plans/ does not resolve. No plan yet → run design-feature first."
+  (( ${#named[@]} == 1 )) || block "${SKILL_SLUG} takes one plan path; ${#named[@]} were named: ${named[*]}. Pass only the plan; its Stacks On parent is read from its header."
+  [[ -f "${named[0]}" ]] || block "Named plan not found: ${named[0]}. Pass an existing $PLAN_FORMAT."
+  PLAN="${named[0]}"
 }
 
-# Format and referential closure of an artifact's IDs (../skills/dev/ids.md).
-# This reads identifiers, never prose: it proves every ID is well formed,
-# declared once, and referenced where the graph requires, never that any edge
-# is *true* (whether a Proves: names the right AC, whether a step satisfies the
-# TC it cites). That stays the reviewing skill's judgment.
+load_plan() {
+  [[ "$PLAN" =~ $PLAN_NAME_RE ]] || block "Plan path $PLAN does not match $PLAN_FORMAT, with <issue> 0 when none is linked and <type> feature, fix, or refactor (skills/dev/plan.md#artifact)."
+  # Before status: a published record ends delivery whatever it says.
+  if is_tracked_plan "$PLAN"; then
+    block "Plan $PLAN is tracked by Git — a published record; no phase resumes it. Restore local edits to it with git. For follow-up work, start a new plan with design-feature."
+  fi
+  STATUS=$(field "$PLAN" Status)
+  WT=$(field "$PLAN" Worktree)
+  ACTIVE_WORKTREE=""
+  if [[ -n "$WT" ]]; then
+    if ! is_registered_worktree "$WT" || [[ ! -d "$WT" ]]; then
+      block "Plan records 'Worktree: $WT', which is missing or not a registered worktree. If publication cleanup removed it, rerun dev-publish.sh cleanup $PLAN; otherwise stop and report it; the worktree stays until publication completes (skills/dev/plan.md#worktree)."
+    fi
+    GIT_TREE="$WT"
+    ACTIVE_WORKTREE="$WT"
+  fi
+}
+
+require_worktree() {
+  [[ -n "$ACTIVE_WORKTREE" ]] || block "Plan records no Worktree. Record the path dev-worktree.sh create printed during execution; if none was printed, stop and report it (skills/dev/plan.md#worktree)."
+}
+
+# The filename's issue and type agree with the header.
+check_name() {
+  local name num ftype issue type want
+  name=$(basename -- "$PLAN")
+  num="${name%%_*}"; ftype="${name#*_}"; ftype="${ftype%%_*}"
+  issue=$(field "$PLAN" Issue)
+  case "$issue" in
+    none) want=0 ;;
+    \#[1-9]*) want="${issue#\#}"; [[ "$want" =~ ^[0-9]+$ ]] || want="" ;;
+    *) want="" ;;
+  esac
+  [[ -n "$want" ]] || block "Plan header has 'Issue: $issue'; write 'Issue: #<n>' or 'Issue: none' (skills/dev/plan.md#schema)."
+  [[ "$num" == "$want" ]] || block "Plan filename starts with $num, but the header has 'Issue: $issue'. The filename's <issue> is the issue number, or 0 for none; rename the file or fix the header."
+  type=$(field "$PLAN" Type); type="${type,,}"
+  [[ "$type" == "$ftype" ]] || block "Plan filename has type '$ftype', but the header has 'Type: $type'. Make them agree."
+}
+
+# A stacked plan enters review once its parent is approved, and execution and
+# code review once it is reviewed. The whole stack publishes at once, so the
+# parent is live until then. Sets PARENT_PLAN, empty for an unstacked plan.
+require_parent_rank() {
+  local need="$1" need_name="$2" status rank
+  PARENT_PLAN=$(stacks_on "$PLAN") || block "Plan has a 'Stacks On:' line that is misplaced, repeated, or names no $PLAN_FORMAT of this repository. Write it as one plain header line, 'Stacks On: <parent plan path>', or delete it for a stack's root (skills/dev/plan.md#stacks)."
+  [[ -n "$PARENT_PLAN" ]] || return 0
+  if is_tracked_plan "$PARENT_PLAN"; then
+    block "Parent plan $PARENT_PLAN is merged, so its stack is complete. Start a new stack: delete the 'Stacks On:' line and use Base as PR-1's Parent (skills/dev/plan.md#stacks)."
+  fi
+  if [[ ! -f "$PARENT_PLAN" && -n "$(git -C "$REPO_ROOT" log --all -1 --format=%H -- "$PARENT_PLAN" 2>/dev/null)" ]]; then
+    block "Parent plan $PARENT_PLAN is published but not merged, and a published plan never becomes a parent. Wait until its stack merges, then start a new stack on Base (skills/dev/plan.md#stacks)."
+  fi
+  [[ -f "$PARENT_PLAN" ]] || block "Parent plan $PARENT_PLAN does not exist. Fix the 'Stacks On:' path."
+  status=$(field "$PARENT_PLAN" Status)
+  rank=$(status_rank "$status")
+  [[ -n "$rank" ]] && (( rank >= need )) ||
+    block "Parent plan $PARENT_PLAN is '$status'; ${SKILL_SLUG} needs it '$need_name' or later (skills/dev/plan.md#stacks)."
+}
+
+# Walking Stacks On up from this plan never returns to a plan it passed.
+require_acyclic() {
+  local cur="$PLAN" seen=$'\n'"$PLAN"$'\n' up
+  while up=$(stacks_on "$cur" 2>/dev/null) && [[ -n "$up" && -f "$up" ]]; do
+    [[ "$seen" != *$'\n'"$up"$'\n'* ]] || block "'Stacks On:' lines form a cycle through $up; a stack is a tree (skills/dev/plan.md#stacks)."
+    seen+="$up"$'\n'
+    cur="$up"
+  done
+}
+
+# ── ID shape ──────────────────────────────────────────────────────────
+
+# Format and closure of a plan's IDs (../skills/dev/plan.md#schema): AC <- TC
+# (Proves:) <- ST (satisfies) <- PR (Steps column), each TC in one PR row.
+# It proves every ID is well formed, declared once, and linked, never that an
+# edge is true.
 #
-# $1 is the artifact kind — plan | runbook | architecture — which selects the
-# prefix registry; $2 is the file. Plans additionally get the delivery graph
-# (../skills/dev/design-feature.md#id-graph): AC <- TC (Proves:) <- ST
-# (satisfies) <- PR (Steps), and FX <- TC.
-#
-# Three output classes, and the caller must keep them apart. A line prefixed `!`
-# means the IDs could not be read at all (old ordinals, ranges, leading zeros,
-# duplicates, a missing section, an unparseable Proves:) — a parser that cannot
-# read the graph must say so, not report a defect, because a false traceability
-# block teaches the reader to distrust the hook. A line prefixed `@` is a plan
-# citing another artifact's ID, which plans never do
-# (../skills/dev/reference/related-plans.md#order). Everything else is a real
-# closure finding.
+# Output classes the caller keeps apart: `!` means the IDs could not be read
+# (ranges, leading zeros, duplicates, a missing section, a bad
+# Proves:), so no closure verdict follows; a false traceability block would
+# teach readers to distrust the hook. `@` is a citation of another artifact's
+# ID. Anything else is a closure finding.
 id_report() {
-  awk -v kind="$1" '
-    function trim(s) {
-      gsub(/^[[:space:]]+|[[:space:]]+$/, "", s)
-      return s
-    }
-    function bad(msg) {
-      printf "!%s\n", msg
-      unreadable = 1
-    }
-    # Registry IDs on s, in order, into ids[1..n]. awk has no \b: an ID must
-    # not continue a longer word ("UTC-7", "fix-ST-1"), and a #-qualified ID
-    # ("docs/plans/x.md#AC-1") belongs to another artifact. Neighbours are read
-    # from the whole line, so "TC-2/TC-9" yields both IDs.
+  awk '
+    function trim(s) { gsub(/^[[:space:]]+|[[:space:]]+$/, "", s); return s }
+    function bad(msg) { printf "!%s\n", msg; unreadable = 1 }
+    # Registry IDs on s into ids[1..n]. awk has no \b: an ID must not continue
+    # a longer word ("UTC-7", "fix-ST-1"), and a #-qualified ID belongs to
+    # another artifact. "TC-2/TC-9" yields both.
     function scan(s,   n, tok, pre, post, off, at) {
-      n = 0
-      off = 0
-      split("", ids)
+      n = 0; off = 0; split("", ids)
       while (match(substr(s, off + 1), /[A-Z][A-Z]-[0-9]+/)) {
         at = off + RSTART
         tok = substr(s, at, RLENGTH)
@@ -524,80 +333,40 @@ id_report() {
     function pfx(id) { return substr(id, 1, 2) }
 
     BEGIN {
-      if (kind == "plan") {
-        owner["AC"] = "Acceptance Criteria"; owner["TC"] = "Test Cases"
-        owner["FX"] = "Test Fixtures";       owner["ST"] = "Implementation Steps"
-        owner["PC"] = "Implementation Steps"; owner["PR"] = "PR Pattern"
-        owner["DD"] = "Design Decisions";    owner["RK"] = "Open Risks"
-        owner["DS"] = "Discovered Scope";    owner["CG"] = "Coverage Gaps"
-      } else if (kind == "runbook") {
-        owner["SC"] = "Success Criteria";    owner["CL"] = "Evidence"
-        owner["RS"] = "Resources";           owner["PH"] = "Phases"
-        owner["OQ"] = "Open Questions";      owner["EX"] = "Execution Record"
-      } else {
-        owner["SC"] = "Goal and Constraints"; owner["OP"] = "Options"
-        owner["CT"] = "Contracts";           owner["PH"] = "Migration"
-        owner["DC"] = "Decomposition"
-      }
-      # Only the runbook Execution Record may mention retired IDs, so only it
-      # is exempt from reference checks.
-      if (kind == "runbook") history["Execution Record"] = 1
+      owner["AC"] = "Acceptance Criteria"; owner["TC"] = "Test Cases"
+      owner["ST"] = "Implementation Steps"; owner["PC"] = "Implementation Steps"
+      owner["PR"] = "PR Pattern"; owner["DD"] = "Design Decisions"
     }
 
     /^[[:space:]]*(```|~~~)/ { fenced = !fenced; next }
     fenced { next }
 
-    /^## / {
-      sec = trim(substr($0, 4))
-      sub(/[[:space:]]*\(.*\)$/, "", sec)
-      next
-    }
+    /^## / { sec = trim(substr($0, 4)); next }
 
     {
       line = $0
-      hist = (sec in history)
 
-      # Ordinals are only the old form where the ID now lives; elsewhere
-      # "Step 1 of the wizard" is prose.
-      if ((sec == "Implementation Steps" || sec == "PR Pattern" || sec == "Phases" || sec == "Migration") &&
-          line ~ /^[[:space:]]*([-*#|][-*#|[:space:]]*)?(Step|Phase|Slice)[[:space:]]+[0-9]+/)
-        bad(sprintf("line %d uses an ordinal (%s) — write ST-n, PH-n, or PR-n (skills/dev/ids.md)", NR, trim(line)))
-      if (kind == "plan" && sec == "PR Pattern" && line ~ /^[[:space:]]*\|[[:space:]]*[0-9]+[[:space:]]*\|/)
-        bad(sprintf("PR Pattern row at line %d is numbered — write PR-n in the first column (skills/dev/ids.md)", NR))
-      if (kind == "plan" && sec == "Publication Inventory" && line ~ /^[[:space:]]*[0-9]+[[:space:]]*\|/)
-        bad(sprintf("Publication Inventory line %d is numbered — write Worktree: PR-n (<branch>) at <path>", NR))
-      # An unconverted precondition would otherwise pass silently and leave
-      # execute-feature with no PC-n check to run.
-      if (kind == "plan" && sec == "Implementation Steps" && line ~ /^[[:space:]]*([-*][[:space:]]*)?Precondition:/)
-        bad(sprintf("line %d uses Precondition: — write PC-n — <fact> — Check: <command> (skills/dev/ids.md)", NR))
-
-      # A range collapses IDs the parser must see individually, so it is
-      # unreadable input, not an unreferenced ID. Both operands must carry the
-      # same prefix (or the second is a bare number), and a dash separator must
-      # be unspaced — otherwise "TC-1 - 200 returned" or a title such as
-      # "TC-2 — TC-1 variant" would trip it. An Execution Record may quote old ranges.
-      if (!hist) {
-        for (p in owner) {
-          if (line ~ (p "-[0-9]+([[:space:]]+(through|thru|to)[[:space:]]+|[[:space:]]*\\.\\.[[:space:]]*|–|-)" p "-[0-9]+") ||
-              line ~ (p "-[0-9]+[[:space:]]+(through|thru|to)[[:space:]]+[0-9]+") ||
-              line ~ (p "-[0-9]+(–|-)[0-9]+") ||
-              line ~ (p "-[0-9]+[[:space:]]*\\.\\.[[:space:]]*[0-9]+")) {
-            bad(sprintf("line %d uses an ID range (%s) — enumerate IDs so traceability can be checked", NR, trim(line)))
-            break
-          }
+      # A range hides IDs the parser must see. Both operands carry the prefix
+      # (or the second is a bare number), and a dash separator is unspaced, so
+      # "TC-1 - 200 returned" and "TC-2 — TC-1 variant" are not ranges.
+      for (p in owner) {
+        if (line ~ (p "-[0-9]+([[:space:]]+(through|thru|to)[[:space:]]+|[[:space:]]*\\.\\.[[:space:]]*|–|-)" p "-[0-9]+") ||
+            line ~ (p "-[0-9]+[[:space:]]+(through|thru|to)[[:space:]]+[0-9]+") ||
+            line ~ (p "-[0-9]+(–|-)[0-9]+") ||
+            line ~ (p "-[0-9]+[[:space:]]*\\.\\.[[:space:]]*[0-9]+")) {
+          bad(sprintf("line %d uses an ID range (%s) — list IDs one by one", NR, trim(line)))
+          break
         }
       }
 
-      # A plan cites only its own IDs; a fact an earlier plan establishes is
-      # restated as a precondition. Any path-like token before #ID counts
-      # (be.md#, be#, x.yaml#, `be.md`#); a URL anchor shaped like an ID is an
-      # accepted false positive.
-      if (kind == "plan" && match(line, /[A-Za-z0-9_\/.`-]#[A-Z][A-Z]-[0-9]+/))
-        printf "@line %d cites another artifact\047s ID (%s) — restate the fact as a PC-n precondition\n", NR, trim(line)
+      # A plan cites only its own IDs. Any path-like token before #ID counts
+      # (be.md#, be#, x.yaml#, `be.md`#).
+      if (match(line, /[A-Za-z0-9_\/.`-]#[A-Z][A-Z]-[0-9]+/))
+        printf "@line %d cites another artifact\047s ID (%s)\n", NR, trim(line)
 
-      # PR ownership is read from the Steps column only; a Summary that
-      # mentions a step does not own it.
-      if (kind == "plan" && sec == "PR Pattern" && line ~ /^[[:space:]]*\|/ && line !~ /PR-[0-9]/) {
+      # PR ownership comes from the Steps column only; a Summary that mentions
+      # a step does not own it.
+      if (sec == "PR Pattern" && line ~ /^[[:space:]]*\|/ && line !~ /PR-[0-9]/) {
         nc = split(line, cells, "|")
         for (i = 2; i <= nc; i++) if (trim(cells[i]) == "Steps") stepcol = i
       }
@@ -609,20 +378,17 @@ id_report() {
       decl = ""
       if (n > 0 && index(lead, ids[1]) == 1 && owner[pfx(ids[1])] == sec) decl = ids[1]
 
-      if (kind == "plan" && sec == "Test Cases") {
+      if (sec == "Test Cases") {
         if (decl ~ /^TC-/) {
           curtc = decl; proves[curtc] = ""; provesline[curtc] = 0
         } else if (line ~ /^[^[:space:]]/ && line !~ /^([-*][[:space:]]*)?[A-Za-z][A-Za-z ]*:/) {
-          # A new unindented item that is not a TC declaration or one of its
-          # fields (Proves:, Fixture:) ends the current TC, so a later Proves:
-          # is not attributed to the previous one.
+          # A new unindented item that is not a TC or one of its fields ends
+          # the current TC, so a later Proves: is not misattributed.
           curtc = ""
         }
         if (line ~ /^[[:space:]]*([-*][[:space:]]*)?Proves:/ && curtc != "") {
           np = 0
           for (i = 1; i <= n; i++) if (pfx(ids[i]) == "AC") { np++; last = ids[i] }
-          # Exactly one Proves: per TC, naming exactly one AC. A second line
-          # would otherwise overwrite the first and read as well-formed.
           if (provesline[curtc] > 0)
             bad(sprintf("%s has more than one Proves: line (lines %d and %d) — exactly one is required", curtc, provesline[curtc], NR))
           provesline[curtc] = NR
@@ -639,49 +405,42 @@ id_report() {
       }
 
       if (decl != "") {
-        # A reused ID is two items wearing one name: silently collapsing them
-        # drops one from the graph, so it is unreadable input, not an orphan.
+        # A reused ID is two items wearing one name, so it is unreadable.
         if (decl in declared) bad(sprintf("%s is declared more than once (lines %d and %d) — IDs must be unique", decl, declared[decl], NR))
         else { declared[decl] = NR; order[++nd] = decl; count[pfx(decl)]++ }
       }
 
       for (i = (decl != "" ? 2 : 1); i <= n; i++)
-        if (!hist && !(ids[i] in refline)) { refline[ids[i]] = NR; reforder[++nr] = ids[i] }
+        if (!(ids[i] in refline)) { refline[ids[i]] = NR; reforder[++nr] = ids[i] }
 
-      if (kind != "plan") next
-
-      if (sec == "Test Cases")
-        for (i = 1; i <= n; i++) if (pfx(ids[i]) == "FX") fxused[ids[i]] = 1
-
+      # A step satisfies the TCs its satisfies clause names, on its own line
+      # or a continuation line. A TC mentioned in prose is only a reference.
       if (sec == "Implementation Steps") {
         if (decl ~ /^ST-/) { curst = decl; stref[curst] = 0; sttxt[curst] = trim(line) }
-        if (curst != "")
-          for (i = 1; i <= n; i++) if (pfx(ids[i]) == "TC") { tcnamed[ids[i]] = 1; stref[curst]++ }
+        if (curst != "" && (at = index(tolower(line), "satisfies")) > 0) {
+          m = scan(substr(line, at))
+          for (i = 1; i <= m; i++) if (pfx(ids[i]) == "TC") { tcsat[ids[i]] = tcsat[ids[i]] " " curst; stref[curst]++ }
+        }
       }
 
       if (sec == "PR Pattern" && decl ~ /^PR-/ && stepcol) {
         split(line, cells, "|")
         m = scan(cells[stepcol])
-        for (i = 1; i <= m; i++) if (pfx(ids[i]) == "ST") { stowners[ids[i]]++; stpr[ids[i]] = stpr[ids[i]] " " decl }
+        for (i = 1; i <= m; i++) if (pfx(ids[i]) == "ST") { stowners[ids[i]]++; stpr[ids[i]] = decl; stprs[ids[i]] = stprs[ids[i]] " " decl }
       }
     }
 
     END {
-      if (kind == "plan") {
-        if (!count["AC"]) bad("no AC- entries under ## Acceptance Criteria")
-        if (!count["TC"]) bad("no TC- entries under ## Test Cases")
-        if (!count["ST"]) bad("no ST- entries under ## Implementation Steps")
-        if (!count["PR"]) bad("no PR- rows under ## PR Pattern")
-        else if (!stepcol) bad("## PR Pattern has no Steps column — each PR-n row lists the ST-n steps it owns")
-      }
-      # Unreadable input cannot produce a trustworthy closure verdict: reporting
-      # orphans derived from IDs we failed to parse is the false block above.
+      if (!count["AC"]) bad("no AC- entries under ## Acceptance Criteria")
+      if (!count["TC"]) bad("no TC- entries under ## Test Cases")
+      if (!count["ST"]) bad("no ST- entries under ## Implementation Steps")
+      if (!count["PR"]) bad("no PR- rows under ## PR Pattern")
+      else if (!stepcol) bad("## PR Pattern has no Steps column — each PR-n row lists the ST-n steps it owns")
       if (unreadable) exit
       for (i = 1; i <= nr; i++) {
         id = reforder[i]
-        if (!(id in declared)) printf "line %d cites %s, which is not declared: no line in ## %s begins with it (skills/dev/ids.md)\n", refline[id], id, owner[pfx(id)]
+        if (!(id in declared)) printf "line %d cites %s, which is not declared: no line in ## %s begins with it\n", refline[id], id, owner[pfx(id)]
       }
-      if (kind != "plan") exit
       for (i = 1; i <= nd; i++) {
         id = order[i]
         if (id ~ /^AC-/) {
@@ -690,505 +449,227 @@ id_report() {
           if (!found) printf "%s has no TC — no Test Case names it in Proves:\n", id
         } else if (id ~ /^TC-/) {
           if (proves[id] == "") printf "%s has no Proves: line — every TC names exactly one AC\n", id
-          if (!(id in tcnamed)) printf "%s is not named by any Implementation Step\n", id
-        } else if (id ~ /^FX-/) {
-          if (!(id in fxused)) printf "%s is not used by any Test Case\n", id
+          if (!(id in tcsat)) { printf "%s is not satisfied by any Implementation Step\n", id; continue }
+          ns = split(tcsat[id], sts, " ")
+          rows = ""
+          for (j = 1; j <= ns; j++) {
+            pr = stpr[sts[j]]
+            if (pr != "" && index(" " rows " ", " " pr " ") == 0) rows = rows (rows == "" ? "" : " ") pr
+          }
+          if (rows ~ / /) printf "%s belongs to more than one PR row (%s) — its tests and the code they need ship in one slice\n", id, rows
         } else if (id ~ /^ST-/) {
-          if (stref[id] == 0) printf "%s names no TC: %s\n", id, sttxt[id]
+          if (stref[id] == 0) printf "%s has no satisfies clause naming a TC: %s\n", id, sttxt[id]
           if (stowners[id] == 0) printf "%s is not assigned to any PR row\n", id
-          else if (stowners[id] > 1) printf "%s is assigned to more than one PR row:%s\n", id, stpr[id]
+          else if (stowners[id] > 1) printf "%s is assigned to more than one PR row:%s\n", id, stprs[id]
         }
       }
-    }
-  ' "$2" 2>/dev/null
-}
-
-# Blocks on any output class, with different messages: an unreadable
-# artifact is a shape defect to fix, never a traceability verdict.
-require_ids() {
-  local kind="$1" file="$2" report
-  report=$(id_report "$kind" "$file")
-  [[ -n "$report" ]] || return 0
-  if [[ "$report" == *$'\n'!* || "$report" == !* ]]; then
-    block "$(printf 'gate-check cannot read the IDs in %s — fix them per skills/dev/ids.md and re-run. This is NOT a traceability verdict:\n%s' "$file" "$(sed 's/^[!@]//' <<<"$report")")"
-  fi
-  if [[ "$report" == *$'\n'@* || "$report" == @* ]]; then
-    block "$(printf '%s cites another artifact'"'"'s IDs. A plan cites only its own IDs (skills/dev/reference/related-plans.md#order):\n%s' "$file" "$(sed -n 's/^@//p' <<<"$report")")"
-  fi
-  if [[ "$kind" == plan ]]; then
-    block "$(printf "The ID graph in %s is not closed (skills/dev/design-feature.md#id-graph):\n%s\n\nClosure is shape, not correctness: fixing these does not mean an edge is right." "$file" "$report")"
-  fi
-  block "$(printf "%s cites IDs it does not declare (skills/dev/ids.md):\n%s" "$file" "$report")"
-}
-
-# Sets REVIEW_BASE to the commit proof counts from. That is the Parent's tip
-# when the reviewed branch contains it. When the Parent is ahead only by plan
-# files, it is the fork point: an earlier plan's archive commit lands on its
-# last slice at publication, after which the Parent may exist only as
-# origin/<Parent> (../skills/dev/reference/related-plans.md#order). A tree
-# diff without rename detection, so no code change hides behind a plan path.
-resolve_review_base() {
-  local parent="$1" ref sha="" fork paths
-  for ref in "refs/heads/$parent" "refs/remotes/origin/$parent" "refs/remotes/$parent"; do
-    sha=$(git -C "$GIT_TREE" rev-parse --verify -q "$ref^{commit}" 2>/dev/null) && break
-    sha=""
-  done
-  [[ -n "$sha" ]] || return 1
-  if git -C "$GIT_TREE" merge-base --is-ancestor "$sha" HEAD 2>/dev/null; then
-    REVIEW_BASE="$sha"
-    return 0
-  fi
-  fork=$(git -C "$GIT_TREE" merge-base "$sha" HEAD 2>/dev/null) || return 1
-  paths=$(git -C "$GIT_TREE" diff --no-renames --name-only "$fork" "$sha")
-  [[ -n "$paths" ]] && ! grep -qvxE 'docs/plans/[^/]+\.md' <<<"$paths" || return 1
-  REVIEW_BASE="$fork"
-}
-
-red_commit_count() {
-  local base="$1"
-  git -C "$GIT_TREE" log --format=%s "${base}..HEAD" 2>/dev/null | grep -Ec '^test\(red\):' || true
-}
-
-# Refactor slices prove TDD with a passing "test: baseline <scope>" commit
-# instead of a failing test(red): commit.
-baseline_commit_count() {
-  local base="$1"
-  git -C "$GIT_TREE" log --format=%s "${base}..HEAD" 2>/dev/null | grep -Ec '^test:[[:space:]]*baseline' || true
-}
-
-proof_sequence_ok() {
-  local base="$1" mode="$2" expected="$3" proof_re=""
-  case "$mode" in
-    red) proof_re='^test\\(red\\):' ;;
-    baseline) proof_re='^test:[[:space:]]*baseline' ;;
-    *) return 1 ;;
-  esac
-
-  # Topological, not date, order: a repair merged forward from a parent slice
-  # (../skills/dev/plan.md#worktree-operations) then reads as one line of
-  # history after the slice it joins, wherever its commit dates fall. A merge
-  # commit implements nothing, so it never completes a slice. Known limit: a
-  # repair merged into a slice between its RED and its implementation reads as
-  # two proofs in a row; repairs land between review rounds, after execution.
-  git -C "$GIT_TREE" log --format='%s' --topo-order --no-merges --reverse "${base}..HEAD" 2>/dev/null | awk \
-    -v proof_re="$proof_re" \
-    -v expected="$expected" '
-      BEGIN { proofs=0; waiting_for_impl=0; seen_proof=0; bad=0 }
-      $0 ~ proof_re {
-        if (waiting_for_impl) bad=1
-        proofs++
-        waiting_for_impl=1
-        seen_proof=1
-        next
-      }
-      {
-        if (!seen_proof) bad=1
-        if (waiting_for_impl) waiting_for_impl=0
-      }
-      END {
-        if (proofs < expected || waiting_for_impl || bad) exit 1
-      }
-    '
-}
-
-slice_count() {
-  local plan="$1"
-  awk '
-    /^## PR Pattern/ { in_pattern=1; next }
-    /^## / && in_pattern { exit }
-    in_pattern && /^\|[[:space:]]*PR-[1-9][0-9]*[[:space:]]*\|/ { count++ }
-    END { print count+0 }
-  ' "$plan" 2>/dev/null
-}
-
-has_final_pr_pattern() {
-  local plan="$1"
-  grep -q '^## PR Pattern$' "$plan" 2>/dev/null && ! grep -q '^## PR Pattern (provisional)$' "$plan" 2>/dev/null
-}
-
-# One line per PR-Pattern row, in table order: that row's Parent, or empty
-# when the column or the cell is missing. Callers decide which absence matters.
-plan_parents() {
-  awk '
-    function trim(s) {
-      gsub(/^[[:space:]]+|[[:space:]]+$/, "", s)
-      return s
-    }
-    /^## PR Pattern/ { in_pattern=1; next }
-    /^## / && in_pattern { exit }
-    in_pattern && /^\|/ {
-      n=split($0, cells, "|")
-      if (trim(cells[2]) ~ /^PR-[1-9][0-9]*$/) {
-        print parent_col ? trim(cells[parent_col]) : ""
-        next
-      }
-      for (i=2; i<=n; i++)
-        if (trim(cells[i]) == "Parent") parent_col=i
     }
   ' "$1" 2>/dev/null
 }
 
-# The integration Base can exclude an unmerged parent. Proof for this plan
-# starts at the first slice's explicit Parent, including for a single PR.
-plan_first_parent() {
-  # awk, not head: head exits early, and the SIGPIPE it can hand back would
-  # fail the capturing assignment under set -e and pipefail.
-  plan_parents "$1" | awk 'NR==1'
-}
-
-# Rows whose Parent is missing. design-feature requires one on every row, and
-# create-pr targets each PR at it, so a gap anywhere is a defect.
-parentless_row_count() {
-  # Piped, not captured: $( ) strips trailing newlines, which would hide a
-  # missing parent on the last row — the row most likely to be added late.
-  plan_parents "$1" | grep -c '^[[:space:]]*$' || true
-}
-
-# ── gate dispatch ─────────────────────────────────────────────────────
-
-# Resolve the named plan only for skills that consume one. Entry skills
-# (frame-goal, design-*, explore, create-issue, fix-bug) do not bind to an
-# application plan, even if their context mentions one.
-# Several named plans make a chain run: review-feature, execute-feature,
-# review-code, and create-pr gate each of them; ship-feature routes one plan.
-PLANS=()
-case "$SKILL_SLUG" in
-  review-feature|execute-feature|review-code|create-pr|ship-feature)
-    resolve_plans
-    PLAN="${PLANS[0]:-}" ;;
-  *)
-    PLAN="" ;;
-esac
-if [[ "$SKILL_SLUG" == ship-feature ]] && (( ${#PLANS[@]} > 1 )); then
-  block "ship-feature routes one plan, and ${#PLANS[@]} were named: ${PLANS[*]}. Name one plan, or run the phase on the whole After: chain: review-feature, execute-feature, review-code, or create-pr (skills/dev/reference/related-plans.md#chain-runs)."
-fi
-
-# Keep PLAN bound to the root source; only Git checks move into the worktree.
-load_plan() {
-  PLAN="$1"
-  GIT_TREE="$REPO_ROOT"
-  ACTIVE_WORKTREE=""
-  # Checked before status and worktree validation: a published record ends
-  # delivery whatever it says (plan.md#lifecycle).
-  if is_tracked_plan "$PLAN"; then
-    (( ${#PLANS[@]} < 2 )) || block "Plan is tracked by Git — a published record. Leave it out of the chain run; a published predecessor needs no naming (skills/dev/reference/related-plans.md#chain-runs)."
-    block "Plan $PLAN is tracked by Git — a published record; the workflow does not resume it. Restore any local edits to it with git. For follow-up work, start a new plan with design-feature or ship-feature, without the old plan path."
+require_ids() {
+  local report
+  report=$(id_report "$PLAN")
+  [[ -n "$report" ]] || return 0
+  if [[ "$report" == *$'\n'!* || "$report" == !* ]]; then
+    block "$(printf 'gate-check cannot read the IDs in %s; fix them per skills/dev/plan.md#schema and re-run. This is NOT a traceability verdict:\n%s' "$PLAN" "$(sed 's/^[!@]//' <<<"$report")")"
   fi
-  STATUS=$(plan_status "$PLAN")
-  WT=$(plan_worktree "$PLAN")
-  case "${WT,,}" in ""|none|n/a|"<"*">") WT="" ;; esac
-  if [[ -n "$WT" ]]; then
-    if ! is_registered_worktree "$WT"; then
-      block "Plan records 'Worktree: $WT', but that path is not a registered non-main Git worktree. If publication cleanup removed it, rerun dev-publish.sh cleanup $PLAN instead. Otherwise preserve the plan and resolve registration per skills/dev/plan.md#worktree-operations before retrying."
-    elif [[ -d "$WT" ]]; then
-      GIT_TREE="$WT"
-      ACTIVE_WORKTREE="$WT"
-    else
-      block "Plan records 'Worktree: $WT' but the worktree directory is missing. Preserve the root plan and restore the worktree per skills/dev/plan.md#worktree-operations before continuing."
-    fi
+  if [[ "$report" == *$'\n'@* || "$report" == @* ]]; then
+    block "$(printf "%s cites another artifact's IDs. A plan cites only its own IDs; refer to other artifacts by path and restate contract facts as PCs (skills/dev/plan.md#schema):\n%s" "$PLAN" "$(sed -n 's/^@//p' <<<"$report")")"
   fi
+  block "$(printf 'The ID graph in %s is not closed (skills/dev/plan.md#schema):\n%s\n\nClosure is shape, not correctness: fixing these does not make an edge right.' "$PLAN" "$report")"
 }
-# A chain run loads each plan in turn (run_chain).
-if (( ${#PLANS[@]} == 1 )) && [[ "$SKILL_SLUG" != review-feature ]]; then
-  load_plan "$PLAN"
-fi
 
-# A plan-consuming skill must name its artifact. The block never inspects how
-# many plans exist: "which plan did you mean" is the caller's answer to give,
-# and counting them is how a dormant plan used to capture unrelated work.
-require_plan() {
-  [[ -n "$PLAN" ]] && return 0
-  if explicit_path_given_but_missing; then
-    block "Named plan not found. Pass an existing docs/plans/<file>.md."
+# ── PR Pattern and proof ──────────────────────────────────────────────
+
+# One line per PR row of plan $1, in order: its column $2, or empty when missing.
+pr_column() {
+  awk -v col="$2" '
+    function trim(s) { gsub(/^[[:space:]]+|[[:space:]]+$/, "", s); return s }
+    /^## PR Pattern[[:space:]]*$/ { inp = 1; next }
+    /^## / && inp { exit }
+    inp && /^\|/ {
+      n = split($0, cells, "|")
+      if (trim(cells[2]) ~ /^PR-[1-9][0-9]*$/) { print pcol ? trim(cells[pcol]) : ""; next }
+      for (i = 2; i <= n; i++) if (trim(cells[i]) == col) pcol = i
+    }' "$1" 2>/dev/null
+}
+
+plan_parents() { pr_column "$PLAN" Parent; }
+
+# awk, not head: an early-exiting head can SIGPIPE the producer under pipefail.
+first_parent() { plan_parents | awk 'NR==1'; }
+
+require_parents() {
+  local missing
+  [[ -n "$(first_parent)" ]] || block "Plan PR Pattern has no Parent for PR-1: the Base branch, or the parent plan's last branch for a stacked plan (skills/dev/plan.md#stacks)."
+  missing=$(plan_parents | grep -c '^[[:space:]]*$' || true)
+  [[ "$missing" -eq 0 ]] || block "Plan PR Pattern leaves $missing PR row(s) without a Parent; every row records one, normally the preceding branch."
+}
+
+# Sets REVIEW_BASE. For Base, the fork point from origin/<Base> (or the local
+# branch without one), as dev-publish.sh resolves it: Base may advance
+# without the slice merging it. For a slice branch, its tip when HEAD contains
+# it, or the fork point when it is ahead only by plan files, such as the parent
+# plan's archive commit; a tree diff without rename detection, so no code
+# change hides behind a plan path. That Parent may exist only as
+# origin/<Parent> after cleanup.
+resolve_review_base() {
+  local ref sha="" fork paths
+  if [[ "$1" == "$(field "$PLAN" Base)" ]]; then
+    sha=$(git -C "$GIT_TREE" rev-parse --verify -q "refs/remotes/origin/$1^{commit}" 2>/dev/null ||
+      git -C "$GIT_TREE" rev-parse --verify -q "refs/heads/$1^{commit}" 2>/dev/null) || return 1
+    REVIEW_BASE=$(git -C "$GIT_TREE" merge-base "$sha" HEAD 2>/dev/null) || return 1
+    return 0
   fi
-  block "${SKILL_SLUG} operates on a plan and none was named. Pass its exact path: ${SKILL_SLUG} docs/plans/<file>.md. A slug, a previously used plan, or the only plan in docs/plans/ will not resolve — the path is required. No plan yet → run design-feature first."
-}
-
-require_worktree() {
-  [[ -n "$ACTIVE_WORKTREE" ]] && return 0
-  block "Plan has no active registered Worktree. Run the appropriate execute skill to create it before ${SKILL_SLUG}."
-}
-
-# ── chain runs: several plans of one After: chain ──
-# (../skills/dev/reference/related-plans.md#chain-runs)
-
-# Orders PLANS into CHAIN, producer first, or blocks unless they form one
-# linear After: chain: each plan's After: names the plan before it, no plan is
-# named by two, and none between them is missing. A chain review does not use
-# it: review-feature may also cover plans that no After: links.
-CHAIN=()
-order_chain() {
-  local plan after next heads=()
-  local -A after_of=() succ=() named=()
-  for plan in "${PLANS[@]}"; do named[$plan]=1; done
-  for plan in "${PLANS[@]}"; do
-    BLOCK_PREFIX="$plan: "
-    resolve_after "$plan"
-    BLOCK_PREFIX=""
-    after="$AFTER_DOC"
-    after_of[$plan]="$after"
-    if [[ -n "$after" && -n "${named[$after]:-}" ]]; then
-      [[ -z "${succ[$after]:-}" ]] || block "Plans ${succ[$after]} and $plan are both After: $after. A chain run takes one linear After: chain; run each branch separately (skills/dev/reference/related-plans.md#chain-runs)."
-      succ[$after]="$plan"
-    else
-      heads+=("$plan")
-    fi
+  for ref in "refs/heads/$1" "refs/remotes/origin/$1" "refs/remotes/$1"; do
+    sha=$(git -C "$GIT_TREE" rev-parse --verify -q "$ref^{commit}" 2>/dev/null) && break
+    sha=""
   done
-  (( ${#heads[@]} <= 1 )) || block "The named plans do not form one After: chain: ${heads[*]} each start one. Name the plans missing between them, or run each chain separately (skills/dev/reference/related-plans.md#chain-runs)."
-  (( ${#heads[@]} == 1 )) || block "The named plans form an After: cycle: ${PLANS[*]}. Fix their After: lines, then re-run."
-  # Each plan has one After:, so the walk from the head cannot loop; plans it
-  # never reaches sit on a separate cycle.
-  CHAIN=()
-  next="${heads[0]}"
-  while [[ -n "$next" ]]; do
-    CHAIN+=("$next")
-    next="${succ[$next]:-}"
-  done
-  (( ${#CHAIN[@]} == ${#PLANS[@]} )) || block "The named plans include an After: cycle apart from the chain starting at ${heads[0]}. Fix their After: lines, then re-run."
+  [[ -n "$sha" ]] || return 1
+  if git -C "$GIT_TREE" merge-base --is-ancestor "$sha" HEAD 2>/dev/null; then REVIEW_BASE="$sha"; return 0; fi
+  fork=$(git -C "$GIT_TREE" merge-base "$sha" HEAD 2>/dev/null) || return 1
+  paths=$(git -C "$GIT_TREE" diff --no-renames --name-only "$fork" "$sha")
+  [[ -n "$paths" ]] && ! grep -qvxE "$PLAN_NAME_RE" <<<"$paths" || return 1
+  REVIEW_BASE="$fork"
 }
 
-# A plan enters a phase only after its predecessor is past it: status rank $2
-# or above, or published (tracked, or deleted by cleanup). A chain run names
-# the predecessors it runs first, so only its first plan is checked.
-require_predecessor_past() {
-  local plan="$1" past="$2" status rank
-  resolve_after "$plan"
-  [[ -n "$AFTER_DOC" ]] || return 0
-  ! is_tracked_plan "$AFTER_DOC" || return 0
-  status=$(plan_status "$AFTER_DOC")
-  rank=$(status_rank "$status")
-  if [[ -z "$rank" ]] || (( rank < past )); then
-    block "$plan is After: $AFTER_DOC, which is '$status' and not past ${SKILL_SLUG}. Run ${SKILL_SLUG} on it first, or name both in one chain run (skills/dev/reference/related-plans.md#chain-runs)."
-  fi
+# Each slice needs a proof commit followed by at least one implementation
+# commit, and nothing may precede the first proof. Topological order, so a
+# repair merged forward reads as one line of history whatever its dates. A
+# merge commit implements nothing, so it never completes a slice.
+proof_sequence_ok() {
+  # ENVIRON, not -v, so awk applies no escape processing to the regex.
+  git -C "$GIT_TREE" log --format='%s' --topo-order --no-merges --reverse "$1..HEAD" 2>/dev/null |
+    PROOF_RE="$2" awk -v expected="$3" '
+      $0 ~ ENVIRON["PROOF_RE"] { if (waiting) bad = 1; proofs++; waiting = 1; seen = 1; next }
+      { if (!seen) bad = 1; waiting = 0 }
+      END { if (proofs < expected || waiting || bad) exit 1 }'
 }
 
-# Gates every named plan in chain order. A plan at status rank $1 or above is
-# past the phase and skipped; any other runs the phase gate $2, which blocks a
-# status below the phase's entry. $3 is the block when every plan is past.
-run_chain() {
-  local past="$1" gate="$2" all_past="$3"
-  local plan rank prev="" prev_status="" prev_rank="" work=0
-  order_chain
-  require_predecessor_past "${CHAIN[0]}" "$past"
-  for plan in "${CHAIN[@]}"; do
-    BLOCK_PREFIX="$plan: "
-    load_plan "$plan"
-    rank=$(status_rank "$STATUS")
-    if [[ -n "$rank" && -n "$prev_rank" ]] && (( rank > prev_rank )); then
-      block "Plan is '$STATUS', ahead of $prev before it, which is '$prev_status'. A later plan never passes an earlier one (skills/dev/reference/related-plans.md#chain-runs). When a repair reopens an earlier plan, every later plan it reaches returns to 'implemented' too (skills/dev/plan.md#lifecycle)."
-    fi
-    if [[ -n "$rank" ]] && (( rank >= past )); then
-      :
-    else
-      "$gate"
-      work=1
-    fi
-    prev="$plan" prev_status="$STATUS" prev_rank="$rank"
-  done
-  BLOCK_PREFIX=""
-  (( work )) || block "$all_past"
+slice_count() {
+  awk '/^## PR Pattern[[:space:]]*$/ { inp = 1; next } /^## / && inp { exit }
+    inp && /^\|[[:space:]]*PR-[1-9][0-9]*[[:space:]]*\|/ { n++ } END { print n + 0 }' "$PLAN" 2>/dev/null
 }
 
-# ── review-feature: each named plan must be planning ──
+# Plan $1 shares parent plan $2's Base and stacks PR-1 on its last branch;
+# rechecked until the parent publishes, since its revision can change either.
+require_stacked() {
+  local base parent_base pr1_parent parent_last
+  base=$(field "$1" Base); parent_base=$(field "$2" Base)
+  [[ "$base" == "$parent_base" ]] ||
+    block "Plan $1 has 'Base: $base', but its parent plan $2 has 'Base: $parent_base'; a stacked plan uses its parent's Base (skills/dev/plan.md#stacks)."
+  pr1_parent=$(pr_column "$1" Parent | awk 'NR==1')
+  parent_last=$(pr_column "$2" Branch | awk 'END { print }')
+  [[ -n "$parent_last" && "$pr1_parent" == "$parent_last" ]] ||
+    block "Plan $1 has PR-1 Parent '$pr1_parent', but a stacked plan's PR-1 Parent is its parent plan's last branch, '${parent_last:-none recorded}' (skills/dev/plan.md#stacks)."
+}
+
+# The SHA of plan $1's last `Green: <PR id> (<branch>) at <sha>` line, read
+# as dev-publish.sh green_sha reads it.
+green_of() {
+  sed -nE "s/^[[:space:]]*([-*][[:space:]]*)?Green: $2 \\(([^)]*)\\) at ([0-9a-f]{7,40}).*/\\3/p" "$1" 2>/dev/null | tail -1
+}
+
+# ── gates ─────────────────────────────────────────────────────────────
+
 review_feature_gate() {
   case "$STATUS" in
     planning) ;;
-    approved)
-      (( ${#PLANS[@]} == 1 )) || block "Plan is already approved. Name only the chain's plans in planning; review reads an approved earlier plan through After: (skills/dev/review-feature.md#chain-review)."
-      block "Plan is already approved. Run execute-feature next." ;;
-    implemented|reviewed)             block "Plan status is '$STATUS' — too late for review-feature. Continue forward." ;;
-    *)                                block "Plan status is '$STATUS' — expected 'planning'. Run design-feature first." ;;
+    approved) block "Plan is already approved. Run execute-feature next." ;;
+    implemented|reviewed) block "Plan status is '$STATUS' — too late for review-feature. Continue forward." ;;
+    *) block "Plan status is '$STATUS' — expected 'planning'. Run design-feature first." ;;
   esac
-  # A predecessor still in planning has no fixed spec to restate, so it is
-  # reviewed in the same run (review-feature.md#chain-review). One that is
-  # missing (published and cleaned up) or tracked (published) is past review.
-  resolve_after "$PLAN"
-  AFTER="$AFTER_DOC"
-  if [[ -n "$AFTER" && " ${PLANS[*]} " != *" $AFTER "* ]] &&
-     ! is_tracked_plan "$AFTER" &&
-     [[ "$(plan_status "$AFTER")" == planning ]]; then
-    block "Plan is After: $AFTER, which is still in planning. Name it, and each of its predecessors still in planning, in the same review-feature run (skills/dev/review-feature.md#chain-review)."
-  fi
-  OQ_LINE=$(open_questions_line "$PLAN")
-  if [[ -n "$OQ_LINE" ]]; then
-    block "Plan line $OQ_LINE parks Assumptions or Open Questions, which the plan schema does not have. Resolve material questions through design-feature's ambiguity gate and record the answers in ACs or DD-n entries; keep optional follow-ups out of the plan. Then remove the section and re-run."
-  fi
-  # design-feature owns issue creation, so the omission surfaces here rather
-  # than at execution — after review and approval have already been spent.
-  if ! has_issue "$PLAN"; then
-    block "Plan has no linked issue — the 'Issue:' field in the plan header is empty. Link an existing issue (a parent issue may back several plans) or create one (dev-utils.sh issue-create); record it as 'Issue: #<n>', then re-run."
-  fi
-  require_ids plan "$PLAN"
-  # Review verifies the plan against a fixed commit (design-feature 'Stable
-  # references'), so later merges into Base cannot keep reopening it. The
-  # commit lies on Base, or on PR-1's Parent when the plan extends an
-  # unmerged branch. Hex-only also keeps the value from reaching git as an
-  # option.
-  BASE=$(plan_base "$PLAN")
-  [[ -n "$BASE" ]] || block "Plan has no Base branch — the 'Base:' field in the plan header is empty. Set it to the branch this work is based off, then re-run."
-  SNAPSHOT=$(plan_snapshot "$PLAN")
-  [[ "$SNAPSHOT" =~ ^[0-9a-fA-F]{7,64}$ ]] || block "Plan has no Snapshot commit — the 'Snapshot:' header field must hold the SHA of the commit the design inspected (design-feature 'Stable references'). Record it, then re-run."
-  git -C "$REPO_ROOT" cat-file -e "${SNAPSHOT}^{commit}" 2>/dev/null || block "Plan Snapshot '$SNAPSHOT' is not a commit in this repository. Record the inspected commit's SHA, or fetch it, then re-run."
-  commit_on_any_branch "$SNAPSHOT" "$BASE" "$(plan_first_parent "$PLAN")" || block "Plan Snapshot '$SNAPSHOT' is not in the history of Base '$BASE' or the first slice's Parent (local or origin). Record a commit from the inspected branch, then re-run."
-  # Parents are required here, not at review-code: a gap caught at
-  # 'implemented' blocks a plan whose execution is already finished, over a
-  # table cell design should have written. PR-1's is review-code's review
-  # base; later rows are what create-pr targets each PR at.
-  if [[ -n "$(plan_first_parent "$PLAN")" ]]; then
-    PARENTLESS=$(parentless_row_count "$PLAN")
-    [[ "$PARENTLESS" -eq 0 ]] || block "Plan PR Pattern leaves $PARENTLESS PR row(s) without a Parent. Every PR-n row records its own (design-feature 'PR Pattern'): normally the preceding branch, and for PR-1 the Base branch or the earlier plan's last slice branch (skills/dev/reference/related-plans.md#order)."
-  else
-    block "Plan PR Pattern has no Parent for PR-1. Give every slice an explicit parent (design-feature 'PR Pattern') — normally the Base branch, or the earlier plan's last slice branch (skills/dev/reference/related-plans.md#order)."
-  fi
+  check_name
+  require_parent_rank 1 approved
+  require_ids
+  [[ -n "$(field "$PLAN" Base)" ]] || block "Plan header has no Base branch. Set it to the branch this work is based on, then re-run."
+  require_parents
+  [[ -z "$PARENT_PLAN" ]] || require_stacked "$PLAN" "$PARENT_PLAN"
 }
 
-# ── execute-feature: plan must be approved (a recorded Worktree means resume) ──
 execute_feature_gate() {
   case "$STATUS" in
     approved) ;;
-    planning) block "Plan status is '$STATUS' — not approved. Run review-feature; only the user sets 'Status: approved'." ;;
-    implemented)                      block "Plan is already implemented. Run review-code next." ;;
-    reviewed)                         block "Plan status is '$STATUS' — already past execution. Run review-code or create-pr." ;;
-    *)                                block "Plan status is '$STATUS' — expected 'approved'." ;;
+    planning) block "Plan status is 'planning' — not approved. Run review-feature; only the user sets 'Status: approved'." ;;
+    implemented) block "Plan is already implemented. Run review-code next." ;;
+    reviewed) block "Plan is already reviewed. Run create-pr next." ;;
+    *) block "Plan status is '$STATUS' — expected 'approved'." ;;
   esac
-  # Every plan (feature/fix/refactor) must be issue-backed before implementation.
-  if ! has_issue "$PLAN"; then
-    block "Plan has no linked issue — the 'Issue:' field in the plan header is empty. Link an existing issue (a parent issue may back several plans) or create one (dev-utils.sh issue-create); record it as 'Issue: #<n>', then re-run."
-  fi
+  require_parent_rank 3 reviewed
+  [[ -z "$PARENT_PLAN" ]] || require_stacked "$PLAN" "$PARENT_PLAN"
 }
 
-# ── review-code: plan must be implemented + RED commit must exist ──
 review_code_gate() {
-  require_worktree
+  local parent slices proof_re what count
   case "$STATUS" in
     implemented) ;;
-    planning|approved)
-      block "Plan status is '$STATUS' — not yet implemented. Run the appropriate execute skill first." ;;
-    reviewed)      block "Plan is already reviewed. Run create-pr next." ;;
-    *)             block "Plan status is '$STATUS' — expected 'implemented'." ;;
+    planning|approved) block "Plan status is '$STATUS' — not yet implemented. Run execute-feature first." ;;
+    reviewed) block "Plan is already reviewed. Run create-pr next." ;;
+    *) block "Plan status is '$STATUS' — expected 'implemented'." ;;
   esac
-  # Re-review authority and non-convergence belong to independence.md.
-  # A header counter is not evidence of readiness or authorization.
-  # Catches plans that entered implemented without the normal execution gate.
-  if ! has_issue "$PLAN"; then
-    block "Plan has no linked issue — the 'Issue:' field in the plan header is empty. Link an existing issue or create one (dev-utils.sh issue-create), record it as 'Issue: #<n>', then re-run."
-  fi
-  # Re-checked here, not just at review-feature: execution edits the plan
-  # between the two, so a TC that lost its owning step would otherwise
-  # never be caught.
-  require_ids plan "$PLAN"
-  BASE=$(plan_base "$PLAN")
-  [[ -n "$BASE" ]] || block "Plan has no Base branch — the 'Base:' field in the plan header is empty. Set it to the branch this work is based off, then re-run."
-  REVIEW_PARENT=$(plan_first_parent "$PLAN")
-  [[ -n "$REVIEW_PARENT" ]] || block "Plan PR Pattern has no first-slice Parent — record the explicit parent before code review."
-  # A repair on the Parent, such as an earlier plan's last slice, reaches this
-  # branch only by merging forward.
-  resolve_review_base "$REVIEW_PARENT" || block "Plan PR Pattern Parent '$REVIEW_PARENT' is missing or is not an ancestor of the reviewed branch. If a repair landed on it, merge it forward first (skills/dev/plan.md#worktree-operations)."
-  SLICES=$(slice_count "$PLAN")
-  [[ "$SLICES" -gt 0 ]] || SLICES=1
-  PLAN_TYPE=$(plan_type "$PLAN")
-  if [[ "$PLAN_TYPE" == "refactor" ]]; then
-    BASELINES=$(baseline_commit_count "$REVIEW_BASE")
-    if [[ "$BASELINES" -lt "$SLICES" ]]; then
-      block "Found $BASELINES 'test: baseline' commit(s) between $REVIEW_PARENT and HEAD; expected at least $SLICES for the plan slice count. Commit the passing baseline before refactor review."
-    fi
-    if ! proof_sequence_ok "$REVIEW_BASE" baseline "$SLICES"; then
-      block "Baseline proof is out of sequence. Each slice must have a 'test: baseline' commit followed by at least one refactor commit before the next slice."
-    fi
+  require_worktree
+  # A parent revised since execution returns this plan to its repair.
+  require_parent_rank 3 reviewed
+  [[ -z "$PARENT_PLAN" ]] || require_stacked "$PLAN" "$PARENT_PLAN"
+  # Re-checked after execution, which edits the plan.
+  require_ids
+  parent=$(first_parent)
+  [[ -n "$parent" ]] || block "Plan PR Pattern has no Parent for PR-1; record it before code review."
+  resolve_review_base "$parent" || block "PR-1's Parent '$parent' is missing or is not an ancestor of the reviewed branch. If a repair landed on it, merge it forward first (skills/dev/plan.md#worktree)."
+  slices=$(slice_count)
+  (( slices > 0 )) || slices=1
+  # Refactors prove the preserved behavior with a passing baseline commit.
+  if [[ "$(field "$PLAN" Type | tr '[:upper:]' '[:lower:]')" == refactor ]]; then
+    proof_re='^test:[[:space:]]*baseline' what="'test: baseline'"
   else
-    REDS=$(red_commit_count "$REVIEW_BASE")
-    if [[ "$REDS" -lt "$SLICES" ]]; then
-      block "Found $REDS test(red) commit(s) between $REVIEW_PARENT and HEAD; expected at least $SLICES for the plan slice count. Run RED phase before code review."
-    fi
-    if ! proof_sequence_ok "$REVIEW_BASE" red "$SLICES"; then
-      block "RED/GREEN proof is out of sequence. Each slice must have a 'test(red)' commit followed by at least one implementation commit before the next slice."
-    fi
+    proof_re='^test\(red\):' what="'test(red):'"
   fi
+  count=$(git -C "$GIT_TREE" log --format=%s "$REVIEW_BASE..HEAD" 2>/dev/null | grep -Ec "$proof_re" || true)
+  (( count >= slices )) || block "Found $count $what commit(s) between $parent and HEAD; expected at least $slices, one per slice (skills/dev/plan.md#verification)."
+  proof_sequence_ok "$REVIEW_BASE" "$proof_re" "$slices" || block "Proof is out of sequence: each slice needs a $what commit followed by at least one implementation commit before the next slice, and nothing before the first (skills/dev/plan.md#verification)."
 }
 
-# ── create-pr: plan must be reviewed ──
 create_pr_gate() {
-  require_worktree
   case "$STATUS" in
     reviewed) ;;
-    implemented)           block "Plan status is 'implemented' — run review-code first." ;;
+    implemented) block "Plan status is 'implemented' — run review-code first." ;;
     planning|approved) block "Plan status is '$STATUS' — not yet executed. Continue the workflow." ;;
-    *)                     block "Plan status is '$STATUS' — expected 'reviewed'." ;;
+    *) block "Plan status is '$STATUS' — expected 'reviewed'." ;;
   esac
-  if ! has_final_pr_pattern "$PLAN"; then
-    block "Plan PR Pattern is missing or still provisional. Run review-code to finalize it before create-pr."
+  require_worktree
+  # create-pr publishes a whole stack at once, from its root.
+  local parent plan plan_status parent_green plan_green root="$PLAN" up wt
+  parent=$(stacks_on "$PLAN") || block "Plan has a 'Stacks On:' line that is misplaced, repeated, or names no $PLAN_FORMAT of this repository. Fix it before create-pr (skills/dev/plan.md#stacks)."
+  if [[ -n "$parent" ]]; then
+    while up=$(stacks_on "$root" 2>/dev/null) && [[ -n "$up" && -f "$up" ]]; do root="$up"; done
+    block "Plan stacks on $parent. create-pr runs once, on the stack's root $root, and publishes every plan in the stack together (skills/dev/plan.md#stacks)."
   fi
-  if ! has_issue "$PLAN"; then
-    block "Plan has no linked issue — the 'Issue:' field must hold '#<n>' before a PR can reference it. Link an existing issue or create one (dev-utils.sh issue-create), record it, then re-run."
-  fi
+  while IFS= read -r plan; do
+    [[ "$plan" != '!'* ]] || block "${plan#!} has a 'Stacks On:' line that is misplaced, repeated, or names no live $PLAN_FORMAT, or is a symlink; fix it so create-pr can tell whether it stacks on this plan."
+    parent=$(stacks_on "$plan")
+    require_stacked "$plan" "$parent"
+    plan_status=$(field "$plan" Status)
+    [[ "$plan_status" == reviewed ]] ||
+      block "Plan $plan stacks above this plan and is '$plan_status'. The stack publishes together: run create-pr on this root once every plan in it is reviewed (skills/dev/plan.md#stacks)."
+    wt=$(field "$plan" Worktree)
+    [[ -n "$wt" && -d "$wt" ]] && is_registered_worktree "$wt" ||
+      block "Plan $plan records 'Worktree: $wt', which is missing or not a registered worktree. If publication cleanup removed it, rerun dev-publish.sh cleanup on the plans still live, children before parents; otherwise stop and report it; each worktree stays until publication completes (skills/dev/plan.md#worktree)."
+    # Reviewed on top of the parent's current reviewed tip, not an older one.
+    parent_green=$(green_of "$parent" "$(pr_column "$parent" PR | awk 'END { print }')")
+    plan_green=$(green_of "$plan" PR-1)
+    [[ -n "$parent_green" && -n "$plan_green" ]] && git -C "$REPO_ROOT" merge-base --is-ancestor "$parent_green" "$plan_green" 2>/dev/null ||
+      block "Plan $plan's PR-1 Green ${plan_green:-(none)} does not contain its parent $parent's last Green ${parent_green:-(none)}. Merge the parent forward into $plan (skills/dev/plan.md#worktree), return it to review-code, then run create-pr here."
+  done < <(descendant_plans "$PLAN")
 }
 
+resolve_plan
+load_plan
+require_acyclic
 case "$SKILL_SLUG" in
-
-  # ── review-feature: every named plan, in the order named ──
-  review-feature)
-    require_plan
-    for NAMED in "${PLANS[@]}"; do
-      # Chain reviews name the plan each block is about.
-      if (( ${#PLANS[@]} > 1 )); then BLOCK_PREFIX="$NAMED: "; fi
-      load_plan "$NAMED"
-      review_feature_gate
-    done
-    ;;
-
-  # ── execute-feature, review-code, create-pr: the named plan, or each plan
-  # of a chain run in chain order. The first run_chain argument is the status
-  # rank from which a plan is past the phase and skipped; nothing passes
-  # publication, which deletes the live plan.
-  execute-feature)
-    require_plan
-    if (( ${#PLANS[@]} > 1 )); then
-      run_chain 2 execute_feature_gate "Every named plan is past execution. Run review-code on the chain next."
-    else
-      execute_feature_gate
-      require_predecessor_past "$PLAN" 2
-    fi
-    ;;
-
-  review-code)
-    require_plan
-    if (( ${#PLANS[@]} > 1 )); then
-      run_chain 3 review_code_gate "Every named plan is already reviewed. Run create-pr on the chain next."
-    else
-      review_code_gate
-      require_predecessor_past "$PLAN" 3
-    fi
-    ;;
-
-  create-pr)
-    require_plan
-    if (( ${#PLANS[@]} > 1 )); then
-      run_chain 4 create_pr_gate ""
-    else
-      create_pr_gate
-      require_predecessor_past "$PLAN" 4
-    fi
-    ;;
-
-  # ── ship-feature: published records are rejected at plan resolution ──
-  ship-feature)
-    ;;
-
-  # ── review-infra / review-system: IDs of the named document ──
-  # These lanes have no lifecycle gate. A named runbook or architecture
-  # document gets its IDs checked; an invocation that names none is not
-  # blocked, since the review skill itself asks for the exact path.
-  review-infra|review-system)
-    if [[ "$SKILL_SLUG" == review-infra ]]; then DOC_DIR=docs/runbooks DOC_KIND=runbook
-    else DOC_DIR=docs/architecture DOC_KIND=architecture; fi
-    if DOC=$(find_explicit_doc "$DOC_DIR"); then
-      require_ids "$DOC_KIND" "$DOC"
-    elif explicit_path_given_but_missing "$DOC_DIR"; then
-      block "Named document not found. Pass an existing $DOC_DIR/<file>.md."
-    fi
-    ;;
-
-  *) exit 0 ;;
+  review-feature) review_feature_gate ;;
+  execute-feature) execute_feature_gate ;;
+  review-code) review_code_gate ;;
+  create-pr) create_pr_gate ;;
 esac
-
 exit 0

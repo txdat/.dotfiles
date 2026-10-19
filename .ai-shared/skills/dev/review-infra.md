@@ -1,25 +1,19 @@
 # /review-infra — Review a Runbook
 
-Read the exact `docs/runbooks/<file>.md`, [design-infra.md](design-infra.md)'s lane and runbook requirements, project configuration, and [independence.md](independence.md). Use read-only checks throughout.
+Review the exact `docs/runbooks/<file>.md` independently under [plan.md — Review](plan.md#review), against [design-infra.md](design-infra.md), using read-only checks only.
 
 ## Before execution
 
-Validate material runbook claims (`CL-n`) and resources (`RS-n`) against current workloads, images, network/DNS, data, IaC, and CI/CD state as applicable. Keep a compact evidence map:
+Validate each `CL-n` claim and `RS-n` resource against live workloads, images, network and DNS, data, IaC, and CI/CD state. Keep an evidence map:
 
-`Claim (CL-n) / expected state | Live observation | Source / command / time | Verdict | Consequence / affected PH-n`
+`Claim / expected state | Live observation | Source, command, time | MATCH, MISMATCH, MISSING, EXTRA, STALE, or UNVERIFIED | Affected PH-n`
 
-Use `MATCH` for corroborated claims, `MISMATCH` for differing values, `MISSING` for an expected resource absent from live state, `EXTRA` for relevant unaccounted live resources, and `STALE` for observations requiring revalidation. Use `UNVERIFIED` when access or evidence is insufficient; failed collection does not prove absence. Include both expected and observed values, and connect discrepancies to their execution consequence.
+Failed collection is `UNVERIFIED`, never proof of absence. Check the phases against design-infra's ordering and gate rules, especially coexistence and duplicate processing, traffic dependencies, and whether rollback resources survive their promised window. Gates need observable pass and stop conditions: a phase's Prerequisites gate its Commands, and its Verification gates the next phase. Missing evidence that affects execution safety blocks.
 
-Check the applicable resource and phase requirements in [design-infra.md — Runbook](design-infra.md#runbook) against this evidence. In particular, inspect source/target coexistence and duplicate processing, traffic dependencies, and whether rollback resources remain usable through their promised window. Check that gates have observable pass/stop conditions and precede the actions they protect, including destruction. Missing evidence that affects execution safety blocks readiness; formatting preferences do not.
+Return `READY` or `NEEDS CHANGES` with findings ranked by severity and the decisive command evidence. During authorized runbook work, the main agent sets `Review: READY <date>` for a passing review; any revision clears it until re-reviewed.
 
-Return `READY` or `NEEDS CHANGES` with severity-ranked findings and decisive command evidence. During authorized runbook delivery, the main agent sets `Review: READY <date>` only for a passing review; revisions invalidate that marker until re-reviewed.
+## After execution
 
-## Post-execution audit
+Run only when the human confirms what ran; the runbook is not proof of execution. Check each `SC-n`, remaining `RS-n`, divergence from the plan, and prerequisites of unfinished phases. For irreversible actions, determine whether their gates held beforehand; current health cannot prove that. Report what you cannot verify.
 
-Use `post` only when the human confirms what ran. Establish executed phases from their report and available execution evidence; the runbook itself is not proof of execution.
-
-Check each `SC-n`, remaining `RS-n` resources, divergence, and prerequisites for unfinished `PH-n` phases. For irreversible actions, determine whether their gates held before execution; current health cannot prove that historical fact. Report unverifiable evidence explicitly.
-
-Choose the first applicable verdict: `UNSAFE` for breached destructive gates or present risk; `DIVERGED` for an unplanned end state; `INCOMPLETE` for remaining work or missing verification; otherwise `COMPLETE`.
-
-During authorized record updates, append the evidence as an `EX-n` entry to `## Execution Record`: what ran (by `PH-n`), gate outcomes, divergence, residue, and remaining work. Preserve earlier entries. Set `Status: executed` only for COMPLETE; otherwise leave draft, or return an outdated executed record to draft with the reason. Abandonment requires a human decision. Report the human's next action; this audit does not execute or remediate it.
+Return the content of an `EX-n` entry: phases run, gate outcomes, divergence, residue, remaining work, and whether every criterion holds with no work remaining. When authorized, the main agent appends it to `## Execution Record`, and sets `Status: executed` only when every criterion holds and no work remains. Report the human's next action; this audit never executes or remediates.

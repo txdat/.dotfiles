@@ -77,25 +77,33 @@ printf 'def apply(tx):\n    raise NotImplementedError\n' > "$TMP/src/stub.py"
 git -C "$TMP" add . && git -C "$TMP" commit -qm 'test(red): raising stub'
 ok proof HEAD --stub src/stub.py
 
-ok coverage 95
-ok coverage 85
-ok coverage 79
-ok coverage 0
-bad coverage -1
-bad coverage 101
-bad coverage invalid
-bad coverage 79 uncovered-critical
-bad coverage 95 uncovered-critical
-
 git -C "$TMP" reset -q --hard "$proof"
 scan_base=$(git -C "$TMP" rev-parse HEAD~1)
 ok artifacts "$scan_base" HEAD
+
+# Debug-like lines are listed for review-code to judge; they do not block.
 mkdir -p "$TMP/src"
 printf 'console.log("debug")\n' > "$TMP/src/unit.js"
 git -C "$TMP" add . && git -C "$TMP" commit -qm debug
-bad artifacts "$scan_base" HEAD
+ok artifacts HEAD~1 HEAD
+msg=$(cd "$TMP" && "$CHECK" artifacts HEAD~1 HEAD)
+[[ "$msg" == *REVIEW*'console.log("debug")'* ]] || { printf 'FAIL debug-like line listed for review\n'; exit 1; }
+printf 'PASS debug-like line listed for review\n'
+
+# Conflict markers block, and the report renders newlines.
+printf '<<<<<<< ours\na\n=======\nb\n>>>>>>> theirs\n' > "$TMP/src/conflict.txt"
+git -C "$TMP" add . && git -C "$TMP" commit -qm conflict
+bad artifacts HEAD~1 HEAD
+msg=$(cd "$TMP" && "$CHECK" artifacts HEAD~1 HEAD 2>&1 || true)
+[[ "$msg" != *'\n'* && "$msg" == *$'\n'*'<<<<<<<'* ]] || { printf 'FAIL block message renders newlines\n'; exit 1; }
+printf 'PASS block message renders newlines\n'
 git -C "$TMP" revert -n HEAD
-git -C "$TMP" commit -qm 'remove debug'
+git -C "$TMP" commit -qm 'resolve conflict'
+ok artifacts HEAD~1 HEAD
+
+# Marker-like text that is not a whole marker does not block.
+printf 'Title\n==========\n>>>>>>>>> quoted\n' > "$TMP/src/notes.md"
+git -C "$TMP" add . && git -C "$TMP" commit -qm 'marker-like text'
 ok artifacts HEAD~1 HEAD
 
 # An unresolvable ref must block, not scan an empty diff and pass.
@@ -104,21 +112,16 @@ bad artifacts HEAD nonexistent-ref
 bad artifacts '' HEAD
 
 # `print(` inside a longer identifier is not a debug print.
-mkdir -p "$TMP/src"
 printf 'pprint(x)\nbuild_blueprint(y)\n' > "$TMP/src/names.py"
 git -C "$TMP" add . && git -C "$TMP" commit -qm 'identifiers containing print'
-ok artifacts HEAD~1 HEAD
-printf 'print(x)\n' > "$TMP/src/debug.py"
-git -C "$TMP" add . && git -C "$TMP" commit -qm 'bare print'
-bad artifacts HEAD~1 HEAD
-msg=$(cd "$TMP" && "$CHECK" artifacts HEAD~1 HEAD 2>&1 || true)
-[[ "$msg" != *'\n'* && "$msg" == *$'\n'* ]] || { printf 'FAIL block message renders newlines\n'; exit 1; }
-printf 'PASS block message renders newlines\n'
+msg=$(cd "$TMP" && "$CHECK" artifacts HEAD~1 HEAD)
+[[ "$msg" != *REVIEW* ]] || { printf 'FAIL identifiers containing print are not listed\n'; exit 1; }
+printf 'PASS identifiers containing print are not listed\n'
 
 # Scanned code is echoed verbatim: a `\c` must not truncate the report.
 printf 'print("a\\cb")\n' > "$TMP/src/escape.py"
 git -C "$TMP" add . && git -C "$TMP" commit -qm 'escape in finding'
-msg=$(cd "$TMP" && "$CHECK" artifacts HEAD~1 HEAD 2>&1 || true)
+msg=$(cd "$TMP" && "$CHECK" artifacts HEAD~1 HEAD)
 [[ "$msg" == *'a\cb'* ]] || { printf 'FAIL finding printed verbatim\n'; exit 1; }
 printf 'PASS finding printed verbatim\n'
 

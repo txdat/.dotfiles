@@ -4,7 +4,7 @@
  * Claude Code fires `~/.dotfiles/.ai-shared/bin/gate-check` (a PreToolUse
  * hook) whenever a dev:* skill is invoked, enforcing the plan state machine
  * (planning → approved → implemented → reviewed; a tracked plan is a published record)
- * and the plan's ID graph (skills/dev/ids.md), issue link, review marker, and worktree.
+ * and the plan's ID graph, Stacks On parent, worktree, and RED/GREEN proof (skills/dev/plan.md).
  *
  * Pi has no hooks, so this extension re-implements the same firing point:
  * it intercepts `read` calls that load a dev-* skill — either the SKILL.md
@@ -12,8 +12,7 @@
  * (`~/.dotfiles/.ai-shared/skills/dev/<slug>.md`) — feeds the hook script a
  * Claude-Code-shaped PreToolUse JSON, and blocks the read when the gate
  * fails. The latest user message stands in for the Claude Skill tool's
- * `arguments` field, which is where gate-check resolves `docs/plans/<file>.md`
- * and fix-bug's diagnose/execute mode.
+ * `arguments` field, which is where gate-check resolves `docs/plans/<file>.spec.md`.
  *
  * Semantics match Claude Code: a failing gate blocks skill loading, and the
  * block reason tells the model what prerequisite to satisfy first.

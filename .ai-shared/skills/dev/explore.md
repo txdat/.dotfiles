@@ -1,7 +1,7 @@
 # /explore — Understand Existing Code
 
-Read project configuration and [CODING.md](../../CODING.md). Keep the investigation read-only and scoped to the supplied question or area.
+Keep the investigation read-only and scoped to the supplied question or area.
 
-Locate entry points, follow the relevant data/control flow, and identify established patterns, contracts, tests, and meaningful gotchas. Use [CODING.md — Impact](../../CODING.md#impact) when the question concerns impact.
+Locate entry points, follow the relevant data/control flow, and identify established patterns, contracts, tests, and meaningful gotchas. Use [CODING.md — Impact](../../CODING.md#impact) when the question concerns impact; [dev-utils.sh](../../bin/dev-utils.sh) `search-production <symbol> [dir]` lists literal matches outside test files.
 
-Return the direct answer with decisive file references and unresolved planning questions. Describe observed behavior separately from inference; stop when the requested question is answered.
+Return the direct answer with decisive file references and unresolved planning questions. Stop when the requested question is answered.

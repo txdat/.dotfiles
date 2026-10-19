@@ -1,43 +1,22 @@
-# /review-code — Review Implemented Work
+# /review-code — Verify the Implementation
 
-Read [plan.md](plan.md) and [independence.md](independence.md). Entry is `implemented`. Review code in the recorded worktree from the review base through the final implementation tip, excluding inherited work from an unmerged parent. The review base is the first slice's Parent, local or `origin/<Parent>`. When the Parent is ahead of the branch only by plan files, such as an earlier plan's archive commit, it is the two branches' merge-base.
+Review an `implemented` plan's code independently under [plan.md — Review](plan.md#review), in the plan's worktree, which the main agent leaves on the final slice tip. The review base is where the work leaves PR-1's Parent: for Base, the merge-base with `origin/<Base>` (or local Base without one); for a branch, its tip (local or `origin/<Parent>`), or the merge-base when the Parent is ahead of the work only by plan files, such as the parent plan's archive commit.
 
-## Behavioral evidence
+## Behavior
 
-Derive the required outcome from the Goal and source contracts before treating the tests as an oracle. Compare each AC's Success/Failure with delivered behavior. Maintain a compact evidence map covering every approved TC:
+- Derive the required outcome from the Goal and contracts before treating the tests as the oracle. Run the TC tests and affected tests yourself at the final tip.
+- Trace each AC to assertions at the production boundary. A helper-level test cannot prove authorization, routing, or transaction behavior.
+- Compare each test with its approved TC: fixture, distinguishing conditions, action, and expected result, which you check against the contract yourself. Apply the assertion rules in [plan.md — Verification](plan.md#verification), and check each slice's RED commit with `dev-check proof` and each TC's filled `Test:` line.
+- Passing tests do not override a violated obligation. Code that departs from an AC, TC, step, or DD blocks; a needed spec change follows [plan.md — Changes](plan.md#changes).
 
-`TC | AC obligation | Test / production entry point | Distinguishing assertion | Proof or baseline | Current result`
+## Affected paths
 
-Reference verified existing evidence instead of duplicating output. Include revision and command references with results; inspect proof and per-test results under [verification.md — Test-first proof](verification.md#test-first-proof). Independently run TC and affected tests.
+- Security, data integrity, concurrency, compatibility, and failure paths, under [CODING.md — Impact](../../CODING.md#impact).
+- Unnecessary queries, repeated or unbounded work, reimplemented concepts, and shared code bent with flags. Report concrete impact.
+- Secrets and debug or conflict artifacts: run `~/.dotfiles/.ai-shared/bin/dev-check artifacts <review base> HEAD`, judge each line it lists for review, and read the diff.
 
-Trace each AC to assertions at the relevant production boundary, including side effects and unchanged-state conditions; a helper test cannot prove omitted authorization, routing, or transaction behavior. Compare executable setup, actions, and assertions with the approved TC, resolving shared fixtures and overrides and preserving distinguishing conditions. Independently check expected results against the resolved contract, including permitted variability. For a plan with `After:`, confirm integration TCs ran against the earlier plans' code on the Parent branch.
+Report your conclusion on each AC and the Goal, the decisive evidence, and located findings split into blocking and notes. The review passes when nothing blocks.
 
-Apply [verification.md](verification.md)'s proof and assertion-quality rules. Record material mismatches or non-obvious defeating evidence in the TC map and conclude whether each AC and the Goal hold. Passing tests cannot override a violated obligation; implementation defects and weakened fixtures or expectations require repair. Changes to approved obligations or conflicting intended behavior follow [plan.md — Changes](plan.md#changes).
+## Finalize
 
-## Affected-path review
-
-- **Contracts and data:** inspect applicable security, data-integrity, concurrency, compatibility, and failure paths under [CODING.md — Impact](../../CODING.md#impact). Check mechanism invariants and non-functional commitments against the actual code and dependencies.
-- **Scope and verification:** compare changes with the steps and Design Decisions; code that departs from an AC, TC, step, or DD blocks under [plan.md — Changes](plan.md#changes). Verify Open Risks are resolved through their approved TCs and check [verification.md — Coverage](verification.md#coverage). Apply [frontend-design.md](frontend-design.md) for UI work.
-- **Efficiency and maintainability:** inspect affected paths for unnecessary queries, repeated computation, unbounded work or allocations, unsuitable structures, complexity that obscures required behavior, existing concepts reimplemented without a reason recorded in the plan, and shared code extended with flags to serve a different concept. Report concrete impact or maintenance risk; preferences alone do not block.
-
-Inspect secrets and debug/conflict artifacts, then run `~/.dotfiles/.ai-shared/bin/dev-check artifacts <review-base> HEAD`. Read the diff as well; the helper does not cover every artifact or exposure.
-
-Report the Goal/AC conclusions, decisive test/proof evidence, and located findings with failure mechanism and consequence. Use `REWORK REQUIRED` for correctness, security, scope, or required-verification defects; `PASS WITH NOTES` for non-blocking material concerns; otherwise `PASS`. Avoid repeated findings and empty report sections.
-
-## Finalize during authorized delivery
-
-The main agent handles repairs and re-review under [independence.md](independence.md). Implementation defects leave status `implemented`; spec changes follow [plan.md — Changes](plan.md#changes).
-
-On a passing review, reconcile actual slices with [design-feature.md](design-feature.md)'s PR Pattern. Changed parents or TC/slice ownership follow [plan.md — Changes](plan.md#changes). Remove `(provisional)` only when it matches the verified work.
-
-For every slice, record `Green: PR-n (<branch>) at <sha>` under the finalized pattern. At each slice's own tip, run [verification.md — Local checks](verification.md#local-checks) and that slice's tests. Each slice keeps its own worktree ([plan.md — Worktree operations](plan.md#worktree-operations)); give the reviewer every slice's worktree path and expected tip. The reviewer confirms each checked-out SHA and runs verification there without switching branches or otherwise mutating Git. A final green tip does not prove earlier slices.
-
-Set `reviewed` and hand off to [create-pr.md](create-pr.md).
-
-## Chain code review
-
-When the invocation names several plans of one `After:` chain, follow [related plans — Chain runs](reference/related-plans.md#chain-runs). Every named plan must be `implemented`, or `reviewed` and skipped. One reviewer reviews the whole chain under [independence.md — Reviewer](independence.md#reviewer), covering each plan in chain order and in full under the sections above, from that plan's review base. Each finding belongs to the plan whose code must change, even when another plan's review found it. A plan passes only if every earlier plan passes; otherwise its verdict is `REWORK REQUIRED`, naming the earlier plan it waits on.
-
-Repair between rounds, never while a review runs. Commit each repair on the slice whose code is wrong, then [merge it forward](plan.md#worktree-operations) through every later slice and plan. The next round covers each merge and reruns the affected tests of every plan it reached. Rounds follow [independence.md — Re-review](independence.md#re-review), including its chain budget; a plan whose blocking findings remain stops the chain there.
-
-After each round, finalize the plans that pass, in chain order, under the section above. First confirm each tip contains its review base, which the [gate](../../bin/gate-check) also checks. A later repair that reaches a finalized plan reopens it under [plan.md — Lifecycle](plan.md#lifecycle). Its next review is a re-review scoped to that repair and what it affects, on the same budget. Report one verdict line per plan in chain order, then each plan's findings. Hand the reviewed chain to [create-pr](create-pr.md#chain-publication) as one run.
+On a passing review, the main agent checks out each slice branch in the worktree, from first to last, runs its local checks and tests, and records `Green: PR-n (<branch>) at <sha>` under the PR Pattern. Leave the worktree on the final slice, set `Status: reviewed`, and hand off to [create-pr.md](create-pr.md). A later change to any slice voids its Green line: return to `implemented` and review again.
