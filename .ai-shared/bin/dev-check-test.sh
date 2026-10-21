@@ -2,12 +2,12 @@
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-CHECK="$ROOT/bin/dev-check"
+CHECK="$ROOT/bin/dev-check.sh"
 TMP=$(mktemp -d /tmp/dev-check-test.XXXXXX)
 trap 'rm -rf "$TMP"' EXIT
 git -C "$TMP" init -q -b main
 git -C "$TMP" config user.email dev-check@example.test
-git -C "$TMP" config user.name dev-check-test
+git -C "$TMP" config user.name dev-check-test.sh
 mkdir -p "$TMP/tests" "$TMP/src"
 printf 'seed\n' > "$TMP/README.md"
 git -C "$TMP" add . && git -C "$TMP" commit -qm seed
@@ -125,4 +125,4 @@ msg=$(cd "$TMP" && "$CHECK" artifacts HEAD~1 HEAD)
 [[ "$msg" == *'a\cb'* ]] || { printf 'FAIL finding printed verbatim\n'; exit 1; }
 printf 'PASS finding printed verbatim\n'
 
-printf 'All dev-check tests passed.\n'
+printf 'All dev-check.sh tests passed.\n'

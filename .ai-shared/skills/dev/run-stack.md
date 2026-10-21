@@ -1,0 +1,15 @@
+# /run-stack — Drive a Stack to Publication
+
+Take a stack ([plan.md — Stacks](plan.md#stacks)), or one plan, through review-feature, execute-feature, and review-code, and stop where the user decides. Pass the root. [dev-stack.sh](../../bin/dev-stack.sh) `next <root>` prints each plan's next action; a phase it names runnable has passed its gate. If `next` fails, report its error and stop.
+
+1. Run `dev-stack.sh next <root>`.
+2. Start every runnable plan except create-pr, each in its own subagent. This session is the main agent for every plan:
+   - **review-feature:** a fresh general-purpose reviewer on the model [README](../../README.md#references) gives the review skill, set up under [plan.md — Review](plan.md#review), with the paths of the plans below it. Record its verdict with `dev-stack.sh review <plan> ready|needs-changes`. A re-review also gets the prior findings and what changed.
+   - **revise:** a subagent given the review's findings revises the plan under [design-feature.md — Revise](design-feature.md#7-revise-after-review), leaving its re-review to review-feature, which `next` then names. If the findings are lost, run review-feature again to get them. A finding that needs a decision stops the plan.
+   - **execute-feature:** a subagent invokes the skill `dev-execute-feature <plan>`.
+   - **review-code:** a fresh reviewer as for review-feature. On a pass, finalize under [review-code.md — Finalize](review-code.md#finalize); otherwise repair in the plan's worktree and re-review.
+   Without subagents, run them one at a time here, reviewing directly and saying so. Start each by reading its phase skill, `skills/dev/<phase>.md`, again with the file-read tool, never a shell command, in the same message that says `Starting <phase> on <plan path>` and names no other plan, so a gate that reads the plan from that message checks it.
+3. As each subagent returns, finish its step, rerun `next`, and start what became runnable. Never poll; the run ends when nothing is running and step 2 has nothing to start.
+4. Report the table from `dev-stack.sh next <root> --md`, then group the plans as: for the user (approvals, revisions that need a decision, stopped plans with their reasons, and create-pr when the stack is ready to publish), blocked with the reason, waiting on a parent, and done.
+
+A plan stops when its review hits plan.md — Review's round limit, its fixes hit the three-attempt limit, its work stops under [plan.md — Changes](plan.md#changes), or a step leaves it where it was. Record it at once with `dev-stack.sh stop <plan> "<reason>"`, including any `Failed fixes: <n>/3`; `next` then shows it `stopped` until its status, its spec or a spec below it, or its Branch's tip changes, or the user clears it with `dev-stack.sh resume <plan>`; reverting the change restores the stop. A stop citing `Failed fixes: 3/3` holds, through later stops too, until resume, the user granting more attempts. The rest of the stack continues. Never set `Status: approved` or run create-pr; the user does.

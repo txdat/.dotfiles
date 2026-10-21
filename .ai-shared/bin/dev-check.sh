@@ -3,7 +3,7 @@ set -euo pipefail
 
 pass() { printf 'PASS %s\n' "$*"; }
 block() { printf 'BLOCK %s\n' "$*" >&2; exit 1; }
-usage() { block "usage: dev-check proof <commit> [--test path] [--stub path] | artifacts <base> [head]"; }
+usage() { block "usage: dev-check.sh proof <commit> [--test path] [--stub path] | artifacts <base> [head]"; }
 
 case "${1:-}" in
   proof)

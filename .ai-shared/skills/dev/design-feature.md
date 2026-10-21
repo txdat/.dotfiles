@@ -4,7 +4,7 @@ Write a plan another agent can implement test-first without inventing behavior. 
 
 ## 1. Understand
 
-Inspect the relevant code, contracts, and conventions, and pick the Base branch: the default branch unless the user names one, or the parent's for a stacked plan. When the goal spans several plans, propose the stack in the brief and write its plans root first under [plan.md — Stacks](plan.md#stacks).
+Inspect the relevant code, contracts, and conventions, and pick the Base branch: the default branch unless the user names one, or the parent's for a stacked plan. Name the plan's own Branch after the project's convention. When the goal needs several PRs, propose the stack in the brief and write its plans root first under [plan.md — Stacks](plan.md#stacks).
 
 Resolve what the requirement means before writing:
 
@@ -24,8 +24,7 @@ Outcomes:
 1. <one observable outcome per future AC>
 Decisions:
 | # | Choice | Options | Tradeoffs | Recommendation |
-Slices: <PR-n — outcome — parent>
-Stack: <plan — parent — scope, root first; omit for one plan>
+Stack: <prN — branch — parent — outcome, root first; omit for one PR>
 ```
 
 Decisions that affect behavior, scope, contracts, the data model, dependencies, or cost belong to the user; list each with options and one recommendation. Other technical choices are yours; record the non-obvious ones as DDs with their rationale. Dropping or narrowing anything the user asked for also needs the user's decision. Record every decision as a `DD-n` and cite it rather than repeating it.
@@ -50,10 +49,14 @@ Do not write facts that unrelated merges can falsify: line numbers, counts, "the
 
 Reuse code that implements the same concept, per [CODING.md](../../CODING.md#changes-and-evidence), and handle cases the contract treats alike through one path. For each decision that adds abstraction, state, a dependency, or coordination, its DD names the failure that would occur without it and why a narrower variant would not do; drop the decision otherwise. Count every place that must separately enforce a new rule as a cost. Name the code the change deletes or consolidates.
 
-## 5. Slice PRs
+## 5. Split PRs
 
-Use one PR unless review needs separable parts; judge by distinct behaviors, contracts, and migration risks, not line count. Each slice must be correct and safe to merge after its parent alone, with incomplete behavior unexposed. Slice order is dependency order and merge order. Propose the slices in the brief; the user chooses.
+Use one plan and one PR unless review needs separable parts; judge by distinct behaviors, contracts, and migration risks, not line count. Each further PR is a plan stacked on the one it needs, correct and safe to merge after its parent alone, with incomplete behavior unexposed. The stack is dependency order and merge order. Propose the stack in the brief; the user chooses.
 
 ## 6. Finish
 
-Link the issue the user supplied, or record `Issue: none` and `0` in the filename. Before handoff, run every PC Check against the inspected branch (PR-1's Parent, or Base while that branch does not exist): a Check may fail only when an earlier step or a plan below it in the stack establishes its fact. Save the plan with `Status: planning` and hand it to [review-feature.md](review-feature.md).
+Link the issue the user supplied, or record `Issue: none` and `0` in the directory name. Before handoff, run every PC Check against the inspected branch (the PR target, or Base while that branch does not exist): a Check may fail only when an earlier step or a plan below it in the stack establishes its fact. Save the plan at its [plan.md — Artifact](plan.md#artifact) path with `Status: planning` and hand it to [review-feature.md](review-feature.md).
+
+## 7. Revise after review
+
+On NEEDS CHANGES, correct each blocking finding within the recorded DDs and the user's answers, rerun the PC Checks the change touches, and re-review under [plan.md — Review](plan.md#review). A finding that needs a new or changed decision goes to the user with options and a recommendation.
