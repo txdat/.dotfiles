@@ -11,16 +11,20 @@ import unittest
 COLLECTOR = Path(__file__).resolve().parents[3] / "bin" / "gke-collect.sh"
 FAKES = r'''
 gcloud() {
+  printf '%s\n' "${*//$'\n'/ }" >> "$GCLOUD_CALLS"
   case "$*" in
     'container clusters list'*) printf 'asia-southeast1\neurope-west1\n' ;;
     'container clusters describe'*)
       case "$*" in *'value(location)'*) printf 'asia-southeast1\n';; esac ;;
     'auth print-access-token'*) printf 'synthetic-token\n' ;;
     'billing projects describe'*) printf 'True\n' ;;
+    'compute backend-services describe'*'value(logConfig.enable)'*)
+      if [ "$SCENARIO" = lb_logging ]; then printf 'True\n'; else printf 'False\n'; fi ;;
     'container operations list'*)
       case "$*" in *--limit=1*) return 0;; esac
       [ "$SCENARIO" != query_failure ] ;;
     'logging read'*)
+      if [ "$SCENARIO" = no_logging ]; then return 1; fi
       case "$*" in *--limit=1\ *) return 0;; esac
       [ "$SCENARIO" != query_failure ] ;;
     'compute regions describe'*) printf 'asia-southeast1\n' ;;
@@ -87,6 +91,7 @@ class CollectorTest(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="gke-collect-test-") as directory:
             report = Path(directory) / "report.txt"
             calls = Path(directory) / "kubectl.txt"
+            gcloud_calls = Path(directory) / "gcloud.txt"
             env = {
                 "PATH": os.environ["PATH"],
                 "SCENARIO": scenario,
@@ -100,12 +105,14 @@ class CollectorTest(unittest.TestCase):
                 "LB_BACKEND_NAME": "backend-a",
                 "REPORT": str(report),
                 "KUBE_CALLS": str(calls),
+                "GCLOUD_CALLS": str(gcloud_calls),
             }
             result = subprocess.run(
                 ["bash", "-c", FAKES, "test", str(COLLECTOR)],
                 env=env, capture_output=True, text=True, timeout=45,
             )
             self.assertEqual(result.returncode, 0, result.stderr)
+            self.last_gcloud_calls = gcloud_calls.read_text() if gcloud_calls.exists() else ""
             return report.read_text(), calls.read_text() if calls.exists() else ""
 
     def test_healthy_sources_can_report_clear(self):
@@ -141,6 +148,51 @@ class CollectorTest(unittest.TestCase):
         report, _ = self.collect("healthy")
         self.excludes(report, "synthetic-secret")
         self.includes(report, "DB_POOL_SIZE = 12")
+
+    def test_lb_sections_tagged_for_g1_and_deduplicated(self):
+        report, _ = self.collect("lb_logging")
+        for prefix in ("1d.1", "1d.2m", "1d.2a", "1d.2b", "1d.3", "1d.4", "1d.5", "1h.5"):
+            with self.subTest(section=prefix):
+                matching = [
+                    line for line in report.splitlines()
+                    if line.startswith(f"===== {prefix} ")
+                ]
+                self.assertEqual(len(matching), 1)
+                self.assertIn("G1", matching[0])
+        lb_log_reads = [
+            line for line in self.last_gcloud_calls.splitlines()
+            if 'resource.type="http_load_balancer"' in line
+        ]
+        self.assertEqual(len(lb_log_reads), 2, "Expected 1 5xx read and 1 sample read")
+
+    def test_unreadable_logging_short_circuits_log_queries(self):
+        report, _ = self.collect("no_logging")
+        self.includes(report, "CAP_LOGGING=0")
+        log_reads = [
+            line for line in self.last_gcloud_calls.splitlines()
+            if line.startswith("logging read ")
+        ]
+        self.assertEqual(len(log_reads), 1, "Only preflight logging read should execute when CAP_LOGGING=0")
+
+    def test_cluster_ops_and_k8s_snapshots_cached_and_scoped(self):
+        _, kube_calls = self.collect("healthy")
+        deploy_reads = [
+            line for line in kube_calls.splitlines()
+            if line.startswith("get deployment api ")
+        ]
+        self.assertEqual(len(deploy_reads), 1)
+        ops_reads = [
+            line for line in self.last_gcloud_calls.splitlines()
+            if line.startswith("container operations list ")
+        ]
+        self.assertEqual(len(ops_reads), 2, "Expected 1 preflight and 1 cached operations read")
+        k8s_cluster_reads = [
+            line for line in self.last_gcloud_calls.splitlines()
+            if 'resource.type="k8s_cluster"' in line
+        ]
+        self.assertTrue(k8s_cluster_reads)
+        for line in k8s_cluster_reads:
+            self.assertIn('resource.labels.cluster_name="prod"', line)
 
 
 if __name__ == "__main__":

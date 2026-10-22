@@ -13,6 +13,12 @@ bash_path=$(command -v bash)
 report="$test_dir/report with spaces.txt"
 printf '%s\n' \
   'preamble' \
+  '===== Pre-Flight — Resolved Inputs =====' \
+  'PROJECT=test-project CLUSTER=prod' \
+  '===== Phase 0b — Capability Preflight (empty ≠ clear) =====' \
+  'CAP_K8S=1' \
+  '===== Auto-discovery =====' \
+  'POD_SELECTOR=app=api' \
   '===== Memory =====  {HYP: H1}' \
   'memory evidence' \
   '[VERDICT: H1] CLEAR' \
@@ -48,6 +54,14 @@ actual=$(run_helper hypothesis "$report" H14)
 expected=$'===== Deletes =====  {HYP: H14}\ndelete evidence\n[VERDICT: H14] FIRES-WARNING\n===== Shared =====  {HYP: H14 H1}\nshared evidence'
 [[ "$actual" == "$expected" ]] || { printf 'FAIL: H14 selection\n' >&2; exit 1; }
 
+actual=$(run_helper hypothesis "$report" H1 H14)
+expected=$'===== Memory =====  {HYP: H1}\nmemory evidence\n[VERDICT: H1] CLEAR\n===== Deletes =====  {HYP: H14}\ndelete evidence\n[VERDICT: H14] FIRES-WARNING\n===== Shared =====  {HYP: H14 H1}\nshared evidence'
+[[ "$actual" == "$expected" ]] || { printf 'FAIL: multi-hypothesis selection without duplicates\n' >&2; exit 1; }
+
+actual=$(run_helper overview "$report")
+expected=$'===== Pre-Flight — Resolved Inputs =====\nPROJECT=test-project CLUSTER=prod\n===== Phase 0b — Capability Preflight (empty ≠ clear) =====\nCAP_K8S=1\n===== Auto-discovery =====\nPOD_SELECTOR=app=api\n\n===== Detector Verdicts =====\n[VERDICT: H1] CLEAR\n[VERDICT: H14] FIRES-WARNING'
+[[ "$actual" == "$expected" ]] || { printf 'FAIL: overview selection\n' >&2; exit 1; }
+
 actual=$(run_helper verdicts "$report")
 [[ "$actual" == $'[VERDICT: H1] CLEAR\n[VERDICT: H14] FIRES-WARNING' ]] || {
   printf 'FAIL: verdict selection\n' >&2; exit 1;
@@ -62,10 +76,13 @@ run_helper verdicts "$test_dir/empty.txt" > "$test_dir/out" || status=$?
 [[ "$status" == 1 && ! -s "$test_dir/out" ]]
 expect_failure 2 hypothesis "$test_dir/missing.txt" H1
 expect_failure 2 verdicts "$test_dir"
+expect_failure 2 overview "$test_dir"
 expect_failure 2 hypothesis "$report" 'H1|H14'
+expect_failure 2 hypothesis "$report" H1 H17
 expect_failure 2 hypothesis "$report" H17
 expect_failure 2 hypothesis "$report"
 expect_failure 2 verdicts "$report" extra
+expect_failure 2 overview "$report" extra
 expect_failure 2 unknown "$report"
 expect_failure 2
 run_helper --help > "$test_dir/help"

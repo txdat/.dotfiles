@@ -133,7 +133,7 @@ verdict() { printf '[VERDICT: %s] %s\n' "$1" "$2"; }
 #     field collapses and targetLink slides into $4, so every consumer must split on TAB.
 # If no row carries a targetLink at all, fall back to unscoped rather than silently reporting
 # nothing (a false CLEAR), and say so.
-cluster_ops() {
+cluster_ops_raw() {
   gcloud container operations list --project="$PROJECT" --location="$REGION" \
     --format="value(operationType,status,startTime,endTime,targetLink)" 2>/dev/null \
   | awk -F'\t' -v cl="$CLUSTER" '
@@ -147,6 +147,24 @@ cluster_ops() {
           for (i = 1; i <= rows; i++) print row[i]
         } else for (i = 1; i <= rows; i++) if (i in sel) print row[i]
       }'
+}
+
+CLUSTER_OPS_CACHED=0
+CLUSTER_OPS_OK=0
+CLUSTER_OPS_OUT=""
+ensure_cluster_ops() {
+  [ "$CLUSTER_OPS_CACHED" = 1 ] && return 0
+  CLUSTER_OPS_CACHED=1
+  if [ "${CAP_OPS:-0}" = 1 ]; then
+    CLUSTER_OPS_OUT=$(cluster_ops_raw) && CLUSTER_OPS_OK=1 || CLUSTER_OPS_OK=0
+  fi
+}
+
+cluster_ops() {
+  ensure_cluster_ops
+  [ "$CLUSTER_OPS_OK" = 1 ] || return 1
+  [ -n "$CLUSTER_OPS_OUT" ] && printf '%s\n' "$CLUSTER_OPS_OUT"
+  return 0
 }
 
 # Planned/benign GKE ops overlapping the critical window — used as false-positive guards for
@@ -353,6 +371,11 @@ kube_read() {
   [ "$CAP_K8S" = 1 ] || return 1
   kubectl --context="$EXPECTED_CTX" "$@"
 }
+# Short-circuit Cloud Logging reads when preflight showed logging is unreadable.
+log_read() {
+  [ "${CAP_LOGGING:-0}" = 1 ] || return 1
+  gcloud logging read "$@"
+}
 echo "CAP_LOGGING=$CAP_LOGGING (Cloud Logging read: log-based detectors B1/H13-partial/H14/H1-H12 audit)"
 echo "CAP_COMPUTE=$CAP_COMPUTE (Compute read: quota 1g.4, node instance-id, stockout)"
 echo "CAP_OPS=$CAP_OPS (container operations: H13 ops, planned-op guards)"
@@ -367,25 +390,28 @@ echo "CAP_KUBECTL=$CAP_KUBECTL  CAP_KUBECTL_CTX=$CAP_KUBECTL_CTX (context '$CUR_
 # Auto-discovery — read-only, feeds Phase 3 deep-dives
 # ============================================================================
 section "Auto-discovery"
-POD_SELECTOR_RAW=$(kube_read get deployment "$DEPLOYMENT" -n "$NAMESPACE" -o jsonpath='{.spec.selector.matchLabels}' 2>/dev/null)
-POD_SELECTOR=$(kube_read get deployment "$DEPLOYMENT" -n "$NAMESPACE" -o json 2>/dev/null | \
+DEPLOY_JSON=$(kube_read get deployment "$DEPLOYMENT" -n "$NAMESPACE" -o json 2>/dev/null || true)
+POD_SELECTOR_RAW=$(printf '%s' "$DEPLOY_JSON" | jq -c '.spec.selector.matchLabels // empty' 2>/dev/null)
+POD_SELECTOR=$(printf '%s' "$DEPLOY_JSON" | \
   jq -r '.spec.selector.matchLabels | to_entries | map("\(.key)=\(.value)") | join(",")' 2>/dev/null)
 [ -z "$POD_SELECTOR" ] || [ "$POD_SELECTOR" = "null" ] && POD_SELECTOR="app=$SERVICE"
 echo "POD_SELECTOR=$POD_SELECTOR (raw matchLabels: $POD_SELECTOR_RAW)"
 
-POD_NAME="${POD_NAME:-$(kube_read get pods -n "$NAMESPACE" -l "$POD_SELECTOR" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)}"
+PODS_JSON=$(kube_read get pods -n "$NAMESPACE" -l "$POD_SELECTOR" -o json 2>/dev/null || true)
+POD_NAME="${POD_NAME:-$(printf '%s' "$PODS_JSON" | jq -r '.items[0].metadata.name // empty' 2>/dev/null)}"
 echo "POD_NAME=${POD_NAME:-<none found>}"
 
 NODE_NAME=""
 NODE_ZONE=""
 NODE_INSTANCE_ID=""
 if [ -n "$POD_NAME" ]; then
-  NODE_NAME=$(kube_read get pod "$POD_NAME" -n "$NAMESPACE" -o jsonpath='{.spec.nodeName}' 2>/dev/null)
+  NODE_NAME=$(printf '%s' "$PODS_JSON" | jq -r --arg p "$POD_NAME" '.items[] | select(.metadata.name==$p) | .spec.nodeName // empty' 2>/dev/null)
+  [ -z "$NODE_NAME" ] && NODE_NAME=$(kube_read get pod "$POD_NAME" -n "$NAMESPACE" -o jsonpath='{.spec.nodeName}' 2>/dev/null)
   # GKE nodes carry no instance_id annotation — derive the numeric GCE id from providerID
   # (gce://PROJECT/ZONE/INSTANCE_NAME; the node name is the instance name).
   PROVIDER_ID=$(kube_read get node "$NODE_NAME" -o jsonpath='{.spec.providerID}' 2>/dev/null)
   NODE_ZONE=$(printf '%s' "$PROVIDER_ID" | awk -F/ '{print $(NF-1)}')
-  if [ -n "$NODE_NAME" ] && [ -n "$NODE_ZONE" ]; then
+  if [ -n "$NODE_NAME" ] && [ -n "$NODE_ZONE" ] && [ "${CAP_COMPUTE:-0}" = 1 ]; then
     NODE_INSTANCE_ID=$(gcloud compute instances describe "$NODE_NAME" --zone="$NODE_ZONE" --project="$PROJECT" --format="value(id)" 2>/dev/null || true)
   fi
 fi
@@ -396,7 +422,8 @@ LB_BACKEND_NAME="${LB_BACKEND_NAME:-}"
 # The fronting LB may be an Ingress OR a Gateway (GKE Gateway API creates forwarding rules with no
 # Ingress object at all). Try both before giving up, else 1d.2-1d.5 — the whole 5xx-ratio signal —
 # are skipped on every Gateway-fronted cluster.
-LB_VIP=$(kube_read get ingress -n "$NAMESPACE" -o jsonpath='{range .items[*]}{.status.loadBalancer.ingress[*].ip}{"\n"}{end}' 2>/dev/null | head -1)
+INGRESS_ROWS=$(kube_read get ingress -n "$NAMESPACE" -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.loadBalancer.ingress[*].ip}{"\n"}{end}' 2>/dev/null)
+LB_VIP=$(printf '%s\n' "$INGRESS_ROWS" | awk -F'\t' 'NF>=2 && $2!="" {print $2; exit}')
 LB_SOURCE="ingress"
 if [ -z "$LB_VIP" ]; then
   LB_VIP=$(kube_read get gateway -n "$NAMESPACE" -o jsonpath='{range .items[*]}{.status.addresses[*].value}{"\n"}{end}' 2>/dev/null | head -1)
@@ -436,7 +463,7 @@ echo "LB_BACKEND_RE=${LB_BACKEND_RE:-<no backend service matched this namespace 
 # ============================================================================
 
 section "1a — K8s Warning Events (namespaced)" "H2 H3"
-gcloud logging read \
+log_read \
   'resource.type="k8s_cluster"
    log_name="projects/'$PROJECT'/logs/events"
    severity>=WARNING
@@ -449,7 +476,7 @@ gcloud logging read \
   --limit=300
 
 section "1a — K8s Warning Events (node-scoped)" "H3 H15"
-gcloud logging read \
+log_read \
   'resource.type="k8s_cluster"
    log_name="projects/'$PROJECT'/logs/events"
    resource.labels.cluster_name="'$CLUSTER'"
@@ -461,21 +488,22 @@ gcloud logging read \
   --limit=100
 
 section "1b — Pod Restart Fingerprint" "H1"
-kube_read get deployment "$DEPLOYMENT" -n "$NAMESPACE" -o jsonpath='{.spec.selector.matchLabels}' 2>/dev/null && echo
-kube_read get pods -n "$NAMESPACE" -l "$POD_SELECTOR" -o json 2>/dev/null | jq -r '
+[ -n "$POD_SELECTOR_RAW" ] && printf '%s\n' "$POD_SELECTOR_RAW"
+printf '%s' "$PODS_JSON" | jq -r '
   .items[] | .metadata.name as $pod |
   .status.containerStatuses[]? |
   [$pod, .name, .ready, .restartCount,
    .lastState.terminated.reason // "-",
    .lastState.terminated.exitCode // "-",
-   .lastState.terminated.finishedAt // "-"] | @tsv' | \
+   .lastState.terminated.finishedAt // "-"] | @tsv' 2>/dev/null | \
   column -t -s $'\t' -N POD,CONTAINER,READY,RESTARTS,REASON,EXIT,FINISHED
 
 section "1c — Endpoint Availability" "H2"
 kube_read get endpoints -n "$NAMESPACE"
 kube_read describe endpoints -n "$NAMESPACE" 2>/dev/null | grep -A5 -E "^Name:|Addresses:|NotReadyAddresses:"
-gcloud logging read \
+log_read \
   'resource.type="k8s_cluster"
+   resource.labels.cluster_name="'$CLUSTER'"
    protoPayload.resourceName=~"namespaces/'$NAMESPACE'/endpoints"
    timestamp>="'$T_START'"
    timestamp<="'$T_END'"' \
@@ -483,10 +511,10 @@ gcloud logging read \
   --format="table(timestamp,protoPayload.methodName,protoPayload.resourceName,protoPayload.response.status)" \
   --limit=50
 
-section "1d.1 — LB Identification"
+section "1d.1 — LB Identification" "G1"
 gcloud compute forwarding-rules list --project=$PROJECT --format="table(name,IPAddress,target,region,loadBalancingScheme)"
 gcloud compute backend-services list --project=$PROJECT --format="table(name,protocol,loadBalancingScheme,backends[].group)"
-kube_read get ingress -n "$NAMESPACE" -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.loadBalancer.ingress[*].ip}{"\n"}{end}' 2>/dev/null
+[ -n "$INGRESS_ROWS" ] && printf '%s\n' "$INGRESS_ROWS"
 kube_read get service "$SERVICE" -n "$NAMESPACE" -o jsonpath='{.metadata.annotations.cloud\.google\.com/neg}' 2>/dev/null && echo
 gcloud compute network-endpoint-groups list --project=$PROJECT --format="table(name,zone,size)" 2>/dev/null | grep -i "$SERVICE" || true
 
@@ -689,25 +717,23 @@ if [ -n "$LB_FILTER" ] && [ "$LB_LOGGING_ENABLED" = "true" ]; then
   # endpoints) silently remove requests from both numerator and denominator here, but not from the
   # metric. Where the two disagree, the metric wins.
   #
-  # Two reads, because one cannot answer both halves of the ratio on a busy LB.
-  #
-  # Read A (5xx only) is complete across the window *as far as logging captured it*: errors are rare
-  # enough to fit under the limit, so it can still name the worst backend. Read B (all requests) is
-  # a capped SAMPLE that only supplies a denominator — at a few thousand req/min, $LB_LOG_LIMIT
-  # entries can cover well under a minute of a 30-minute window, so a single combined read would
-  # report "0 5xx" for an incident that produced hundreds of them minutes later. That is exactly
-  # how a real burst gets missed, so the counts and the ratio are reported separately and labelled.
-  section "1d.2a — LB 5xx Counts from LOGS (secondary — LOWER BOUND, see 1d.2m for the true count)"
-  gcloud logging read \
+  # Two reads, because one cannot answer both halves of the ratio on a busy LB:
+  # Read A (5xx only) feeds 1d.2a, 1d.3, and 1d.5 in a single query.
+  # Read B (all requests sample) feeds 1d.2b and 1d.4 in a single query.
+  LB_5XX_TSV=$(log_read \
     'resource.type="http_load_balancer"
      '"$LB_FILTER"'
      httpRequest.status>=500
      timestamp>="'$T_START'"
      timestamp<="'$T_END'"' \
     --project=$PROJECT --order=asc \
-    --format="value(timestamp,httpRequest.status,resource.labels.backend_service_name)" \
-    --limit=${LB_5XX_LIMIT:-5000} | \
+    --format="value(timestamp,httpRequest.status,resource.labels.backend_service_name,httpRequest.latency,jsonPayload.statusDetails,httpRequest.requestUrl)" \
+    --limit=${LB_5XX_LIMIT:-5000} || true)
+
+  section "1d.2a — LB 5xx Counts from LOGS (secondary — LOWER BOUND, see 1d.2m for the true count)" "G1"
+  printf '%s\n' "$LB_5XX_TSV" | \
     awk -F'\t' -v lim="${LB_5XX_LIMIT:-5000}" '
+      NF == 0 { next }
       {
         m=substr($1,1,16); b=($3==""?"(no-backend-matched)":$3)
         emin[m]++; eb[b]++; ecode[$2+0]++; E++
@@ -729,16 +755,19 @@ if [ -n "$LB_FILTER" ] && [ "$LB_LOGGING_ENABLED" = "true" ]; then
         if (E>=lim) printf "[NOTE] 5xx read hit --limit=%d — even the error stream is truncated; raise $LB_5XX_LIMIT.\n", lim
       }'
 
-  section "1d.2b — LB Traffic Volume from LOGS (SAMPLE — superseded by 1d.2m's denominator)"
-  gcloud logging read \
+  LB_SAMPLE_TSV=$(log_read \
     'resource.type="http_load_balancer"
      '"$LB_FILTER"'
      timestamp>="'$T_START'"
      timestamp<="'$T_END'"' \
     --project=$PROJECT --order=asc \
-    --format="value(timestamp,httpRequest.status,resource.labels.backend_service_name)" \
-    --limit=$LB_LOG_LIMIT | \
+    --format="value(timestamp,httpRequest.status,resource.labels.backend_service_name,httpRequest.latency)" \
+    --limit=$LB_LOG_LIMIT || true)
+
+  section "1d.2b — LB Traffic Volume from LOGS (SAMPLE — superseded by 1d.2m's denominator)" "G1"
+  printf '%s\n' "$LB_SAMPLE_TSV" | \
     awk -F'\t' -v lim="$LB_LOG_LIMIT" '
+      NF == 0 { next }
       {
         m=substr($1,1,16); b=($3==""?"(no-backend-matched)":$3); is5=($2+0>=500)
         tot[m]++; btot[b]++; T++
@@ -768,26 +797,17 @@ if [ -n "$LB_FILTER" ] && [ "$LB_LOGGING_ENABLED" = "true" ]; then
         }
       }'
 
-  section "1d.3 — LB 5xx Breakdown from LOGS (statusDetails + requestUrl — what metrics cannot carry)"
-  gcloud logging read \
-    'resource.type="http_load_balancer"
-     '"$LB_FILTER"'
-     httpRequest.status>=500
-     timestamp>="'$T_START'"
-     timestamp<="'$T_END'"' \
-    --project=$PROJECT --order=asc \
-    --format="table(timestamp,httpRequest.status,httpRequest.latency,jsonPayload.statusDetails,httpRequest.requestUrl)" \
-    --limit=1000
+  section "1d.3 — LB 5xx Breakdown from LOGS (statusDetails + requestUrl — what metrics cannot carry)" "G1"
+  printf '%s\n' "$LB_5XX_TSV" | awk -F'\t' '
+    NF == 0 { next }
+    NR == 1 { print "TIMESTAMP\tSTATUS\tLATENCY\tSTATUS_DETAILS\tREQUEST_URL" }
+    NR <= 1000 { printf "%s\t%s\t%s\t%s\t%s\n", $1, $2, $4, $5, $6 }
+  ' | column -t -s $'\t'
 
-  section "1d.4 — LB Latency Distribution from LOGS (capped sample — read the shape, not the volume)"
-  gcloud logging read \
-    'resource.type="http_load_balancer"
-     '"$LB_FILTER"'
-     timestamp>="'$T_START'"
-     timestamp<="'$T_END'"' \
-    --project=$PROJECT --format="value(httpRequest.latency)" --limit=5000 | \
-    sed 's/s$//' | awk '
-      {v=$1+0}
+  section "1d.4 — LB Latency Distribution from LOGS (capped sample — read the shape, not the volume)" "G1"
+  printf '%s\n' "$LB_SAMPLE_TSV" | awk -F'\t' '
+      NF == 0 { next }
+      { v = $4; sub(/s$/, "", v); v = v + 0 }
       v<0.1  {fast++}
       v>=0.1 && v<0.5  {mid++}
       v>=0.5 && v<2.0  {slow++}
@@ -795,21 +815,15 @@ if [ -n "$LB_FILTER" ] && [ "$LB_LOGGING_ENABLED" = "true" ]; then
       END {print "< 100ms:", fast; print "100-500ms:", mid; print "500ms-2s:", slow; print "> 2s:", veryslow}
     '
 
-  section "1d.5 — LB statusDetails from LOGS (distribution across the LOGGED 5xx only)"
-  gcloud logging read \
-    'resource.type="http_load_balancer"
-     '"$LB_FILTER"'
-     httpRequest.status>=500
-     timestamp>="'$T_START'"
-     timestamp<="'$T_END'"' \
-    --project=$PROJECT --format="value(jsonPayload.statusDetails)" --limit=1000 | sort | uniq -c | sort -rn
+  section "1d.5 — LB statusDetails from LOGS (distribution across the LOGGED 5xx only)" "G1"
+  printf '%s\n' "$LB_5XX_TSV" | awk -F'\t' 'NF > 0 && NR <= 1000 { print $5 }' | sort | uniq -c | sort -rn
 
 else
   note "1d log steps 2a-5 skipped: no LB scope (neither Ingress nor Gateway VIP resolved to a forwarding rule, and no backend service matched this namespace) or logConfig.enable=false. Set \$LB_NAME or \$LB_BACKEND_NAME and re-run, or run the LB queries manually (see skill 1d). The 5xx COUNTS are unaffected — take them from the metric in 1d.2m, which needs no LB logging at all. What is lost here is the qualitative detail only: statusDetails, requestUrl and latency are UNKNOWN."
 fi
 
 section "1e — Deploy Gate (H7)"
-gcloud logging read \
+log_read \
   'resource.type="k8s_cluster"
    protoPayload.resourceName=~"namespaces/'$NAMESPACE'/deployments/"
    protoPayload.methodName=~"\.deployments\.(create|update|patch|replace)"
@@ -821,18 +835,19 @@ gcloud logging read \
   --limit=50
 
 section "1f.1 — Cluster Autoscaler" "H4 H11"
-gcloud logging read \
+CA_LOG=$(log_read \
   'resource.type="k8s_cluster"
+   resource.labels.cluster_name="'$CLUSTER'"
    log_name=~"cluster-autoscaler"
-   (textPayload=~"Scale-down|ScaleDown|removing node|evicting pod"
-    OR jsonPayload.message=~"Scale-down|ScaleDown|removing node")
    timestamp>="'$T_START'"
    timestamp<="'$T_END'"' \
-  --project=$PROJECT --order=asc --format="table(timestamp,textPayload)" --limit=50
+  --project=$PROJECT --order=asc --format="table(timestamp,textPayload,jsonPayload.message)" --limit=100 || true)
+printf '%s\n' "$CA_LOG"
 
 section "1f.2 — Node Auto-repair / MIG Recreation" "H13 H14"
-gcloud logging read \
+log_read \
   'resource.type="gce_instance"
+   protoPayload.resourceName:"gke-'$CLUSTER'-"
    protoPayload.methodName=~"compute\.instances\.(insert|bulkInsert|delete)"
    protoPayload.authenticationInfo.principalEmail=~"system:|gke-|container-engine|cloudservices\.gserviceaccount\.com"
    timestamp>="'$T_START'"
@@ -842,8 +857,9 @@ gcloud logging read \
   --limit=60
 
 section "1f.3 — GKE Automatic Upgrades" "H13"
-gcloud logging read \
+log_read \
   '(resource.type="gce_instance" OR resource.type="gke_cluster")
+   (resource.labels.cluster_name="'$CLUSTER'" OR protoPayload.resourceName:"'$CLUSTER'")
    (protoPayload.methodName=~"UpdateCluster|SetNodePoolVersion|UpdateNodePool"
     OR textPayload=~"upgrade|Upgrading")
    timestamp>="'$T_START_MINUS_2H'"
@@ -851,8 +867,9 @@ gcloud logging read \
   --project=$PROJECT --order=asc --format="table(timestamp,protoPayload.methodName,textPayload)" --limit=30
 
 section "1f.4 — Preemptible/Spot VM Preemption" "H3"
-gcloud logging read \
+log_read \
   'resource.type="gce_instance"
+   protoPayload.resourceName:"gke-'$CLUSTER'-"
    protoPayload.methodName="compute.instances.preempted"
    timestamp>="'$T_START'"
    timestamp<="'$T_END'"' \
@@ -860,8 +877,9 @@ gcloud logging read \
   --format="table(timestamp,resource.labels.instance_id,protoPayload.resourceName)" --limit=20
 
 section "1f.5 — Node Pool Resize" "H14 H15"
-gcloud logging read \
+log_read \
   'resource.type="gke_nodepool"
+   resource.labels.cluster_name="'$CLUSTER'"
    protoPayload.methodName=~"SetNodePoolSize|SetNodePoolAutoscaling"
    timestamp>="'$T_START_MINUS_2H'"
    timestamp<="'$T_END'"' \
@@ -869,34 +887,38 @@ gcloud logging read \
   --format="table(timestamp,protoPayload.authenticationInfo.principalEmail,protoPayload.methodName)" --limit=20
 
 section "1f.6 — HPA Scale Events" "H4"
-gcloud logging read \
+HPA_EVENTS_LOG=$(log_read \
   'resource.type="k8s_cluster"
    log_name="projects/'$PROJECT'/logs/events"
+   resource.labels.cluster_name="'$CLUSTER'"
    jsonPayload.involvedObject.kind="HorizontalPodAutoscaler"
-   jsonPayload.reason=~"SuccessfulRescale|DesiredReplicasComputed"
    resource.labels.namespace_name="'$NAMESPACE'"
    timestamp>="'$T_START'"
    timestamp<="'$T_END'"' \
   --project=$PROJECT --order=asc \
-  --format="table(timestamp,jsonPayload.involvedObject.name,jsonPayload.reason,jsonPayload.message)" --limit=50
+  --format="table(timestamp,jsonPayload.involvedObject.name,jsonPayload.reason,jsonPayload.message)" --limit=100 || true)
+printf '%s\n' "$HPA_EVENTS_LOG"
 
 section "1f.7 — Maintenance Window" "H13"
-gcloud container clusters describe "$CLUSTER" --location=$REGION --project=$PROJECT \
-  --format="value(maintenancePolicy.window.dailyMaintenanceWindow,maintenancePolicy.window.recurringWindow)"
+MAINT=$(gcloud container clusters describe "$CLUSTER" --location=$REGION --project=$PROJECT \
+  --format="value(maintenancePolicy.window.recurringWindow.recurrence,maintenancePolicy.window.dailyMaintenanceWindow.startTime)" 2>/dev/null || true)
+printf '%s\n' "$MAINT"
 
 section "1f.8 — IAM / Workload Identity Policy Changes (critical window T-6h)" "H8"
-gcloud logging read \
+IAM_CHANGES_LOG=$(log_read \
   'protoPayload.serviceName="iam.googleapis.com"
    (protoPayload.methodName=~"SetIamPolicy|CreateServiceAccountKey|DeleteServiceAccountKey|DisableServiceAccount"
-    OR protoPayload.methodName=~"roles.update|bindings")
+    OR protoPayload.methodName=~"roles.update|bindings"
+    OR protoPayload.resourceName=~"'$PROJECT'")
    timestamp>="'$T_START_CRITICAL'"
    timestamp<="'$T_END'"' \
   --project=$PROJECT --order=asc \
   --format="table(timestamp,protoPayload.authenticationInfo.principalEmail,protoPayload.methodName,protoPayload.resourceName)" \
-  --limit=30
+  --limit=30 || true)
+printf '%s\n' "$IAM_CHANGES_LOG"
 
 section "1g.1 — Autoscaler Scale-up Decisions/Blockers (H11)" "H16"
-gcloud logging read \
+log_read \
   'resource.type="k8s_cluster"
    log_name=~"container.googleapis.com%2Fcluster-autoscaler-visibility"
    resource.labels.cluster_name="'$CLUSTER'"
@@ -904,9 +926,10 @@ gcloud logging read \
    timestamp<="'$T_END'"' \
   --project=$PROJECT --order=asc --format="json" --limit=200
 
-section "1g.2 — GCE VM Create Failures (stockout smoking gun, H11)"
-gcloud logging read \
+section "1g.2 — GCE VM Create Failures (stockout smoking gun, H11)" "H4"
+STOCKOUT_ALL=$(log_read \
   'resource.type="gce_instance"
+   protoPayload.resourceName:"gke-'$CLUSTER'-"
    protoPayload.methodName=~"compute\.instances\.(insert|bulkInsert)"
    (protoPayload.response.error.errors.code=~"ZONE_RESOURCE_POOL_EXHAUSTED|QUOTA_EXCEEDED|RESOURCE_POOL_EXHAUSTED|IP_SPACE_EXHAUSTED"
     OR protoPayload.status.message=~"exhausted|does not have enough resources|resource pool")
@@ -914,11 +937,13 @@ gcloud logging read \
    timestamp<="'$T_END'"' \
   --project=$PROJECT --order=asc \
   --format="table(timestamp,protoPayload.authenticationInfo.principalEmail,protoPayload.response.error.errors.code,protoPayload.status.message)" \
-  --limit=100
+  --limit=100) && STOCKOUT_OK=1 || STOCKOUT_OK=0
+printf '%s\n' "$STOCKOUT_ALL"
 
 section "1g.3 — GKE Create/Delete Churn (H11)"
-gcloud logging read \
+log_read \
   'resource.type="gce_instance_group_manager"
+   protoPayload.resourceName:"gke-'$CLUSTER'-"
    protoPayload.methodName=~"createInstances|deleteInstances"
    protoPayload.authenticationInfo.principalEmail=~"container-engine-robot|system:"
    timestamp>="'$T_START'"
@@ -926,19 +951,22 @@ gcloud logging read \
   --project=$PROJECT --order=asc \
   --format="table(timestamp,protoPayload.methodName,protoPayload.resourceName)" --limit=100
 
-section "1g.4 — Quota Headroom Check (rules out H4-quota)"
+section "1g.4 — Quota Headroom Check (rules out H4-quota)" "H11"
 # Keep only the quotas that gate GKE node autoscaling. Every per-family vCPU quota is
 # named <FAMILY>_CPUS, so the bare "CPUS" substring matches all machine families
 # (E2/N2/N2D/C2D/T2D/C3/N4/C4/…) automatically — no need to hardcode family names.
-gcloud compute regions describe "$REGION_ONLY" --project=$PROJECT \
-  --format="table(quotas.metric,quotas.usage,quotas.limit)" | grep -iE "CPUS|IN_USE_ADDRESSES" || true
+if [ "${CAP_COMPUTE:-0}" = 1 ]; then
+  gcloud compute regions describe "$REGION_ONLY" --project=$PROJECT \
+    --format="table(quotas.metric,quotas.usage,quotas.limit)" | grep -iE "CPUS|IN_USE_ADDRESSES" || true
+fi
 
 section "1g.5 — Node Pool Topology" "H11 H15 H16"
-gcloud container node-pools list --cluster="$CLUSTER" --location=$REGION --project=$PROJECT \
-  --format="table(name,config.machineType,initialNodeCount,autoscaling.enabled,locations)"
+POOLS_TABLE=$(gcloud container node-pools list --cluster="$CLUSTER" --location=$REGION --project=$PROJECT \
+  --format="table(name,config.machineType,initialNodeCount,autoscaling.enabled,autoscaling.minNodeCount,autoscaling.maxNodeCount,locations)" 2>/dev/null || true)
+printf '%s\n' "$POOLS_TABLE"
 
 section "1h.1 — VPC/Firewall/Route/NAT Changes (H12, T-2h)"
-gcloud logging read \
+log_read \
   'protoPayload.serviceName="compute.googleapis.com"
    protoPayload.methodName=~"compute\.(firewalls|routes|networks|subnetworks|routers|globalAddresses|addresses)\.(insert|update|patch|delete)"
    timestamp>="'$T_START_MINUS_2H'"
@@ -948,7 +976,7 @@ gcloud logging read \
   --limit=50
 
 section "1h.2 — Cloud NAT Exhaustion (H12)"
-gcloud logging read \
+log_read \
   'resource.type="nat_gateway"
    (jsonPayload.allocation_status="DROPPED"
     OR textPayload=~"OUT_OF_RESOURCES|allocation|dropped")
@@ -958,9 +986,10 @@ gcloud logging read \
   --format="table(timestamp,resource.labels.gateway_name,jsonPayload.allocation_status,textPayload)" --limit=100
 
 section "1h.3 — CNI / Pod-Sandbox Failures (H12)"
-gcloud logging read \
+log_read \
   'resource.type="k8s_cluster"
    log_name="projects/'$PROJECT'/logs/events"
+   resource.labels.cluster_name="'$CLUSTER'"
    jsonPayload.reason=~"FailedCreatePodSandBox|NetworkNotReady|CNI|FailedCreatePodContainer"
    timestamp>="'$T_START'"
    timestamp<="'$T_END'"' \
@@ -968,7 +997,7 @@ gcloud logging read \
   --format="table(timestamp,jsonPayload.involvedObject.name,jsonPayload.reason,jsonPayload.message)" --limit=100
 
 section "1h.4 — Subnet/Pod-IP Exhaustion (H12)"
-gcloud logging read \
+log_read \
   '(resource.type="gce_subnetwork" OR (resource.type="gce_instance" AND protoPayload.response.error.errors.code="IP_SPACE_EXHAUSTED"))
    timestamp>="'$T_START'"
    timestamp<="'$T_END'"' \
@@ -977,16 +1006,18 @@ gcloud logging read \
 gcloud container clusters describe "$CLUSTER" --location=$REGION --project=$PROJECT \
   --format="value(ipAllocationPolicy.clusterSecondaryRangeName,ipAllocationPolicy.servicesSecondaryRangeName,ipAllocationPolicy.podCidrOverprovisionConfig)" 2>/dev/null
 
-section "1h.5 — LB Backend Health, Network Side (H12)"
-if [ -n "$LB_BACKEND_NAME" ]; then
+section "1h.5 — LB Backend Health, Network Side (H12)" "G1"
+if [ -n "$LB_BACKEND_NAME" ] && [ "${CAP_COMPUTE:-0}" = 1 ]; then
   gcloud compute backend-services get-health "$LB_BACKEND_NAME" --global --project=$PROJECT \
+    --format="table(status.healthStatus[].instance,status.healthStatus[].healthState)" 2>/dev/null || \
+  gcloud compute backend-services get-health "$LB_BACKEND_NAME" --region=$REGION_ONLY --project=$PROJECT \
     --format="table(status.healthStatus[].instance,status.healthStatus[].healthState)" 2>/dev/null || true
 else
-  note "LB_BACKEND_NAME not discovered — skip or run manually."
+  note "LB_BACKEND_NAME not discovered or CAP_COMPUTE=0 — skip or run manually."
 fi
 
 section "1i — B1 Billing Disabled Scan (critical window T-6h)"
-BILLING_LOG=$(gcloud logging read \
+BILLING_LOG=$(log_read \
   'severity>=ERROR
    (textPayload:"BILLING_DISABLED" OR textPayload:"requires billing to be enabled")
    timestamp>="'$T_START_CRITICAL'"
@@ -995,7 +1026,7 @@ BILLING_LOG=$(gcloud logging read \
   --format="table(timestamp,resource.type,textPayload)" --limit=50) && BILLING_LOG_OK=1 || BILLING_LOG_OK=0
 printf '%s\n' "$BILLING_LOG"
 gcloud billing projects describe "$PROJECT" --format="value(billingEnabled,billingAccountName)" 2>/dev/null
-gcloud logging read \
+log_read \
   'protoPayload.serviceName="cloudbilling.googleapis.com"
    protoPayload.methodName=~"UpdateBillingInfo|AssignResourceToBillingAccount|DisableResourceBilling"
    timestamp>="'$T_START_MINUS_2H'"
@@ -1014,6 +1045,9 @@ else
   verdict CLEAR "B1: no in-window billing-disabled log (logging readable)."
 fi
 
+ensure_cluster_ops
+PLANNED_OP=$(planned_ops_in_window | head -1)
+
 section "1i — H13 Repair/Upgrade Op Scan (critical window T-6h)"
 if [ "${CAP_OPS:-0}" = 0 ]; then
   verdict UNKNOWN "H13: container operations unreadable — cannot rule out an in-window repair/upgrade op."
@@ -1021,9 +1055,6 @@ else
   H13_OPS=$(cluster_ops \
     | awk -F'\t' -v s="$T_START_CRITICAL" -v e="$T_END" '$3>=s && $3<=e && ($1=="REPAIR_CLUSTER" || $1 ~ /^UPGRADE/) {print}') && H13_READ_OK=1 || H13_READ_OK=0
   printf '%s\n' "$H13_OPS"
-  # maintenance-window guard: a scheduled UPGRADE inside the cluster's window is expected, not an incident.
-  MAINT=$(gcloud container clusters describe "$CLUSTER" --location=$REGION --project=$PROJECT \
-    --format="value(maintenancePolicy.window.recurringWindow.recurrence,maintenancePolicy.window.dailyMaintenanceWindow.startTime)" 2>/dev/null)
   printf '%s' "$H13_OPS" | grep -q 'REPAIR_CLUSTER' && H13_REP=1 || H13_REP=0
   printf '%s' "$H13_OPS" | grep -q 'UPGRADE'        && H13_UP=1  || H13_UP=0
   [ "$H13_REP" = 1 ] && verdict FIRES-WARNING "H13: in-window REPAIR_CLUSTER (node auto-repair) rebuilt nodes — correlate its startTime with symptom onset."
@@ -1042,20 +1073,21 @@ else
 fi
 
 section "1i — H14 Node VM Delete Burst"
+DEL_LOG=""
+DEL_READ_OK=0
 if [ "${CAP_LOGGING:-0}" = 0 ]; then
   verdict UNKNOWN "H14: Cloud Logging unreadable — cannot count node-delete events (note: these are Admin Activity logs, always emitted; the gap is read permission)."
 else
-  DEL_LOG=$(gcloud logging read \
+  DEL_LOG=$(log_read \
     'resource.type="gce_instance"
      protoPayload.methodName=~"compute\.instances\.delete"
      protoPayload.resourceName:"gke-'$CLUSTER'-"
-     protoPayload.authenticationInfo.principalEmail=~"cloudservices\.gserviceaccount\.com"
      timestamp>="'$T_START'"
      timestamp<="'$T_END'"' \
-    --project=$PROJECT --format="value(timestamp)" --limit=500) && DEL_READ_OK=1 || DEL_READ_OK=0
-  DEL=$(printf '%s\n' "$DEL_LOG" | awk 'NF {n++} END {print n+0}')
+    --project=$PROJECT --order=asc \
+    --format="value(timestamp,protoPayload.authenticationInfo.principalEmail,protoPayload.requestMetadata.callerSuppliedUserAgent)" --limit=500) && DEL_READ_OK=1 || DEL_READ_OK=0
+  DEL=$(printf '%s\n' "$DEL_LOG" | awk -F'\t' 'NF && ($2 == "" || $2 ~ /cloudservices\.gserviceaccount\.com/) {n++} END {print n+0}')
   echo "in-window MIG node VM deletes: $DEL (burst threshold $NODE_DELETE_BURST)"
-  PLANNED_OP=$(planned_ops_in_window | head -1)
   GUARD_NOTE=""; [ "${CAP_OPS:-0}" = 0 ] && GUARD_NOTE=" [planned-op guard unavailable — CAP_OPS=0]"
   if [ "$DEL_READ_OK" = 0 ]; then
     verdict UNKNOWN "H14: node-delete query failed after preflight; delete count is unverified."
@@ -1073,7 +1105,8 @@ else
 fi
 
 section "1i — H15 Node Count Loss / NotReady / Age Reset"
-kube_read get nodes -o wide
+NODES_WIDE=$(kube_read get nodes -o wide 2>/dev/null || true)
+[ -n "$NODES_WIDE" ] && printf '%s\n' "$NODES_WIDE"
 POOLS=$(gcloud container node-pools list --cluster="$CLUSTER" --location=$REGION --project=$PROJECT \
   --format="value(name,autoscaling.minNodeCount)" 2>/dev/null) && POOLS_OK=1 || POOLS_OK=0
 printf '%s\n' "$POOLS"
@@ -1088,7 +1121,6 @@ echo "nodes=$NODES notReady=$NOTREADY young=$YOUNG  minNodeCount_sum=${MIN_SUM:-
 if [ "${CAP_K8S:-0}" = 0 ] || [ "$NODES_OK" = 0 ] || [ "$POOLS_OK" = 0 ]; then
   verdict UNKNOWN "H15: verified node/pool data unavailable — check context and individual query errors; cannot rule out reclamation."
 else
-  PLANNED_OP=$(planned_ops_in_window | head -1)
   [ "${CAP_OPS:-0}" = 0 ] && note "H15: planned-op guard unavailable (CAP_OPS=0) — a FIRES here may actually be planned cycling; confirm operations manually."
   H15_FIRED=0
   if [ "$NOTREADY" -ge "$NOTREADY_MAX" ] 2>/dev/null; then
@@ -1118,7 +1150,7 @@ fi
 # ============================================================================
 
 section "H1 (OOMKill) — OS-level OOMKill"
-gcloud logging read \
+log_read \
   'resource.type="gce_instance"
    textPayload=~"oom_kill_process|Out of memory"
    timestamp>="'$T_START'"
@@ -1128,10 +1160,12 @@ gcloud logging read \
 
 section "H1 (OOMKill) — Container names, previous logs, memory limits, VPA"
 if [ -n "$POD_NAME" ]; then
-  kube_read get pod "$POD_NAME" -n "$NAMESPACE" -o jsonpath='{range .spec.containers[*]}{.name}{"\n"}{end}' 2>/dev/null
+  printf '%s' "$PODS_JSON" | jq -r --arg p "$POD_NAME" '
+    .items[] | select(.metadata.name==$p) | .spec.containers[]?.name' 2>/dev/null
   kube_read logs "$POD_NAME" -n "$NAMESPACE" --previous --timestamps=true 2>/dev/null | tail -300
-  kube_read get pod "$POD_NAME" -n "$NAMESPACE" \
-    -o jsonpath='{range .spec.containers[*]}{.name}{"\t"}{"req: "}{.resources.requests.memory}{"\t"}{"lim: "}{.resources.limits.memory}{"\n"}{end}' 2>/dev/null
+  printf '%s' "$PODS_JSON" | jq -r --arg p "$POD_NAME" '
+    .items[] | select(.metadata.name==$p) | .spec.containers[]? |
+    "\(.name)\treq: \(.resources.requests.memory // "")\tlim: \(.resources.limits.memory // "")"' 2>/dev/null
 else
   note "POD_NAME not discovered — set \$POD_NAME to the crashing pod and re-run for previous logs/limits."
 fi
@@ -1139,39 +1173,42 @@ kube_read describe vpa -n "$NAMESPACE" 2>/dev/null
 manual "fetch k8s_container | metric 'kubernetes.io/container/memory/limit_utilization' | filter resource.cluster_name == '$CLUSTER' && resource.namespace_name == '$NAMESPACE' && resource.pod_name =~ '$SERVICE.*' | within(30m, d'$T_UTC') | every 1m
 Values >0.85 in the 5min before crash = strong H1 confirmation."
 
-section "H2 (Probe Failure) — Unhealthy events"
-gcloud logging read \
+section "H2 (Probe Failure) — Unhealthy events" "H10"
+UNHEALTHY_LOG=$(log_read \
   'resource.type="k8s_cluster"
    log_name="projects/'$PROJECT'/logs/events"
+   resource.labels.cluster_name="'$CLUSTER'"
    jsonPayload.reason="Unhealthy"
    resource.labels.namespace_name="'$NAMESPACE'"
    timestamp>="'$T_START'"
    timestamp<="'$T_END'"' \
   --project=$PROJECT --order=asc \
-  --format="table(timestamp,jsonPayload.involvedObject.name,jsonPayload.message)" --limit=200
+  --format="table(timestamp,jsonPayload.involvedObject.name,jsonPayload.message)" --limit=200 || true)
+printf '%s\n' "$UNHEALTHY_LOG"
 
 section "H2 (Probe Failure) — Probe configs"
-kube_read get deployment "$DEPLOYMENT" -n "$NAMESPACE" -o json 2>/dev/null | jq -r '
-  .spec.template.spec.containers[] |
+printf '%s' "$DEPLOY_JSON" | jq -r '
+  .spec.template.spec.containers[]? |
   "Container: \(.name)",
   "  startup:   \(.startupProbe // "none" | if type == "object" then tojson else . end)",
   "  liveness:  \(.livenessProbe // "none" | if type == "object" then tojson else . end)",
-  "  readiness: \(.readinessProbe // "none" | if type == "object" then tojson else . end)"'
+  "  readiness: \(.readinessProbe // "none" | if type == "object" then tojson else . end)"' 2>/dev/null
 
 section "H2 (Probe Failure) — Restart count / sub-variant + endpoint oscillation + app warnings"
-kube_read get pods -n "$NAMESPACE" -l "$POD_SELECTOR" -o json 2>/dev/null | jq -r '
+printf '%s' "$PODS_JSON" | jq -r '
   .items[] | .metadata.name as $pod |
   .status.containerStatuses[]? |
-  [$pod, .name, .restartCount, .lastState.terminated.exitCode // "-"] | @tsv' | \
+  [$pod, .name, .restartCount, .lastState.terminated.exitCode // "-"] | @tsv' 2>/dev/null | \
   column -t -s $'\t' -N POD,CONTAINER,RESTARTS,EXIT
-gcloud logging read \
+log_read \
   'resource.type="k8s_cluster"
+   resource.labels.cluster_name="'$CLUSTER'"
    protoPayload.resourceName=~"namespaces/'$NAMESPACE'/endpoints/'$SERVICE'"
    timestamp>="'$T_START'"
    timestamp<="'$T_END'"' \
   --project=$PROJECT --order=asc \
   --format="table(timestamp,protoPayload.methodName,protoPayload.response)" --limit=100
-gcloud logging read \
+log_read \
   'resource.type="k8s_container"
    resource.labels.cluster_name="'$CLUSTER'"
    resource.labels.namespace_name="'$NAMESPACE'"
@@ -1183,33 +1220,37 @@ gcloud logging read \
   --format="table(timestamp,resource.labels.pod_name,jsonPayload.message,textPayload)" --limit=300
 
 section "H3 (Node Eviction) — Evicted / pressure / FailedScheduling / node syslog / preemption / node state"
-gcloud logging read \
+log_read \
   'resource.type="k8s_cluster"
    log_name="projects/'$PROJECT'/logs/events"
+   resource.labels.cluster_name="'$CLUSTER'"
    jsonPayload.reason="Evicted"
    resource.labels.namespace_name="'$NAMESPACE'"
    timestamp>="'$T_START'"
    timestamp<="'$T_END'"' \
   --project=$PROJECT --order=asc \
   --format="table(timestamp,jsonPayload.involvedObject.name,jsonPayload.message)" --limit=100
-gcloud logging read \
+log_read \
   'resource.type="k8s_cluster"
    log_name="projects/'$PROJECT'/logs/events"
+   resource.labels.cluster_name="'$CLUSTER'"
    jsonPayload.reason=~"NodeHas|NodeNot|Pressure"
    timestamp>="'$T_START'"
    timestamp<="'$T_END'"' \
   --project=$PROJECT --order=asc \
   --format="table(timestamp,jsonPayload.involvedObject.name,jsonPayload.reason,jsonPayload.message)" --limit=100
-gcloud logging read \
+FAILED_SCHED_LOG=$(log_read \
   'resource.type="k8s_cluster"
    log_name="projects/'$PROJECT'/logs/events"
+   resource.labels.cluster_name="'$CLUSTER'"
    jsonPayload.reason="FailedScheduling"
    timestamp>="'$T_START'"
    timestamp<="'$T_END'"' \
   --project=$PROJECT --order=asc \
-  --format="table(timestamp,jsonPayload.involvedObject.name,jsonPayload.message)" --limit=50
+  --format="table(timestamp,jsonPayload.involvedObject.namespace,jsonPayload.involvedObject.name,jsonPayload.message)" --limit=100 || true)
+printf '%s\n' "$FAILED_SCHED_LOG"
 if [ -n "$NODE_INSTANCE_ID" ]; then
-  gcloud logging read \
+  log_read \
     'resource.type="gce_instance"
      resource.labels.instance_id="'$NODE_INSTANCE_ID'"
      timestamp>="'$T_START'"
@@ -1219,46 +1260,28 @@ if [ -n "$NODE_INSTANCE_ID" ]; then
 else
   note "NODE_INSTANCE_ID not discovered — set \$NODE_INSTANCE_ID (from an eviction event or 'kubectl describe pod <pod> | grep Node:') and re-run for node syslog."
 fi
-gcloud logging read \
+log_read \
   'resource.type="gce_instance"
+   protoPayload.resourceName:"gke-'$CLUSTER'-"
    protoPayload.methodName=~"compute.instances.delete|preempted|migrate"
    timestamp>="'$T_START'"
    timestamp<="'$T_END'"' \
   --project=$PROJECT --order=asc --limit=20
-kube_read get nodes -o wide
-kube_read get nodes -o json 2>/dev/null | jq -r '
-  .items[] | "\(.metadata.name): \(.status.conditions | map(select(.status=="True")) | map(.type) | join(", "))"'
+[ -n "$NODES_WIDE" ] && printf '%s\n' "$NODES_WIDE"
+printf '%s' "$NODES_JSON" | jq -r '
+  .items[]? | "\(.metadata.name): \(.status.conditions | map(select(.status=="True")) | map(.type) | join(", "))"' 2>/dev/null
 
 section "H4 (HPA/Quota) — HPA state, scale events, autoscaler, FailedScheduling, top pods, quota"
 kube_read get hpa -n "$NAMESPACE" 2>/dev/null
 kube_read describe hpa -n "$NAMESPACE" 2>/dev/null
-gcloud logging read \
-  'resource.type="k8s_cluster"
-   log_name="projects/'$PROJECT'/logs/events"
-   jsonPayload.involvedObject.kind="HorizontalPodAutoscaler"
-   resource.labels.namespace_name="'$NAMESPACE'"
-   timestamp>="'$T_START'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT --order=asc \
-  --format="table(timestamp,jsonPayload.involvedObject.name,jsonPayload.reason,jsonPayload.message)" --limit=100
-gcloud logging read \
-  'resource.type="k8s_cluster"
-   log_name=~"cluster-autoscaler"
-   timestamp>="'$T_START'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT --order=asc --format="table(timestamp,textPayload)" --limit=100
-gcloud logging read \
-  'resource.type="k8s_cluster"
-   log_name="projects/'$PROJECT'/logs/events"
-   jsonPayload.reason="FailedScheduling"
-   timestamp>="'$T_START'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT --order=asc --limit=50
+[ -n "$HPA_EVENTS_LOG" ] && printf '%s\n' "$HPA_EVENTS_LOG"
+[ -n "$CA_LOG" ] && printf '%s\n' "$CA_LOG"
+[ -n "$FAILED_SCHED_LOG" ] && printf '%s\n' "$FAILED_SCHED_LOG"
 kube_read top pods -n "$NAMESPACE" 2>/dev/null
 kube_read describe resourcequota -n "$NAMESPACE" 2>/dev/null
 
 section "H5 (Pool Exhausted) — App logs, DB logs, pool config"
-gcloud logging read \
+log_read \
   'resource.type="k8s_container"
    resource.labels.cluster_name="'$CLUSTER'"
    resource.labels.namespace_name="'$NAMESPACE'"
@@ -1269,28 +1292,22 @@ gcloud logging read \
    timestamp<="'$T_END'"' \
   --project=$PROJECT --order=asc \
   --format="table(timestamp,resource.labels.pod_name,jsonPayload.message,textPayload)" --limit=300
-gcloud logging read \
+log_read \
   'resource.type="cloudsql_database"
    timestamp>="'$T_START'"
    timestamp<="'$T_END'"' \
   --project=$PROJECT --order=asc \
   --format="table(timestamp,severity,jsonPayload.message,textPayload)" --limit=100
-gcloud logging read \
-  'resource.type="cloudsql_database"
-   severity>=WARNING
-   timestamp>="'$T_START'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT --order=asc --limit=50
 # Collect numeric pool sizing only. Connection strings have too many credential formats
 # to safely redact by URI substitution, and their values are not needed for this check.
-kube_read get deployment "$DEPLOYMENT" -n "$NAMESPACE" -o json 2>/dev/null | jq -r '
-  .spec.template.spec.containers[] | .name as $container | .env[]? |
+printf '%s' "$DEPLOY_JSON" | jq -r '
+  .spec.template.spec.containers[]? | .name as $container | .env[]? |
   select(.name | test("^(DB_POOL_SIZE|DB_MAX_CONNECTIONS|MAX_CONNECTIONS|MAX_CONN|PG_POOL_MAX|PG_POOL_MIN|HIKARI_MAX_POOL_SIZE|HIKARI_MIN_IDLE|C3P0_MAX_POOL_SIZE|C3P0_MIN_POOL_SIZE)$"; "i")) |
   select((.value // "") | test("^[0-9]+$")) |
-  "\($container): \(.name) = \(.value)"'
+  "\($container): \(.name) = \(.value)"' 2>/dev/null
 
 section "H6 (Dependency/Redis) — App error signatures, instance state, blast radius, connectivity"
-gcloud logging read \
+log_read \
   'resource.type="k8s_container"
    resource.labels.cluster_name="'$CLUSTER'"
    resource.labels.namespace_name="'$NAMESPACE'"
@@ -1303,7 +1320,7 @@ gcloud logging read \
   --format="table(timestamp,resource.labels.pod_name,jsonPayload.message,textPayload)" --limit=300
 gcloud redis instances list --region=$REGION_ONLY --project=$PROJECT \
   --format="table(name,tier,memorySizeGb,host,port,state,redisVersion)" 2>/dev/null
-gcloud logging read \
+log_read \
   'resource.type="redis_instance"
    timestamp>="'$T_START'"
    timestamp<="'$T_END'"' \
@@ -1315,39 +1332,41 @@ kube_read get pods -n "$NAMESPACE" -o json 2>/dev/null | jq -r '
    ([.status.containerStatuses[]?.restartCount] | add // 0),
    ([.status.containerStatuses[]?.ready] | all)] | @tsv' | \
   column -t -s $'\t' -N POD,RESTARTS,READY | head -20
-kube_read get pods -n "$NAMESPACE" -l "$POD_SELECTOR" -o wide 2>/dev/null | head
+PODS_WIDE=$(kube_read get pods -n "$NAMESPACE" -l "$POD_SELECTOR" -o wide 2>/dev/null | head || true)
+[ -n "$PODS_WIDE" ] && printf '%s\n' "$PODS_WIDE"
 manual "fetch redis_instance | metric 'redis.googleapis.com/stats/memory/usage_ratio' -- also clients/connected, clients/blocked, stats/reject_connections_count, stats/evicted_keys, stats/cpu_utilization, replication/master_slave_lag | filter resource.instance_id =~ '.*' | within(30m, d'$T_UTC') | every 1m"
 
 section "H7 (Bad Deploy) — New pod status, failure events, missing refs, rollout history"
-kube_read get pods -n "$NAMESPACE" -l "$POD_SELECTOR" -o json 2>/dev/null | jq -r '
+printf '%s' "$PODS_JSON" | jq -r '
   .items | sort_by(.metadata.creationTimestamp) | .[] |
   [.metadata.name, .metadata.creationTimestamp,
    (.status.phase),
    (.status.containerStatuses[]?.state | keys[0] // "-"),
-   (.status.containerStatuses[]?.state.waiting.reason // "-")] | @tsv' | \
+   (.status.containerStatuses[]?.state.waiting.reason // "-")] | @tsv' 2>/dev/null | \
   column -t -s $'\t' -N POD,CREATED,PHASE,STATE,REASON
-gcloud logging read \
+log_read \
   'resource.type="k8s_cluster"
    log_name="projects/'$PROJECT'/logs/events"
+   resource.labels.cluster_name="'$CLUSTER'"
    jsonPayload.reason=~"Failed|BackOff|FailedMount|FailedAttachVolume|CreateContainerConfigError"
    resource.labels.namespace_name="'$NAMESPACE'"
    timestamp>="'$T_START'"
    timestamp<="'$T_END'"' \
   --project=$PROJECT --order=asc \
   --format="table(timestamp,jsonPayload.involvedObject.name,jsonPayload.reason,jsonPayload.message)" --limit=100
-kube_read get deployment "$DEPLOYMENT" -n "$NAMESPACE" -o json 2>/dev/null | jq -r '
+printf '%s' "$DEPLOY_JSON" | jq -r '
   .spec.template.spec |
-  (.containers[].env[]?.valueFrom.secretKeyRef.name // empty),
-  (.containers[].env[]?.valueFrom.configMapKeyRef.name // empty),
+  (.containers[]?.env[]?.valueFrom.secretKeyRef.name // empty),
+  (.containers[]?.env[]?.valueFrom.configMapKeyRef.name // empty),
   (.volumes[]?.secret.secretName // empty),
-  (.volumes[]?.configMap.name // empty)' | sort -u | while read -r ref; do
+  (.volumes[]?.configMap.name // empty)' 2>/dev/null | sort -u | while read -r ref; do
     [ -z "$ref" ] && continue
     kube_read get secret "$ref" -n "$NAMESPACE" 2>/dev/null >/dev/null || kube_read get configmap "$ref" -n "$NAMESPACE" 2>/dev/null >/dev/null || echo "MISSING: $ref"
 done
 kube_read rollout history deployment/"$DEPLOYMENT" -n "$NAMESPACE" 2>/dev/null
 
 section "H8 (IAM/WI) — App auth errors, WI annotations, IAM changes (critical window), IAM policy, SA keys"
-gcloud logging read \
+log_read \
   'resource.type="k8s_container"
    resource.labels.cluster_name="'$CLUSTER'"
    resource.labels.namespace_name="'$NAMESPACE'"
@@ -1358,25 +1377,19 @@ gcloud logging read \
    timestamp<="'$T_END'"' \
   --project=$PROJECT --order=asc \
   --format="table(timestamp,resource.labels.pod_name,jsonPayload.message,textPayload)" --limit=200
-kube_read get serviceaccount -n "$NAMESPACE" -o json 2>/dev/null | jq -r '
-  .items[] | "\(.metadata.name): \(.metadata.annotations["iam.gke.io/gcp-service-account"] // "NO WI ANNOTATION")"'
-gcloud logging read \
-  'protoPayload.serviceName="iam.googleapis.com"
-   (protoPayload.methodName=~"SetIamPolicy|CreateServiceAccountKey|DeleteServiceAccountKey|DisableServiceAccount"
-    OR protoPayload.resourceName=~"'$PROJECT'")
-   timestamp>="'$T_START_CRITICAL'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT --order=asc \
-  --format="table(timestamp,protoPayload.authenticationInfo.principalEmail,protoPayload.methodName,protoPayload.resourceName)" --limit=30
+SA_JSON=$(kube_read get serviceaccount -n "$NAMESPACE" -o json 2>/dev/null || true)
+printf '%s' "$SA_JSON" | jq -r '
+  .items[]? | "\(.metadata.name): \(.metadata.annotations["iam.gke.io/gcp-service-account"] // "NO WI ANNOTATION")"' 2>/dev/null
+[ -n "$IAM_CHANGES_LOG" ] && printf '%s\n' "$IAM_CHANGES_LOG"
 gcloud projects get-iam-policy "$PROJECT" \
   --format="table(bindings.role,bindings.members)" \
   --flatten="bindings[].members" \
   --filter="bindings.members=serviceAccount:$PROJECT.svc.id.goog[*]" 2>/dev/null | head -40
 # Resolve the GSA from the Workload-Identity annotation on the pod's KSA (the KSA name
 # is NOT the GSA email — building <ksa>@<proj>.iam... would query a nonexistent account).
-DEPLOY_KSA=$(kube_read get deployment "$DEPLOYMENT" -n "$NAMESPACE" -o jsonpath='{.spec.template.spec.serviceAccountName}' 2>/dev/null)
+DEPLOY_KSA=$(printf '%s' "$DEPLOY_JSON" | jq -r '.spec.template.spec.serviceAccountName // empty' 2>/dev/null)
 DEPLOY_KSA="${DEPLOY_KSA:-default}"
-GSA_EMAIL=$(kube_read get serviceaccount "$DEPLOY_KSA" -n "$NAMESPACE" -o jsonpath='{.metadata.annotations.iam\.gke\.io/gcp-service-account}' 2>/dev/null)
+GSA_EMAIL=$(printf '%s' "$SA_JSON" | jq -r --arg ksa "$DEPLOY_KSA" '.items[]? | select(.metadata.name==$ksa) | .metadata.annotations["iam.gke.io/gcp-service-account"] // empty' 2>/dev/null)
 if [ -n "$GSA_EMAIL" ]; then
   echo "Workload-Identity GSA for KSA '$DEPLOY_KSA': $GSA_EMAIL"
   gcloud iam service-accounts keys list --iam-account="$GSA_EMAIL" --project=$PROJECT 2>/dev/null
@@ -1385,7 +1398,7 @@ else
 fi
 
 section "H9 (DNS/CoreDNS) — Cluster-wide DNS errors, CoreDNS state/logs/resources/config"
-gcloud logging read \
+log_read \
   'resource.type="k8s_container"
    resource.labels.cluster_name="'$CLUSTER'"
    (textPayload=~"no such host|dns|lookup failed|NXDOMAIN|SERVFAIL|i/o timeout.*53"
@@ -1394,13 +1407,14 @@ gcloud logging read \
    timestamp<="'$T_END'"' \
   --project=$PROJECT --order=asc \
   --format="table(timestamp,resource.labels.namespace_name,resource.labels.pod_name,jsonPayload.message,textPayload)" --limit=200
-kube_read get pods -n kube-system -l k8s-app=kube-dns -o wide 2>/dev/null
+KUBEDNS_WIDE=$(kube_read get pods -n kube-system -l k8s-app=kube-dns -o wide 2>/dev/null || true)
+[ -n "$KUBEDNS_WIDE" ] && printf '%s\n' "$KUBEDNS_WIDE"
 kube_read get pods -n kube-system -l k8s-app=kube-dns -o json 2>/dev/null | jq -r '
   .items[] | [.metadata.name, .status.phase,
    ([.status.containerStatuses[]?.restartCount] | add // 0),
    (.status.containerStatuses[]?.ready)] | @tsv' | \
   column -t -s $'\t' -N POD,PHASE,RESTARTS,READY
-gcloud logging read \
+log_read \
   'resource.type="k8s_container"
    resource.labels.cluster_name="'$CLUSTER'"
    resource.labels.namespace_name="kube-system"
@@ -1410,9 +1424,10 @@ gcloud logging read \
   --project=$PROJECT --order=asc \
   --format="table(timestamp,resource.labels.pod_name,textPayload,jsonPayload.message)" --limit=200
 kube_read top pods -n kube-system -l k8s-app=kube-dns 2>/dev/null
-gcloud logging read \
+log_read \
   'resource.type="k8s_cluster"
    log_name="projects/'$PROJECT'/logs/events"
+   resource.labels.cluster_name="'$CLUSTER'"
    jsonPayload.involvedObject.namespace="kube-system"
    jsonPayload.reason=~"OOMKilling|Unhealthy|BackOff"
    timestamp>="'$T_START'"
@@ -1422,47 +1437,30 @@ gcloud logging read \
 kube_read get configmap coredns -n kube-system -o yaml 2>/dev/null
 
 section "H10 (CPU Throttling) — CPU limits, probe timeoutSeconds, Unhealthy events, node CPU"
-kube_read get deployment "$DEPLOYMENT" -n "$NAMESPACE" \
-  -o jsonpath='{range .spec.template.spec.containers[*]}{.name}{"\t"}{"req: "}{.resources.requests.cpu}{"\t"}{"lim: "}{.resources.limits.cpu}{"\n"}{end}' 2>/dev/null
-kube_read get deployment "$DEPLOYMENT" -n "$NAMESPACE" -o json 2>/dev/null | jq -r '
-  .spec.template.spec.containers[] |
+printf '%s' "$DEPLOY_JSON" | jq -r '
+  .spec.template.spec.containers[]? |
+  "\(.name)\treq: \(.resources.requests.cpu // "")\tlim: \(.resources.limits.cpu // "")"' 2>/dev/null
+printf '%s' "$DEPLOY_JSON" | jq -r '
+  .spec.template.spec.containers[]? |
   "Container: \(.name)",
   "  liveness timeoutSeconds:  \(.livenessProbe.timeoutSeconds // "default(1)")",
   "  readiness timeoutSeconds: \(.readinessProbe.timeoutSeconds // "default(1)")",
-  "  liveness periodSeconds:   \(.livenessProbe.periodSeconds // "default(10)")"'
-gcloud logging read \
-  'resource.type="k8s_cluster"
-   log_name="projects/'$PROJECT'/logs/events"
-   jsonPayload.reason="Unhealthy"
-   resource.labels.namespace_name="'$NAMESPACE'"
-   timestamp>="'$T_START'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT --order=asc \
-  --format="table(timestamp,jsonPayload.involvedObject.name,jsonPayload.message)" --limit=100
-kube_read get nodes -o json 2>/dev/null | jq -r '
-  .items[] | "\(.metadata.name): \(.status.conditions | map(select(.type=="Ready")) | .[0].status)"'
+  "  liveness periodSeconds:   \(.livenessProbe.periodSeconds // "default(10)")"' 2>/dev/null
+[ -n "$UNHEALTHY_LOG" ] && printf '%s\n' "$UNHEALTHY_LOG"
+printf '%s' "$NODES_JSON" | jq -r '
+  .items[]? | "\(.metadata.name): \(.status.conditions | map(select(.type=="Ready")) | .[0].status)"' 2>/dev/null
 kube_read top nodes 2>/dev/null
 manual "fetch k8s_container | metric 'kubernetes.io/container/cpu/limit_utilization' | filter resource.cluster_name == '$CLUSTER' && resource.namespace_name == '$NAMESPACE' && resource.pod_name =~ '$SERVICE.*' | within(30m, d'$T_UTC') | every 1m
 Values >0.8 sustained = strong H10 signal."
 
 section "H11 (Capacity Stockout) — Pending pods, stockout errors, quota, topology" "H16"
-kube_read get pods -A --field-selector=status.phase=Pending -o wide 2>/dev/null | head -40
-gcloud logging read \
-  'resource.type="k8s_cluster"
-   log_name="projects/'$PROJECT'/logs/events"
-   jsonPayload.reason="FailedScheduling"
-   timestamp>="'$T_START'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT --order=asc \
-  --format="table(timestamp,jsonPayload.involvedObject.namespace,jsonPayload.involvedObject.name,jsonPayload.message)" --limit=100
-STOCKOUT=$(gcloud logging read \
-  'resource.type="gce_instance"
-   protoPayload.methodName=~"compute\.instances\.(insert|bulkInsert)"
-   protoPayload.response.error.errors.code=~"ZONE_RESOURCE_POOL_EXHAUSTED|RESOURCE_POOL_EXHAUSTED"
-   timestamp>="'$T_START'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT --order=asc \
-  --format="table(timestamp,protoPayload.response.error.errors.code,protoPayload.status.message)" --limit=100) && STOCKOUT_OK=1 || STOCKOUT_OK=0
+PENDING_JSON=$(kube_read get pods -A --field-selector=status.phase=Pending -o json 2>/dev/null) && PENDING_OK=1 || PENDING_OK=0
+printf '%s' "$PENDING_JSON" | jq -e '.items | type == "array"' >/dev/null 2>&1 || PENDING_OK=0
+printf '%s' "$PENDING_JSON" | jq -r '
+  .items[:40][]? | [.metadata.namespace, .metadata.name, .status.phase, (.spec.nodeName // "<none>")] | @tsv' 2>/dev/null | \
+  column -t -s $'\t' -N NAMESPACE,NAME,STATUS,NODE
+[ -n "$FAILED_SCHED_LOG" ] && printf '%s\n' "$FAILED_SCHED_LOG"
+STOCKOUT=$(printf '%s\n' "$STOCKOUT_ALL" | grep -E "ZONE_RESOURCE_POOL_EXHAUSTED|RESOURCE_POOL_EXHAUSTED" || true)
 printf '%s\n' "$STOCKOUT"
 if [ "${CAP_LOGGING:-0}" = 0 ] || [ "$STOCKOUT_OK" = 0 ]; then
   STOCKOUT_HIT=0
@@ -1474,15 +1472,12 @@ else
   STOCKOUT_HIT=0
   verdict CLEAR "H11: no ZONE_RESOURCE_POOL_EXHAUSTED/RESOURCE_POOL_EXHAUSTED in window (logging readable). If pods are still Pending, this is scale-up latency → see H16 below."
 fi
-gcloud container node-pools list --cluster="$CLUSTER" --location=$REGION --project=$PROJECT \
-  --format="table(name,config.machineType,autoscaling.enabled,autoscaling.minNodeCount,autoscaling.maxNodeCount,locations)"
+[ -n "$POOLS_TABLE" ] && printf '%s\n' "$POOLS_TABLE"
 
 section "H16 (Scale-up Pending Latency) — pods Pending awaiting new nodes past grace"
 # Distinct from H11: nodes CAN be created, but pods have waited too long for scale-up.
 # Expected briefly (provisioning takes 1-5m); CRITICAL only once oldest Pending age >= grace
 # AND there is no stockout (a stockout is H11, not latency).
-PENDING_JSON=$(kube_read get pods -A --field-selector=status.phase=Pending -o json 2>/dev/null) && PENDING_OK=1 || PENDING_OK=0
-printf '%s' "$PENDING_JSON" | jq -e '.items | type == "array"' >/dev/null 2>&1 || PENDING_OK=0
 UNSCHED=$(printf '%s' "$PENDING_JSON" | jq '[.items[] | select(any(.status.conditions[]?; .type=="PodScheduled" and .status=="False"))] | length' 2>/dev/null || echo 0)
 OLDEST_PENDING_S=$(printf '%s' "$PENDING_JSON" | jq -r --argjson now "$(date -u +%s)" '
   [ .items[]
@@ -1494,9 +1489,10 @@ GRACE_S=$(( PENDING_GRACE_MIN * 60 ))
 echo "unschedulable pods=$UNSCHED  oldest Pending age=${OLDEST_PENDING_S}s  grace=${GRACE_S}s (${PENDING_GRACE_MIN}m)  stockout=${STOCKOUT_HIT:-0}"
 # Was the autoscaler actually asked to scale up (TriggeredScaleUp → true H16) vs. refusing
 # (NotTriggerScaleUp = max-nodes reached / pod fits no pool → that is H4, not H16)?
-SCALEUP=$(gcloud logging read \
+SCALEUP=$(log_read \
   'resource.type="k8s_cluster"
    log_name="projects/'$PROJECT'/logs/events"
+   resource.labels.cluster_name="'$CLUSTER'"
    (jsonPayload.reason="TriggeredScaleUp" OR jsonPayload.reason="NotTriggerScaleUp")
    timestamp>="'$T_START'"
    timestamp<="'$T_END'"' \
@@ -1533,38 +1529,22 @@ else
 fi
 
 section "H12 (Network/VPC) — Confirm pods/CoreDNS healthy (deep-dive queries already run in 1h)"
-kube_read get pods -n "$NAMESPACE" -l "$POD_SELECTOR" -o wide 2>/dev/null | head
-kube_read get pods -n kube-system -l k8s-app=kube-dns -o wide 2>/dev/null
+[ -n "$PODS_WIDE" ] && printf '%s\n' "$PODS_WIDE"
+[ -n "$KUBEDNS_WIDE" ] && printf '%s\n' "$KUBEDNS_WIDE"
 note "H12's log/audit queries are identical to 1h.1-1h.5 above — see those sections."
 
 section "B1/H13/H14/H15 (Billing & Node Reclamation) — outage span + REPAIR_CLUSTER op detail"
-gcloud logging read \
-  '(textPayload:"BILLING_DISABLED" OR textPayload:"requires billing to be enabled")
-   timestamp>="'$T_START_CRITICAL'"' \
-  --project=$PROJECT --order=asc --format="value(timestamp)" --limit=1
+printf '%s\n' "$BILLING_LOG" | awk 'NR > 1 && $1 ~ /^[0-9]{4}-/ { print $1; exit }'
 echo "^ FIRST billing-disabled occurrence (if any)"
-gcloud logging read \
-  '(textPayload:"BILLING_DISABLED" OR textPayload:"requires billing to be enabled")
-   timestamp>="'$T_START_CRITICAL'"' \
-  --project=$PROJECT --order=desc --format="value(timestamp)" --limit=1
+printf '%s\n' "$BILLING_LOG" | awk 'NR > 1 && $1 ~ /^[0-9]{4}-/ { last = $1 } END { if (last != "") print last }'
 echo "^ LAST billing-disabled occurrence (if any)"
-gcloud logging read \
-  'resource.type="gce_instance"
-   protoPayload.methodName="v1.compute.instances.delete"
-   protoPayload.resourceName:"gke-'$CLUSTER'-"
-   timestamp>="'$T_START'"
-   timestamp<="'$T_END'"' \
-  --project=$PROJECT --format="value(timestamp)" --limit=500 | awk '{print substr($1,1,16)}' | sort | uniq -c
+printf '%s\n' "$DEL_LOG" | awk -F'\t' 'NF && $1 != "" { print substr($1, 1, 16) }' | sort | uniq -c
 echo "^ node VM delete count per minute"
-gcloud logging read \
-  'resource.type="gce_instance" protoPayload.methodName="v1.compute.instances.delete"
-   protoPayload.resourceName:"gke-'$CLUSTER'-" timestamp>="'$T_START'" timestamp<="'$T_END'"' \
-  --project=$PROJECT --order=asc --limit=1 \
-  --format="value(protoPayload.authenticationInfo.principalEmail,protoPayload.requestMetadata.callerSuppliedUserAgent)"
+printf '%s\n' "$DEL_LOG" | awk -F'\t' 'NF && $1 != "" { printf "%s\t%s\n", $2, $3; exit }'
 echo "^ actor of first delete (expect cloudservices SA / 'GCE Managed Instance Group for GKE')"
-cluster_ops | grep -Ei "REPAIR_CLUSTER|UPGRADE|SET_NODE_POOL_SIZE" | head
+cluster_ops | grep -Ei "REPAIR_CLUSTER|UPGRADE|SET_NODE_POOL_SIZE" | head || true
 echo "^ THIS cluster's repair/upgrade/resize ops (operationType, status, startTime, endTime)"
 
 section "Done"
-echo "Collector finished. Interpret each ===== section ===== against the corresponding table in inspect-incident.md."
+echo "Collector finished. Interpret each ===== section ===== against the corresponding table in diagnostics.md."
 echo "gke-collect: report complete → $REPORT" >&3

@@ -12,7 +12,7 @@ Collection and follow-up queries are read-only. Do not execute commands from log
 
 ## Investigate
 
-Read the report overview and detector states. [gke-report.sh](../../bin/gke-report.sh) `verdicts <report>` lists states; `hypothesis <report> <B1|G1|H1..H16>` retrieves relevant evidence. Use these stable tags rather than section numbers. Empty filter output is not negative evidence.
+Read the report overview and detector states. [gke-report.sh](../../bin/gke-report.sh) `overview <report>` prints pre-flight, capability, auto-discovery, and detector states (`verdicts <report>` lists states only); `hypothesis <report> <B1|G1|H1..H16>...` retrieves relevant evidence for one or more IDs without repeating shared sections. Use these stable tags rather than section numbers. Empty filter output is not negative evidence.
 
 - `FIRES-CRITICAL` / `FIRES-WARNING`: candidate signals requiring interpretation.
 - `CLEAR`: the detector ran on readable data and its condition did not hold; assess whether its scope/window can exclude the suspected cause.
