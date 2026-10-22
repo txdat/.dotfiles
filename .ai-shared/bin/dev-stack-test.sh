@@ -6,7 +6,7 @@ SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 STACK="$SCRIPT_DIR/dev-stack.sh"
 GATE="$SCRIPT_DIR/gate-check.sh"
 TEST_ROOT=$(mktemp -d /tmp/dev-stack-test.XXXXXX)
-export AI_PLANS_ROOT="$TEST_ROOT/plans"
+export AI_PLANS_ROOT="$TEST_ROOT/plans" AI_WORKTREES_ROOT="$TEST_ROOT/worktrees"
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 pass() { printf 'PASS: %s\n' "$*"; }
 
@@ -28,15 +28,15 @@ name_of() { case "$1" in "$R") echo root ;; "$C") echo child ;; "$S") echo sib ;
 # write_plan <plan> <status> <branch> [parent pr<K>]
 write_plan() {
   {
-    printf '# Stack test\nStatus: %s | Type: feature | Base: main | Branch: %s | Issue: #12 | Worktree:\n' "$2" "$3"
+    printf '# Stack test\nStatus: %s | Type: feature | Base: main | Branch: %s | Issue: #12\n' "$2" "$3"
     [[ -z "${4-}" ]] || printf 'Stacks On: %s\n' "$4"
     printf '\n## Goal\nA %s.\n\n' "$(basename "$1")"
     printf '## Acceptance Criteria\nAC-1 — outcome\n  Source: request\n  Success: yes\n  Failure: no\n\n'
-    printf '## Test Cases\nTC-1 — scenario\n  Proves: AC-1\n  Fixture: f\n  Action: a\n  Expected: e\n  Test: t::n — filled by execute-feature\n\n'
+    printf '## Test Cases\nTC-1 — scenario\n  Proves: AC-1\n  Fixture: f\n  Action: a\n  Expected: e\n\n'
     printf '## Implementation Steps\nST-1 — change — satisfies TC-1\n'
   } > "$1"
 }
-set_status() { sed -i "s/^Status: [a-z]*/Status: $2/" "$1"; }
+set_status() { sed -i "s/^Status: [^|]*/Status: $2 /" "$1"; }
 run() { (cd "$REPO" && bash "$STACK" "$@"); }
 expect_fail() {
   local label="$1" want="$2" out code=0; shift 2
@@ -72,7 +72,8 @@ pass 'stack lists the root, then every stacked plan, parents first'
 out=$(HOME="$TEST_ROOT" run stack '~/plans/repo/12_stack/pr1.spec.md')
 [[ "$out" == "$R"$'\n'* ]] || fail "stack with ~: $out"
 pass 'a plan path may start with ~'
-out=$(cd "$REPO" && git worktree add -q "$TEST_ROOT/wt" -b feat/root main && cd "$TEST_ROOT/wt" && bash "$STACK" stack "$R")
+WT="$AI_WORKTREES_ROOT/repo-12_stack-pr1"  # the root's own worktree
+out=$(cd "$REPO" && git worktree add -q "$WT" -b feat/root main && cd "$WT" && bash "$STACK" stack "$R")
 [[ "$(wc -l <<<"$out")" -eq 4 ]] || fail "stack from a worktree: $out"
 pass 'stack reads the main root from inside a worktree'
 expect_fail 'stack needs the root' "stacks on $R; pass the stack's root" stack "$C"
@@ -93,8 +94,6 @@ out=$(run review "$R" ready)
 [[ "$out" == "Plan review: READY recorded in $R" ]] || fail "review: $out"
 grep -qE '^Plan review: READY at [0-9a-f]{40}$' "$R" || fail 'review record'
 expect_next 'root wait-user child wait-parent sib wait-parent grand wait-parent' 'a READY record waits for the user to approve'
-printf -- '- Green: %s\n' "$(git -C "$REPO" rev-parse HEAD)" >> "$R"
-expect_next 'root wait-user child wait-parent sib wait-parent grand wait-parent' 'records do not void a review'
 sed -i 's/^A pr1/An edited pr1/' "$R"
 expect_next 'root review-feature child wait-parent sib wait-parent grand wait-parent' 'a spec edit voids the review'
 run review "$R" needs-changes >/dev/null
@@ -113,32 +112,36 @@ expect_next 'root execute-feature child wait-parent sib review-feature grand rev
 
 out=$(run next "$R" --md)
 [[ "$(sed -n 1,2p <<<"$out")" == $'| plan | status | parent | action | reason |\n|---|---|---|---|---|' ]] || fail "md header: $out"
-[[ "$(sed -n 3p <<<"$out")" == '| pr1.spec.md | approved | - | execute-feature | - |' ]] || fail "md row: $out"
-[[ "$(sed -n 4p <<<"$out")" == '| pr2.spec.md | approved | pr1.spec.md | wait-parent | pr1.spec.md must be reviewed first |' ]] || fail "md child row: $out"
+[[ "$(sed -n 3p <<<"$out")" == '| pr1 | 🔵 approved | - | ▶ execute-feature | - |' ]] || fail "md row: $out"
+[[ "$(sed -n 4p <<<"$out")" == '| pr2 | 🔵 approved | pr1 | ⏳ wait-parent | pr1 must be reviewed first |' ]] || fail "md child row: $out"
 [[ "$(wc -l <<<"$out")" -eq 6 ]] || fail "md rows: $out"
-expect_fail 'next takes only --md as an option' 'Usage' next "$R" --json
-pass 'next --md prints a Markdown table'
+expect_fail 'next takes only --md or --tree as an option' 'Usage' next "$R" --json
+pass 'next --md prints a Markdown table with a dot per status and a mark per action'
+out=$(run next "$R" --tree)
+want='pr1 🔵 approved  ▶ execute-feature
+├─ pr2 🔵 approved  ⏳ wait-parent — pr1 must be reviewed first
+│  └─ pr4 ⚪ planning  ▶ review-feature
+└─ pr3 ⚪ planning  ▶ review-feature'
+[[ "$out" == "$want" ]] || fail "tree: $out"
+pass 'next --tree draws the stack with a dot per status and a mark per action'
 
 # ── runnable actions are the gate's ──
 set_status "$R" implemented
 out=$(run next "$R" | awk -F'\t' 'NR==1 { print $4 "|" $5 }')
-[[ "$out" == 'blocked|review-code: Plan records no Worktree.'* ]] || fail "gate reason: $out"
-[[ "$(run next "$R" --md | sed -n 3p)" == *'| blocked | review-code: Plan records no Worktree.'* ]] || fail 'md gate reason'
+[[ "$out" == "blocked|review-code: Found no 'test(red):' commit between main and feat/root "* ]] || fail "gate reason: $out"
+[[ "$(run next "$R" --md | sed -n 3p)" == *"| ⛔ blocked | review-code: Found no 'test(red):' commit"* ]] || fail 'md gate reason'
 
 pass "next reports the gate's reason when it blocks a phase"
 seed=$(git -C "$REPO" rev-parse HEAD)
-for p in "$R" "$C" "$S" "$G"; do printf 'Green: %s\n' "$seed" >> "$p"; done
-set_status "$R" reviewed; set_status "$C" reviewed; set_status "$S" reviewed
+for p in "$R" "$C" "$S"; do set_status "$p" "reviewed $seed"; done
 expect_next 'root done child done sib done grand review-feature' 'the root waits until every plan is reviewed'
 set_status "$R" implemented
 expect_next 'root blocked child blocked sib blocked grand review-feature' 'a reviewed child of a parent back in implementation is blocked'
-set_status "$R" reviewed
 git -C "$REPO" commit -q --allow-empty -m 'fix: root repair'
-printf 'Green: %s\n' "$(git -C "$REPO" rev-parse HEAD)" >> "$R"
-[[ "$(run next "$R" | awk -F'\t' -v p="$C" '$1 == p { print $4 "|" $5 }')" == "blocked|its Green does not contain $R's Green"* ]] || fail 'stale child Green'
+set_status "$R" "reviewed $(git -C "$REPO" rev-parse HEAD)"
+[[ "$(run next "$R" | awk -F'\t' -v p="$C" '$1 == p { print $4 "|" $5 }')" == "blocked|its reviewed SHA does not contain $R's"* ]] || fail 'stale child review'
 pass "a child reviewed before its parent's repair is blocked"
-for p in "$C" "$S"; do printf 'Green: %s\n' "$(git -C "$REPO" rev-parse HEAD)" >> "$p"; done
-set_status "$G" reviewed
+for p in "$C" "$S" "$G"; do set_status "$p" "reviewed $(git -C "$REPO" rev-parse HEAD)"; done
 [[ "$(run next "$R" | awk -F'\t' 'NR==1 { print $4 "|" $5 }')" == 'blocked|create-pr: '* ]] || fail 'create-pr gate'
 pass 'a fully reviewed stack offers create-pr on the root, through its gate'
 set_status "$G" bogus
@@ -175,19 +178,19 @@ pass 'resume clears a stop'
 run review "$S" ready >/dev/null; run stop "$S" x >/dev/null; run resume "$S" >/dev/null
 [[ "$(reason_of "$S")" == wait-user* ]] || fail "a stop voided the review: $(reason_of "$S")"
 pass 'a stop does not void a plan review'
-git -C "$TEST_ROOT/wt" switch -q -c feat/sib
+git -C "$WT" switch -q -c feat/sib
 run stop "$S" 'three failed fixes' >/dev/null
 [[ "$(reason_of "$S")" == stopped* ]] || fail 'branch stop'
-git -C "$TEST_ROOT/wt" switch -q feat/root
-git -C "$TEST_ROOT/wt" commit -q --allow-empty -m 'fix: the parent'
+git -C "$WT" switch -q feat/root
+git -C "$WT" commit -q --allow-empty -m 'fix: the parent'
 [[ "$(reason_of "$S")" == stopped* ]] || fail 'switching the worktree or committing to another branch cleared the stop'
 pass "a shared worktree's switches and other branches' commits keep a stop"
-git -C "$TEST_ROOT/wt" switch -q feat/sib
-git -C "$TEST_ROOT/wt" commit -q --allow-empty -m 'fix: by hand'
+git -C "$WT" switch -q feat/sib
+git -C "$WT" commit -q --allow-empty -m 'fix: by hand'
 [[ "$(reason_of "$S")" != stopped* ]] || fail "a new commit on the plan's branch kept the stop"
 pass "a new commit on the plan's branch clears a stop"
 run stop "$S" 'Failed fixes: 3/3 — TC-1 fails' >/dev/null
-git -C "$TEST_ROOT/wt" commit -q --allow-empty -m 'fix: another try'
+git -C "$WT" commit -q --allow-empty -m 'fix: another try'
 sed -i '/^## Goal/a Narrowed scope.' "$S"
 [[ "$(reason_of "$S")" == 'stopped|Failed fixes: 3/3 — TC-1 fails' ]] || fail "three failed fixes: $(reason_of "$S")"
 run resume "$S" >/dev/null
@@ -195,11 +198,11 @@ run resume "$S" >/dev/null
 pass 'three failed fixes hold through changes until resume'
 run stop "$S" 'Failed fixes: 1/3 — a; Failed fixes: 3/3 — b' >/dev/null
 run stop "$S" 'needs repair' >/dev/null
-git -C "$TEST_ROOT/wt" commit -q --allow-empty -m 'fix: one more'
+git -C "$WT" commit -q --allow-empty -m 'fix: one more'
 [[ "$(reason_of "$S")" == 'stopped|Failed fixes: 1/3 — a; Failed fixes: 3/3 — b' ]] || fail "a later stop released three failed fixes: $(reason_of "$S")"
 run resume "$S" >/dev/null
 run stop "$S" 'Failed fixes: 3/30 — not a count' >/dev/null
-git -C "$TEST_ROOT/wt" commit -q --allow-empty -m 'fix: and another'
+git -C "$WT" commit -q --allow-empty -m 'fix: and another'
 [[ "$(reason_of "$S")" != stopped* ]] || fail 'a 3/30 reason held'
 pass 'three failed fixes hold through later stops, read from every count'
 [[ "$(run next "$R" --md | grep -c '^| ')" -ge 5 ]] || fail 'md after stops'
@@ -213,10 +216,36 @@ pass 'a malformed last record does not count as a verdict'
 X="$DIR/pr7.spec.md"
 write_plan "$X" planning feat/x pr6
 expect_fail 'stop needs a hash' 'Cannot hash' stop "$X" x
-grep -q '^Run stop:' "$X" && fail 'a failed stop wrote a record'
+grep -qs '^pr7:' "$DIR/stops.log" && fail 'a failed stop wrote a record'
 pass 'a failed stop writes no record'
 expect_fail 'review fails when a plan below is missing' 'Cannot hash' review "$X" ready
 grep -q '^Plan review:' "$X" && fail 'review wrote a record after a hash failure'
 pass 'review writes nothing when the hash fails'
 expect_fail 'next fails on a stack it cannot read' 'Unreadable' next "$R"
+
+# ── views of a second stack: multi-line reasons and number order ──
+E="$AI_PLANS_ROOT/repo/12_extra"
+mkdir -p "$E"; write_plan "$E/pr1.spec.md" planning feat/e1
+write_plan "$E/pr2.spec.md" planning feat/e2 pr1
+write_plan "$E/pr10.spec.md" planning feat/e10 pr1
+printf 'ST-2 — orphan\n' >> "$E/pr1.spec.md"
+out=$(run next "$E/pr1.spec.md" --tree)
+[[ "$(wc -l <<<"$out")" -eq 3 && "$(sed -n 1p <<<"$out")" == *'is not closed'*'ST-2 has no satisfies clause'* ]] || fail "multi-line reason in tree: $out"
+[[ "$(sed -n 2,3p <<<"$out" | awk '{ print $1, $2 }')" == $'├─ pr2\n└─ pr10' ]] || fail "children out of number order: $out"
+[[ "$(run next "$E/pr1.spec.md" --md | wc -l)" -eq 5 ]] || fail 'multi-line reason in md'
+[[ "$(run next "$E/pr1.spec.md" | wc -l)" -eq 3 ]] || fail 'multi-line reason in tsv'
+pass 'a multi-line gate reason stays on its plan line, and children list by number'
+expect_fail 'next takes one view option' 'Usage' next "$E/pr1.spec.md" --md --tree
+
+# ── which lines the review hash ignores ──
+state_of() { (cd "$REPO" && REPO_ROOT="$REPO" && . "$SCRIPT_DIR/dev-plan-lib.sh" && review_state "$1"); }
+H="$E/pr1.spec.md"
+write_plan "$H" planning feat/e1
+run review "$H" ready >/dev/null
+set_status "$H" "reviewed $(printf '%040d' 0)"
+[[ "$(state_of "$H")" == READY ]] || fail "a status change voided the review: $(state_of "$H")"
+printf 'Note: added later\n' >> "$H"
+[[ "$(state_of "$H")" == stale ]] || fail 'a line added after approval was ignored'
+pass 'the review hash ignores only the Status value and Plan review records'
+
 printf 'All dev-stack.sh tests passed. Temporary fixtures: %s\n' "$TEST_ROOT"

@@ -99,7 +99,7 @@ realpath -m -- / >/dev/null 2>&1 || block "gate-check.sh requires realpath with 
 GATE_DIR=$(dirname -- "$(realpath -- "${BASH_SOURCE[0]}")")
 REPO_ROOT=$(bash "$GATE_DIR/dev-utils.sh" main-root 2>/dev/null) || block "Cannot resolve the main working-tree root; do not substitute the current linked worktree."
 cd "$REPO_ROOT" || block "Cannot access the main working-tree root: $REPO_ROOT"
-# Git history checks run here, repointed to the plan's worktree when recorded.
+# Git history checks run here, repointed to the plan's worktree when it has one.
 GIT_TREE="$REPO_ROOT"
 
 HOOK_TEXT=$(
@@ -108,11 +108,6 @@ HOOK_TEXT=$(
 )
 
 . "$GATE_DIR/dev-plan-lib.sh"
-
-is_registered_worktree() {
-  [[ "$1" != "$REPO_ROOT" ]] || return 1
-  grep -qxF "worktree $1" <<<"$(git -C "$REPO_ROOT" worktree list --porcelain 2>/dev/null)"
-}
 
 # ── plan resolution ───────────────────────────────────────────────────
 
@@ -135,23 +130,30 @@ resolve_plan() {
 
 load_plan() {
   [[ ! -L "$PLAN" ]] || block "Plan $PLAN is a symlink; a plan is a regular file (skills/dev/plan.md#artifact)."
-  STATUS=$(field "$PLAN" Status)
+  STATUS=$(status_of "$PLAN")
   # Before anything else: a published record ends delivery.
   [[ "$STATUS" != published ]] ||
     block "Plan $PLAN is published; no phase resumes it. For follow-up work, start a new stack in a new directory with design-feature."
-  WT=$(field "$PLAN" Worktree)
-  ACTIVE_WORKTREE=""
-  if [[ -n "$WT" ]]; then
-    if ! is_registered_worktree "$WT" || [[ ! -d "$WT" ]]; then
-      block "Plan records 'Worktree: $WT', which is missing or not a registered worktree. If publication cleanup removed it, rerun dev-publish.sh cleanup $PLAN; otherwise stop and report it; the worktree stays until publication completes (skills/dev/plan.md#worktree)."
-    fi
-    GIT_TREE="$WT"
-    ACTIVE_WORKTREE="$WT"
-  fi
+  local wt
+  wt=$(worktree_of "$PLAN")
+  [[ -z "$wt" ]] || GIT_TREE="$wt"
 }
 
+# Plan $1 has a worktree; the block names where it belongs.
 require_worktree() {
-  [[ -n "$ACTIVE_WORKTREE" ]] || block "Plan records no Worktree. Record the path dev-worktree.sh create printed during execution; if none was printed, stop and report it (skills/dev/plan.md#worktree)."
+  local plan="${1-$PLAN}" name
+  [[ -z "$(worktree_of "$plan")" ]] || return 0
+  name=$(worktree_name "$plan")
+  block "Plan $plan has no worktree: neither $(worktree_path "$name") nor, once its Branch exists, its parent's. Create it with dev-worktree.sh create $name $(field "$plan" Branch) <PR target>, which reattaches an existing Branch, or share an only child's parent worktree with git switch -c <Branch> <parent Branch> there. If publication cleanup removed it, rerun dev-publish.sh cleanup on the plans not yet published (skills/dev/plan.md#worktree)."
+}
+
+# The plan's worktree is on its Branch: a parent and its only child share a
+# worktree, so it may be on the other's.
+require_head() {
+  local branch head
+  branch=$(field "$PLAN" Branch)
+  head=$(git -C "$GIT_TREE" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+  [[ "$head" == "$branch" ]] || block "Worktree $GIT_TREE is on '${head:-a detached HEAD}', not this plan's branch '$branch'; switch it to '$branch' before $SKILL_SLUG (skills/dev/plan.md#worktree)."
 }
 
 # The directory's issue agrees with the header, and the type is known.
@@ -180,7 +182,7 @@ require_parent_rank() {
   PARENT_PLAN=$(stacks_on "$PLAN") || block "Plan has a 'Stacks On:' line that is misplaced, repeated, or malformed. $STACKS_ON_HELP"
   [[ -n "$PARENT_PLAN" ]] || return 0
   [[ -f "$PARENT_PLAN" ]] || block "Parent plan $PARENT_PLAN does not exist. Fix the 'Stacks On:' line."
-  status=$(field "$PARENT_PLAN" Status)
+  status=$(status_of "$PARENT_PLAN")
   [[ "$status" != published ]] ||
     block "Parent plan $PARENT_PLAN is published, and a published plan never becomes a parent. Wait until its stack merges, then start a new stack in a new directory on Base (skills/dev/plan.md#stacks)."
   rank=$(status_rank "$status")
@@ -242,9 +244,6 @@ id_report() {
     fenced { next }
 
     /^## / { sec = trim(substr($0, 4)); next }
-
-    # A run stop reason is free text, not a citation.
-    /^Run stop:/ { next }
 
     {
       line = $0
@@ -390,13 +389,33 @@ resolve_review_base() {
   fi
 }
 
+# PROOF_RE and PROOF_WHAT for plan $1: refactors prove the preserved behavior
+# with a passing baseline commit, the rest with a failing test.
+proof_kind() {
+  if [[ "$(field "$1" Type | tr '[:upper:]' '[:lower:]')" == refactor ]]; then
+    PROOF_RE='^test:[[:space:]]*baseline' PROOF_WHAT="'test: baseline'"
+  else
+    PROOF_RE='^test\(red\):' PROOF_WHAT="'test(red):'"
+  fi
+}
+
+# Plan $1's reviewed SHA holds its proof after base $2, as review-code checked;
+# a status set by hand does not skip it.
+require_reviewed_proof() {
+  local green
+  green=$(green_of "$1")
+  proof_kind "$1"
+  [[ -n "$2" ]] && proof_sequence_ok "$2" "$PROOF_RE" "$green" ||
+    block "Plan $1's reviewed SHA $green has no $PROOF_WHAT commit followed by implementation after ${2:-its PR target}; run review-code on it (skills/dev/plan.md#verification)."
+}
+
 # The plan needs a proof commit followed by at least one implementation
 # commit, and nothing may precede the first proof. Topological order, so a
 # repair merged forward reads as one line of history whatever its dates. A
 # merge commit implements nothing, so it never completes the proof.
 proof_sequence_ok() {
   # ENVIRON, not -v, so awk applies no escape processing to the regex.
-  git -C "$GIT_TREE" log --format='%s' --topo-order --no-merges --reverse "$1..HEAD" 2>/dev/null |
+  git -C "$GIT_TREE" log --format='%s' --topo-order --no-merges --reverse "$1..${3:-HEAD}" 2>/dev/null |
     PROOF_RE="$2" awk '
       $0 ~ ENVIRON["PROOF_RE"] { if (waiting) bad = 1; proofs++; waiting = 1; seen = 1; next }
       { if (!seen) bad = 1; waiting = 0 }
@@ -453,10 +472,12 @@ execute_feature_gate() {
   require_branch
   [[ -z "$PARENT_PLAN" ]] || require_stacked "$PLAN" "$PARENT_PLAN"
   require_current_review
+  # Resuming on an existing Branch happens in the plan's worktree, on it.
+  if branch_exists "$(field "$PLAN" Branch)"; then require_worktree; require_head; fi
 }
 
 review_code_gate() {
-  local target branch head proof_re what count
+  local target branch count
   case "$STATUS" in
     implemented) ;;
     planning|approved) block "Plan status is '$STATUS' — not yet implemented. Run execute-feature first." ;;
@@ -471,21 +492,14 @@ review_code_gate() {
   require_current_review
   # Re-checked after execution, which edits the plan.
   require_ids
-  # A parent and its only child share a worktree, so HEAD must be this plan's.
+  require_head
   branch=$(field "$PLAN" Branch)
-  head=$(git -C "$GIT_TREE" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
-  [[ "$head" == "$branch" ]] || block "Worktree $GIT_TREE is on '${head:-a detached HEAD}', not this plan's branch '$branch'; switch it to '$branch' before code review (skills/dev/plan.md#worktree)."
   target=$(pr_target "$PLAN")
   resolve_review_base "$target" || block "The PR target '$target' is missing or is not an ancestor of '$branch'. If a repair landed on the parent plan's branch, merge it forward first (skills/dev/plan.md#worktree)."
-  # Refactors prove the preserved behavior with a passing baseline commit.
-  if [[ "$(field "$PLAN" Type | tr '[:upper:]' '[:lower:]')" == refactor ]]; then
-    proof_re='^test:[[:space:]]*baseline' what="'test: baseline'"
-  else
-    proof_re='^test\(red\):' what="'test(red):'"
-  fi
-  count=$(git -C "$GIT_TREE" log --format=%s "$REVIEW_BASE..HEAD" 2>/dev/null | grep -Ec "$proof_re" || true)
-  (( count >= 1 )) || block "Found no $what commit between $target and $branch (skills/dev/plan.md#verification)."
-  proof_sequence_ok "$REVIEW_BASE" "$proof_re" || block "Proof is out of sequence: each $what commit needs at least one implementation commit after it, and nothing may come before the first (skills/dev/plan.md#verification)."
+  proof_kind "$PLAN"
+  count=$(git -C "$GIT_TREE" log --format=%s "$REVIEW_BASE..HEAD" 2>/dev/null | grep -Ec "$PROOF_RE" || true)
+  (( count >= 1 )) || block "Found no $PROOF_WHAT commit between $target and $branch (skills/dev/plan.md#verification)."
+  proof_sequence_ok "$REVIEW_BASE" "$PROOF_RE" || block "Proof is out of sequence: each $PROOF_WHAT commit needs at least one implementation commit after it, and nothing may come before the first (skills/dev/plan.md#verification)."
 }
 
 create_pr_gate() {
@@ -498,33 +512,36 @@ create_pr_gate() {
   require_worktree
   require_current_review
   # create-pr publishes a whole stack at once, from its root.
-  local parent plan plan_status parent_green plan_green wt
+  local parent plan plan_status target base=""
   parent=$(stacks_on "$PLAN") || block "Plan has a 'Stacks On:' line that is misplaced, repeated, or malformed. $STACKS_ON_HELP"
   [[ -z "$parent" ]] ||
     block "Plan stacks on $parent. create-pr runs once, on the stack's root $(root_plans "$PLAN" | awk 'NR==1'), and publishes every plan in the stack together (skills/dev/plan.md#stacks)."
+  target=$(field "$PLAN" Base)
+  if target=$(tree_sha "refs/remotes/origin/$target" || tree_sha "refs/heads/$target"); then
+    base=$(git -C "$GIT_TREE" merge-base "$target" "$(green_of "$PLAN")" 2>/dev/null || true)
+  fi
+  require_reviewed_proof "$PLAN" "$base"
   while IFS= read -r plan; do
     [[ "$plan" != '!'* ]] || block "${plan#!} has a 'Stacks On:' line that is misplaced, repeated, malformed, or names no plan, or is a symlink; fix it so create-pr can tell whether it stacks on this plan."
     parent=$(stacks_on "$plan")
     require_stacked "$plan" "$parent"
-    plan_status=$(field "$plan" Status)
+    plan_status=$(status_of "$plan")
     [[ "$plan_status" == reviewed ]] ||
       block "Plan $plan stacks above this plan and is '$plan_status'. The stack publishes together: run create-pr on this root once every plan in it is reviewed (skills/dev/plan.md#stacks)."
     require_current_review "$plan"
-    wt=$(field "$plan" Worktree)
-    [[ -n "$wt" && -d "$wt" ]] && is_registered_worktree "$wt" ||
-      block "Plan $plan records 'Worktree: $wt', which is missing or not a registered worktree. If publication cleanup removed it, rerun dev-publish.sh cleanup on the plans not yet published, children before parents; otherwise stop and report it; each worktree stays until publication completes (skills/dev/plan.md#worktree)."
+    require_worktree "$plan"
     # Only a parent's only child shares its worktree.
-    [[ "$wt" != "$(field "$parent" Worktree)" || "$(child_plans "$parent")" != *$'\n'* ]] ||
+    [[ "$(worktree_of "$plan")" != "$(worktree_of "$parent")" || "$(child_plans "$parent")" != *$'\n'* ]] ||
       block "Plan $plan shares $parent's worktree, but $parent has other children; each of them needs its own worktree (skills/dev/plan.md#worktree)."
     # Reviewed on top of the parent's current reviewed tip, not an older one.
-    contains_parent_green "$plan" "$parent" || {
-      plan_green=$(green_of "$plan"); parent_green=$(green_of "$parent")
-      block "Plan $plan's Green ${plan_green:-(none)} does not contain its parent $parent's Green ${parent_green:-(none)}. Merge the parent forward into $plan (skills/dev/plan.md#worktree), return it to review-code, then run create-pr here."
-    }
+    contains_parent_green "$plan" "$parent" ||
+      block "Plan $plan's reviewed SHA $(green_of "$plan") does not contain its parent $parent's, $(green_of "$parent"). Merge the parent forward into $plan (skills/dev/plan.md#worktree), return it to review-code, then run create-pr here."
+    require_reviewed_proof "$plan" "$(green_of "$parent")"
   done < <(descendant_plans "$PLAN")
 }
 
 resolve_plan
+index_stack "$PLAN"
 load_plan
 require_one_root
 case "$SKILL_SLUG" in

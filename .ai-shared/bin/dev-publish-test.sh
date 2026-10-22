@@ -59,7 +59,7 @@ new_repo() {
   git -C "$dir/main" push -q origin main
   export GH_STORE="$dir/prs.json"
   printf '[]\n' > "$GH_STORE"
-  export AI_PLANS_ROOT="$dir/plans"
+  export AI_PLANS_ROOT="$dir/plans" AI_WORKTREES_ROOT="$dir/wt"
   REPO="$dir/main"
   D="$AI_PLANS_ROOT/main/7_demo"
   mkdir -p "$D"
@@ -71,19 +71,21 @@ commit_file() { printf '%s\n' "$2" > "$1/$2"; git -C "$1" add . && git -C "$1" c
 # A plan's own worktree <name> on branch $2 from $3; prints its path.
 plan_worktree() {
   local wt
-  wt=$(cd "$REPO" && bash "$SCRIPT_DIR/dev-worktree.sh" create "$1" "$2" "$3" "$(dirname "$REPO")/wt" 2>/dev/null) || fail "worktree for $2"
+  wt=$(cd "$REPO" && bash "$SCRIPT_DIR/dev-worktree.sh" create "$1" "$2" "$3" 2>/dev/null) || fail "worktree for $2"
   printf '%s\n' "$wt"
 }
 
-# write_plan <file> <branch> <worktree> <records> [stacks on pr<K>]
+# write_plan <file> <branch> <reviewed sha> [stacks on pr<K>]
 write_plan() {
   {
     printf '# Publish demo\n'
-    printf 'Status: reviewed | Type: feature | Base: main | Branch: %s | Issue: #7 | Worktree: %s\n' "$2" "$3"
-    [[ -z "${5-}" ]] || printf 'Stacks On: %s\n' "$5"
-    printf '\n## Goal\nPublish.\n\n%s\n' "$4"
+    printf 'Status: reviewed %s | Type: feature | Base: main | Branch: %s | Issue: #7\n' "$3" "$2"
+    [[ -z "${4-}" ]] || printf 'Stacks On: %s\n' "$4"
+    printf '\n## Goal\nPublish.\n'
   } > "$1"
 }
+# reviewed <plan> <sha>: what review-code records.
+reviewed() { sed -i "s/^Status: [^|]*/Status: reviewed $2 /" "$1"; }
 
 run() { (cd "$REPO" && bash "$PUBLISH" "$@"); }
 expect_fail() {
@@ -110,8 +112,9 @@ commit_file "$wt" one.txt
 git -C "$wt" switch -q -c feat/demo-2 feat/demo-1
 commit_file "$wt" two.txt
 g1=$(git -C "$REPO" rev-parse feat/demo-1); g2=$(git -C "$REPO" rev-parse feat/demo-2)
-write_plan "$P1" feat/demo-1 "$wt" "Green: $g1"
-write_plan "$P2" feat/demo-2 "$wt" "Green: $g2" pr1
+[[ "$wt" == "$AI_WORKTREES_ROOT/main-7_demo-pr1" ]] || fail "worktree path: $wt"
+write_plan "$P1" feat/demo-1 "$g1"
+write_plan "$P2" feat/demo-2 "$g2" pr1
 
 out=$(run check "$P1")
 [[ "$out" == *$'feat/demo-1\tbase=main'* && "$out" == *'PASS check'* ]] || fail "check root: $out"
@@ -121,12 +124,14 @@ pass "check resolves each plan against its PR target: Base, or its parent plan's
 printf 'other\n' > "$REPO/other.txt" && git -C "$REPO" add other.txt && git -C "$REPO" commit -qm 'feat: unrelated' && git -C "$REPO" push -q origin main
 run check "$P1" >/dev/null
 pass 'an unrelated Base advance does not block check'
-write_plan "$P2" feat/demo-2 "$wt" "Green: $g1" pr1
-expect_fail 'a tip that differs from its Green record blocks' "differs from Green $g1" check "$P2"
-write_plan "$P2" feat/demo-2 "$wt" "Green: $g2" pr1
-printf 'Green: %s\n' "$(git -C "$REPO" rev-parse main)" >> "$P2"
-expect_fail 'the last Green line counts' 'differs from Green' check "$P2"
-write_plan "$P2" feat/demo-2 "$wt" "Green: $g2" pr1
+reviewed "$P2" "$g1"
+expect_fail 'a tip that differs from its reviewed SHA blocks' "differs from the reviewed $g1" check "$P2"
+reviewed "$P2" ''
+expect_fail 'a reviewed status without its SHA blocks' "no 'Status: reviewed <sha>'" check "$P2"
+reviewed "$P2" "${g2:0:7}"
+run check "$P2" >/dev/null
+pass 'an abbreviated reviewed SHA resolves'
+reviewed "$P2" "$g2"
 
 body1="$TEST_ROOT/body1.md"; printf 'First plan. Refs #7\n' > "$body1"
 open_pr feat/demo-1 main "$body1" --draft
@@ -138,11 +143,11 @@ jq '.[0].baseRefName = "main"' "$GH_STORE" > "$GH_STORE.tmp" && mv "$GH_STORE.tm
 # A repair to the parent after its PR opens: re-reviewed, then merged forward.
 git -C "$wt" switch -q feat/demo-1 && printf 'fixed\n' >> "$wt/one.txt" && git -C "$wt" commit -qam 'fix: one'
 g1=$(git -C "$REPO" rev-parse feat/demo-1)
-printf 'Green: %s\n' "$g1" >> "$P1"
+reviewed "$P1" "$g1"
 expect_fail 'a child lacking its parent repair blocks' "does not contain its parent plan's branch feat/demo-1" check "$P2"
 git -C "$wt" switch -q feat/demo-2 && git -C "$wt" merge -q --no-edit feat/demo-1
 g2=$(git -C "$REPO" rev-parse feat/demo-2)
-printf 'Green: %s\n' "$g2" >> "$P2"
+reviewed "$P2" "$g2"
 run check "$P1" >/dev/null && run check "$P2" >/dev/null
 pass "check accepts a repair merged forward, and the plan's own open PR behind a repaired tip"
 git -C "$REPO" push -q origin feat/demo-1
@@ -152,7 +157,7 @@ body2="$TEST_ROOT/body2.md"
 printf 'After https://github.test/o/r/pull/1.\n' > "$body2"
 open_pr feat/demo-2 feat/demo-1 "$body2"
 run verify "$P1" >/dev/null && run verify "$P2" >/dev/null
-pass 'verify accepts bases, tips, Green, and links to the PRs below'
+pass 'verify accepts bases, tips, reviewed SHAs, and links to the PRs below'
 set_body 1 'no links'
 expect_fail 'verify reports a missing link to a PR below' 'body does not link the PR of 7_demo/pr1.spec.md' verify "$P2"
 expect_fail 'cleanup keeps a parent while a plan stacked on it is unpublished' "Unpublished plans stack on $P1" cleanup "$P1"
@@ -165,15 +170,14 @@ expect_fail 'verify does not take pull/12 as a link to pull/1' 'does not link th
 set_body 1 'After #1.'
 run verify "$P2" >/dev/null
 pass 'verify accepts #1 as a link to the PR below'
-printf 'Green: %s\n' "$(git -C "$REPO" rev-parse main)" >> "$P1"
-expect_fail 'verify checks origin against Green' 'origin/feat/demo-1 differs from Green' verify "$P1"
-printf 'Green: %s\n' "$g1" >> "$P1"
+reviewed "$P1" "$(git -C "$REPO" rev-parse main)"
+expect_fail 'verify checks origin against the reviewed SHA' 'origin/feat/demo-1 differs from the reviewed' verify "$P1"
+reviewed "$P1" "$g1"
 
 out=$(run cleanup "$P2")
 [[ "$out" == *"WORKTREE $wt returned to feat/demo-1"* && "$out" == *'deleted feat/demo-2'* && "$out" == *'Status: published'* ]] || fail "shared cleanup: $out"
 [[ -d "$wt" && "$(git -C "$wt" symbolic-ref --short HEAD)" == feat/demo-1 ]] || fail 'the shared worktree was not handed back'
-grep -q "^Status: published | .* | Worktree: *$" "$P2" || fail "published header: $(grep '^Status:' "$P2")"
-grep -q "^Green: $g2" "$P2" || fail 'cleanup dropped the records'
+grep -qx 'Status: published | Type: feature | Base: main | Branch: feat/demo-2 | Issue: #7' "$P2" || fail "published header: $(grep '^Status:' "$P2")"
 pass 'cleanup of a child sharing the worktree hands it back, deletes its branch, and keeps the plan as published'
 [[ "$(run cleanup "$P2")" == *'already complete'* ]] || fail 'cleanup rerun'
 pass 'a cleanup rerun after completion is a no-op'
@@ -194,18 +198,15 @@ new_repo unpushed
 P1="$D/pr1.spec.md"
 wt=$(plan_worktree 7_demo-pr1 feat/u-1 main)
 commit_file "$wt" u1.txt
-write_plan "$P1" feat/u-1 "$wt" "Green: $(git -C "$REPO" rev-parse feat/u-1)"
-sed -i "s#| Worktree: $wt\$#| Worktree: $wt | Owner: dev#" "$P1"
+write_plan "$P1" feat/u-1 "$(git -C "$REPO" rev-parse feat/u-1)"
 open_pr feat/u-1 main "$body1"
 git -C "$wt" commit -q --allow-empty -m 'wip: local only'
 expect_fail 'verify reports a local tip ahead of origin' 'local tip of feat/u-1 differ' verify "$P1"
 git -C "$wt" reset -q --hard origin/feat/u-1
-git -C "$REPO" worktree remove "$wt"
+rm -rf "$wt"  # by hand: Git still registers it
 out=$(run cleanup "$P1")
-[[ "$out" == *"WORKTREE already absent $wt"* && "$out" == *'deleted feat/u-1'* && "$(status_of "$P1")" == published ]] || fail "cleanup resume: $out"
+[[ "$out" == *'WORKTREE none'* && "$out" == *'deleted feat/u-1'* && "$(status_of "$P1")" == published ]] || fail "cleanup resume: $out"
 pass 'a cleanup rerun after the worktree is gone deletes the branch and publishes the plan'
-grep -q '^Status: published | .* | Worktree: | Owner: dev$' "$P1" || fail "a field after Worktree: $(grep '^Status:' "$P1")"
-pass 'publishing clears Worktree and keeps a field after it'
 
 # ── plan paths ──
 expect_fail 'a file outside the plans layout is refused' 'Plan must be' check "$REPO/README.md"
@@ -221,14 +222,14 @@ wtr=$(plan_worktree 7_demo-pr1 feat/root main); commit_file "$wtr" root.txt
 wtc=$(plan_worktree 7_demo-pr2 feat/child feat/root); commit_file "$wtc" child.txt
 wts=$(plan_worktree 7_demo-pr3 feat/sib feat/root); commit_file "$wts" sib.txt
 git -C "$wtc" switch -q -c feat/grand feat/child; commit_file "$wtc" grand.txt
-stack=(1:feat/root:main::"$wtr" 2:feat/child:feat/root:pr1:"$wtc" 3:feat/sib:feat/root:pr1:"$wts" 4:feat/grand:feat/child:pr2:"$wtc")
+stack=(1:feat/root:main: 2:feat/child:feat/root:pr1 3:feat/sib:feat/root:pr1 4:feat/grand:feat/child:pr2)
 for entry in "${stack[@]}"; do
-  IFS=: read -r n branch parent on wt <<<"$entry"
-  write_plan "$D/pr$n.spec.md" "$branch" "$wt" "Green: $(git -C "$REPO" rev-parse "$branch")" "$on"
+  IFS=: read -r n branch parent on <<<"$entry"
+  write_plan "$D/pr$n.spec.md" "$branch" "$(git -C "$REPO" rev-parse "$branch")" "$on"
 done
 printf '\n```\nStacks On: pr3\n```\n' >> "$D/pr2.spec.md"
 for entry in "${stack[@]}"; do
-  IFS=: read -r n _ _ _ _ <<<"$entry"
+  IFS=: read -r n _ <<<"$entry"
   out=$(run check "$D/pr$n.spec.md" 2>&1) || fail "check pr$n: $out"
 done
 pass 'every plan in the tree checks'
@@ -237,11 +238,11 @@ printf 'After #1.\n' > "$TEST_ROOT/tree-2.md"
 printf 'After #1.\n' > "$TEST_ROOT/tree-3.md"
 printf 'After #1, #2.\n' > "$TEST_ROOT/tree-4.md"
 for entry in "${stack[@]}"; do
-  IFS=: read -r n branch parent _ _ <<<"$entry"
+  IFS=: read -r n branch parent _ <<<"$entry"
   open_pr "$branch" "$parent" "$TEST_ROOT/tree-$n.md" --draft
 done
 for entry in "${stack[@]}"; do
-  IFS=: read -r n _ _ _ _ <<<"$entry"
+  IFS=: read -r n _ <<<"$entry"
   out=$(run verify "$D/pr$n.spec.md" 2>&1) || fail "verify pr$n: $out"
 done
 pass 'every plan in the tree verifies, each body linking the PRs below it'
@@ -252,7 +253,7 @@ rm "$D/pr9.spec.md"
 [[ -d "$wtr" ]] || fail 'the parent guard touched the worktree'
 # From inside a worktree: the main repository's plans still resolve.
 for (( k = ${#stack[@]} - 1; k >= 0; k-- )); do
-  IFS=: read -r n _ _ _ _ <<<"${stack[$k]}"
+  IFS=: read -r n _ <<<"${stack[$k]}"
   out=$(cd "$wtr" && bash "$PUBLISH" cleanup "$D/pr$n.spec.md" 2>&1) || fail "cleanup pr$n: $out"
   case "$n" in
     4) [[ "$out" == *"returned to feat/child"* ]] || fail "grandchild cleanup: $out" ;;

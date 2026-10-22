@@ -5,6 +5,7 @@ SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 UTILS="$SCRIPT_DIR/dev-utils.sh"
 WORKTREES="$SCRIPT_DIR/dev-worktree.sh"
 TEST_ROOT=$(mktemp -d /tmp/dev-utils-test.XXXXXX)
+export AI_WORKTREES_ROOT="$TEST_ROOT/worktrees"
 
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 equal() { [[ "$1" == "$2" ]] || fail "$3: expected '$2', got '$1'"; }
@@ -63,15 +64,21 @@ git branch explicit-parent HEAD
 git commit --allow-empty -qm 'main diverged'
 main_tip=$(git rev-parse HEAD)
 parent_tip=$(git rev-parse explicit-parent)
-worktree=$(bash "$WORKTREES" create task feature/task explicit-parent "$TEST_ROOT/worktrees")
+worktree=$(bash "$WORKTREES" create task feature/task explicit-parent)
 equal "$worktree" "$TEST_ROOT/worktrees/main repo-task" 'worktree destination'
 equal "$(git -C "$worktree" rev-parse HEAD)" "$parent_tip" 'explicit parent used instead of main HEAD'
 equal "$(git rev-parse HEAD)" "$main_tip" 'main branch untouched'
 equal "$(cd "$worktree" && bash "$UTILS" main-root)" "$repo" 'root from linked worktree'
-reject bash "$WORKTREES" create task feature/other explicit-parent "$TEST_ROOT/worktrees"
-reject bash "$WORKTREES" create ../escape feature/escape explicit-parent "$TEST_ROOT/worktrees"
-reject bash "$WORKTREES" create missing feature/missing no-such-parent "$TEST_ROOT/worktrees"
+reject bash "$WORKTREES" create task feature/other explicit-parent
+reject bash "$WORKTREES" create ../escape feature/escape explicit-parent
+reject bash "$WORKTREES" create missing feature/missing no-such-parent
 [[ ! -e "$TEST_ROOT/worktrees/main repo-missing" ]] || fail 'invalid parent created a worktree'
+git branch feature/kept explicit-parent && git -C "$worktree" commit --allow-empty -qm unused
+kept=$(bash "$WORKTREES" create kept feature/kept main)
+equal "$(git -C "$kept" symbolic-ref --short HEAD) $(git -C "$kept" rev-parse HEAD)" "feature/kept $parent_tip" 'an existing branch is attached as it is'
+rm -rf "$kept"
+equal "$(bash "$WORKTREES" create kept feature/kept main)" "$kept" 'a worktree deleted by hand is recreated'
+git worktree remove "$kept"
 printf 'PASS: worktree creation, root-only plan, explicit parent, and refusal cases\n'
 
 mkdir -p node_modules vendor "$worktree/vendor"
@@ -98,33 +105,33 @@ git init --bare -q "$TEST_ROOT/origin.git"
 git -C "$repo" remote add origin "$TEST_ROOT/origin.git"
 has_branch() { git -C "$repo" rev-parse --verify -q "refs/heads/$1" >/dev/null; }
 
-pushed=$(bash "$WORKTREES" create pushed feature/pushed main "$TEST_ROOT/worktrees")
+pushed=$(bash "$WORKTREES" create pushed feature/pushed main)
 git -C "$pushed" commit -q --allow-empty -m pushed
 git -C "$pushed" push -q origin feature/pushed
 equal "$(bash "$WORKTREES" remove "$pushed" 2>/dev/null)" 'deleted feature/pushed' 'pushed branch reported deleted'
 [[ ! -e "$pushed" ]] || fail 'pushed worktree not removed'
 ! has_branch feature/pushed || fail 'pushed local branch not deleted'
 
-ahead=$(bash "$WORKTREES" create ahead feature/ahead main "$TEST_ROOT/worktrees")
+ahead=$(bash "$WORKTREES" create ahead feature/ahead main)
 git -C "$ahead" push -q origin feature/ahead
 git -C "$ahead" commit -q --allow-empty -m unpushed
 equal "$(bash "$WORKTREES" remove "$ahead" 2>/dev/null)" 'kept feature/ahead' 'branch ahead of origin reported kept'
 [[ ! -e "$ahead" ]] || fail 'worktree ahead of origin not removed'
 has_branch feature/ahead || fail 'branch with unpushed work was deleted'
 
-never=$(bash "$WORKTREES" create never feature/never main "$TEST_ROOT/worktrees")
+never=$(bash "$WORKTREES" create never feature/never main)
 equal "$(bash "$WORKTREES" remove "$never" 2>/dev/null)" 'kept feature/never' 'never-pushed branch reported kept'
 has_branch feature/never || fail 'never-pushed branch was deleted'
 
 # A stale tracking ref must not stand in for origin after the remote branch is gone.
-gone=$(bash "$WORKTREES" create gone feature/gone main "$TEST_ROOT/worktrees")
+gone=$(bash "$WORKTREES" create gone feature/gone main)
 git -C "$gone" push -q origin feature/gone
 git -C "$repo" fetch -q origin feature/gone:refs/remotes/origin/feature/gone
 git --git-dir="$TEST_ROOT/origin.git" branch -q -D feature/gone
 equal "$(bash "$WORKTREES" remove "$gone" 2>/dev/null)" 'kept feature/gone' 'branch deleted on origin reported kept'
 has_branch feature/gone || fail 'branch trusted a stale tracking ref'
 
-dirty=$(bash "$WORKTREES" create dirty feature/dirty main "$TEST_ROOT/worktrees")
+dirty=$(bash "$WORKTREES" create dirty feature/dirty main)
 git -C "$dirty" push -q origin feature/dirty
 printf 'untracked\n' > "$dirty/scratch.txt"
 reject bash "$WORKTREES" remove "$dirty"
@@ -132,24 +139,24 @@ reject bash "$WORKTREES" remove "$dirty"
 has_branch feature/dirty || fail 'refused removal deleted the branch'
 
 # Each case below would otherwise succeed, so the refusal comes from its own check.
-extra=$(bash "$WORKTREES" create extra feature/extra main "$TEST_ROOT/worktrees")
+extra=$(bash "$WORKTREES" create extra feature/extra main)
 git -C "$extra" push -q origin feature/extra
 reject bash "$WORKTREES" remove "$extra" --keep-branch
 [[ -d "$extra" ]] || fail 'an extra argument still removed the worktree'
 
-detached=$(bash "$WORKTREES" create detached feature/detached main "$TEST_ROOT/worktrees")
+detached=$(bash "$WORKTREES" create detached feature/detached main)
 git -C "$detached" push -q origin feature/detached
 git -C "$detached" checkout -q --detach
 reject bash "$WORKTREES" remove "$detached"
 [[ -d "$detached" ]] || fail 'a detached worktree was removed'
 
 # Linked dependencies go as symlinks, ignored or not; the shared main-root content stays.
-unignored=$(bash "$WORKTREES" create unignored feature/unignored main "$TEST_ROOT/worktrees")
+unignored=$(bash "$WORKTREES" create unignored feature/unignored main)
 bash "$WORKTREES" link-deps "$unignored" node_modules
 git -C "$unignored" push -q origin feature/unignored
 equal "$(bash "$WORKTREES" remove "$unignored" 2>/dev/null)" 'deleted feature/unignored' 'worktree with an unignored dependency link removed'
 printf 'node_modules\n' >> "$(git -C "$repo" rev-parse --git-common-dir)/info/exclude"
-linked=$(bash "$WORKTREES" create linked feature/linked main "$TEST_ROOT/worktrees")
+linked=$(bash "$WORKTREES" create linked feature/linked main)
 bash "$WORKTREES" link-deps "$linked" node_modules
 git -C "$linked" push -q origin feature/linked
 equal "$(bash "$WORKTREES" remove "$linked" 2>/dev/null)" 'deleted feature/linked' 'worktree with an ignored dependency link removed'

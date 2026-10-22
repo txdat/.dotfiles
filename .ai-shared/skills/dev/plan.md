@@ -14,8 +14,8 @@ The workflow applies when the user invokes a phase: design-feature, review-featu
 |---|---|
 | `planning` | design-feature, or any revision |
 | `approved` | the user only |
-| `implemented` | execute-feature, or any change that voids a Green line |
-| `reviewed` | review-code |
+| `implemented` | execute-feature, or any change to a reviewed Branch |
+| `reviewed <sha>` | review-code, with the tip it passed |
 | `published` | create-pr's cleanup |
 
 A gate blocks each phase until its entry status holds. No phase resumes or edits a published plan.
@@ -32,7 +32,7 @@ Write these lines unfenced in the plan:
 
 ```text
 # <title>
-Status: planning | Type: feature|fix|refactor | Base: <branch> | Branch: <branch> | Issue: #N|none | Worktree:
+Status: planning | Type: feature|fix|refactor | Base: <branch> | Branch: <branch> | Issue: #N|none
 Stacks On: pr<K>
 ## Goal
 ## Scope
@@ -51,13 +51,10 @@ TC-1 — <scenario>
   Fixture: <concrete inputs and starting state>
   Action: <operation or event sequence>
   Expected: <exact result and final state, including what must not change>
-  Test: <path::name> — RED at <sha>: <failure>, or baseline at <sha> for a refactor; filled by execute-feature
 ## Implementation Steps
 ST-1 — <change, files/symbols> — satisfies TC-1
   PC-1 — <fact about current code the step relies on> — Check: <command that fails when the fact is false>
-Green: <sha>, recorded by review-code
 Plan review: READY|NEEDS CHANGES at <hash>, recorded by dev-stack.sh review
-Run stop: <reason> at <key>, recorded by dev-stack.sh stop
 ```
 
 `Branch:` is the plan's PR branch, never its Base. `Stacks On:` names the parent plan in this directory, numbered below this one; the root omits it. The PR targets the parent's Branch, or Base for the root.
@@ -68,9 +65,9 @@ IDs are `AC`, `TC`, `ST`, `PC`, and `DD`, numbered from 1, never renumbered or r
 
 ## Changes
 
-An approved spec — Goal, Scope, DDs, ACs, TCs, steps, Base, Branch, and `Stacks On:` — is frozen. Execution and review only add records: `Worktree:`, `Test:` lines with their RED results, `Green:` lines, and `Run stop:` lines, each on one line; the last Green line is the current one. Execution decides only details that are not design choices, such as names and internal structure.
+After approval only `Status:` changes; everything else in the plan is frozen. `Plan review:` lines are written while planning; run-stack records its stops in the stack directory's `stops.log`. Execution decides only details that are not design choices, such as names and internal structure.
 
-Anything else stops the affected work: a failed PC, an unmeetable fixture or obligation, a step that cannot be followed, a different PR split, or new scope. Bring the user options, tradeoffs, and a recommendation. If the user chooses to revise: set `planning`, revise, re-review, and wait for approval again. The worktree stays; the existing Green line is void until review-code records one again.
+Anything else stops the affected work: a failed PC, an unmeetable fixture or obligation, a step that cannot be followed, a different PR split, or new scope. Bring the user options, tradeoffs, and a recommendation. If the user chooses to revise: set `planning`, revise, re-review, and wait for approval again. The worktree stays.
 
 ## Stacks
 
@@ -80,18 +77,18 @@ A child is designed against the specs below it as if implemented. It cites none 
 
 The stack publishes at once as the last step: when every plan in it is `reviewed`, create-pr runs once, on the root, and publishes every plan. A published plan never becomes a parent; later work waits for the stack to merge and starts a new stack directory on Base.
 
-Whoever revises a plan returns every plan above it to `planning` when the contract changes. Only the user drops a plan, and only while it is `planning` with no `Worktree:`; a plan executed once is revised instead. Delete its file. Each of its children returns to `planning` and stacks on the dropped plan's parent; when the root was dropped, its lowest-numbered child becomes the root by deleting its `Stacks On:` line, and the other children stack on it.
+Whoever revises a plan returns every plan above it to `planning` when the contract changes. Only the user drops a plan, and only while it is `planning` and its Branch does not exist; a plan executed once is revised instead. Delete its file. Each of its children returns to `planning` and stacks on the dropped plan's parent; when the root was dropped, its lowest-numbered child becomes the root by deleting its `Stacks On:` line, and the other children stack on it.
 
 ## Worktree
 
-A plan shares its parent's worktree when no other plan stacks on that parent at setup; otherwise, as does a sibling designed later, it creates its own. The create-pr gate refuses a worktree shared between siblings. A linear stack runs in one worktree.
+A plan's worktree is found, never recorded: its own at `~/work/ai-worktrees/<repo>-<issue>_<slug>-pr<N>`, or, once its Branch exists, its parent's. A plan shares its parent's worktree when no other plan stacks on that parent at setup; otherwise, as does a sibling designed later, it creates its own. The create-pr gate refuses a worktree shared between siblings. A linear stack runs in one worktree.
 
-- Create one only with [dev-worktree.sh](../../bin/dev-worktree.sh) `create <issue>_<slug>-pr<N> <Branch> <target>`, where target is the PR target (`origin/<Base>` without a local Base), and no directory argument; record the printed path as `Worktree:`. To share, run `git switch -c <Branch> <parent Branch>` in the parent's worktree and record its path.
+- Create one only with [dev-worktree.sh](../../bin/dev-worktree.sh) `create <issue>_<slug>-pr<N> <Branch> <target>`, where target is the PR target (`origin/<Base>` without a local Base); on an existing Branch it reattaches that Branch as it is. To share, run `git switch -c <Branch> <parent Branch>` in the parent's worktree.
 - One phase runs in a worktree at a time, on the plan's own Branch. A repair to a parent that shares its worktree waits until the child's running phase returns.
-- The worktree stays until create-pr's cleanup: a child sharing it returns it to the parent's Branch, and the plan that created it removes it. If it is missing earlier, stop and report it.
+- The worktree stays until create-pr's cleanup: a child sharing it returns it to the parent's Branch, and the plan that created it removes it. If it goes missing earlier, recreate it with `create`.
 - `link-deps <worktree>` links installed dependencies from the main root. Before any command that changes a linked dependency directory, run `isolate-dep <worktree> <name>`; installing through the symlink corrupts the main root.
 - Run code, tests, and branch Git operations in the worktree. Never stash, reset, or clean to get past unrelated changes in the worktree or the main root.
-- Fix a plan on its own Branch, then merge it forward into each plan above it and rerun their checks; a merge that changes a reviewed plan's tip voids its Green line. Never rebase, reset, or force-push.
+- Fix a plan on its own Branch, then merge it forward into each plan above it and rerun their checks; a merge that changes a reviewed plan's tip returns it to `implemented`. Never rebase, reset, or force-push.
 
 ## Review
 
@@ -108,7 +105,7 @@ Round 1 covers the whole artifact. A re-review covers the prior findings and wha
 Test-first:
 
 1. **RED.** Turn each TC's fixture, action, and expected result into a test. Run it against the unchanged PR target: it must fail for the intended missing behavior — fixture, import, and syntax failures do not count. Refactors instead start with passing tests of the behavior they preserve.
-2. Commit only the tests, plus throwing stubs where a new API needs them, as `test(red): <scope>`, or `test: baseline <scope>` for a refactor. The gate counts these subjects. Run `~/.dotfiles/.ai-shared/bin/dev-check.sh proof <commit> [--test <path>] [--stub <path>]` and read the diff. Fill each TC's `Test:` line with the test, the commit SHA, and its RED failure, or the baseline result for a refactor.
+2. Commit only the tests, plus throwing stubs where a new API needs them, as `test(red): <scope>`, or `test: baseline <scope>` for a refactor. The gate counts these subjects. Run `~/.dotfiles/.ai-shared/bin/dev-check.sh proof <commit> [--test <path>] [--stub <path>]` and read the diff.
 3. **GREEN.** Implement, run the tests, and commit the implementation separately. When it is unclear whether an assertion really depends on the behavior, break the behavior briefly and confirm the test fails.
 
 Rules:

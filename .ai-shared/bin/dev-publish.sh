@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Publication checks for create-pr (../skills/dev/create-pr.md): Green
+# Publication checks for create-pr (../skills/dev/create-pr.md): reviewed-tip
 # checks, PR verification, and cleanup. A plan is one PR; the PR carries code
 # only, and the plan stays outside the repository as a published record.
 #
@@ -41,10 +41,10 @@ load_fields() {
   PARENT_PLAN=$(stacks_on "$PLAN_FILE") || fail "Plan has an unreadable 'Stacks On:' line."
   TARGET=$(pr_target "$PLAN_FILE")
   [[ -n "$TARGET" ]] || fail "No PR target: ${PARENT_PLAN:+parent plan $PARENT_PLAN has no Branch}${PARENT_PLAN:-the plan header has no Base}."
-  WT=$(field "$PLAN_FILE" Worktree)
+  WT=$(worktree_of "$PLAN_FILE")
 }
 
-# Green: <sha>, recorded by review-code.
+# The SHA of `Status: reviewed <sha>`, recorded by review-code.
 green_sha() {
   local sha
   sha=$(green_of "$PLAN_FILE")
@@ -77,10 +77,14 @@ target_sha() {
   fi
 }
 
-# The plans below this one, nearest first.
+# The plans below this one, nearest first; "!<plan>" ends the list at a plan
+# whose Stacks On line cannot be read.
 ancestor_plans() {
   local plan="$PARENT_PLAN"
-  while [[ -n "$plan" ]]; do printf '%s\n' "$plan"; plan=$(stacks_on "$plan"); done
+  while [[ -n "$plan" ]]; do
+    printf '%s\n' "$plan"
+    plan=$(stacks_on "$plan") || { printf '!%s\n' "$plan"; return 0; }
+  done
 }
 
 # ── commands ──────────────────────────────────────────────────────────
@@ -104,10 +108,10 @@ cmd_check() {
     if ! parent_sha=$(git_root merge-base "$target" "$tip"); then
       PROBLEMS+=("no merge base with $TARGET")
     elif ! green=$(green_sha); then
-      PROBLEMS+=("no Green: <sha> record")
+      PROBLEMS+=("no 'Status: reviewed <sha>'")
     else
       [[ "$green" == "$tip" ]] ||
-        PROBLEMS+=("tip $tip differs from Green $green; changed code returns to review")
+        PROBLEMS+=("tip $tip differs from the reviewed $green; changed code returns to review")
       if git_root diff --quiet "$parent_sha" "$green"; then PROBLEMS+=("empty diff from $TARGET"); fi
       (cd "$MAIN_ROOT" && bash "$SCRIPT_DIR/dev-check.sh" artifacts "$parent_sha" "$green") >/dev/null 2>&1 ||
         PROBLEMS+=("conflict markers; run dev-check.sh artifacts $parent_sha $green")
@@ -140,13 +144,14 @@ verify_publication() {
     PROBLEMS+=("PR head, origin, and local tip of $BRANCH differ")
   if green=$(green_sha); then
     [[ -z "$origin_tip" || "$green" == "$origin_tip" ]] ||
-      PROBLEMS+=("origin/$BRANCH differs from Green $green")
+      PROBLEMS+=("origin/$BRANCH differs from the reviewed $green")
   else
-    PROBLEMS+=("no Green record")
+    PROBLEMS+=("no 'Status: reviewed <sha>'")
   fi
   # The body links the PR of every plan below this one.
   while IFS= read -r plan; do
     [[ -n "$plan" ]] || continue
+    if [[ "$plan" == '!'* ]]; then PROBLEMS+=("a plan below, $(plan_label "${plan#!}"), has an unreadable 'Stacks On:' line"); continue; fi
     pbranch=$(field "$plan" Branch)
     pprs=$(prs_for "$pbranch" open)
     if [[ "$(jq length <<<"$pprs")" -ne 1 ]]; then
@@ -166,22 +171,16 @@ cmd_verify() {
   printf 'PASS verify %s\n' "$PLAN_FILE"
 }
 
-# The plan with its Status set to published and its Worktree emptied.
+# The plan with its Status set to published.
 mark_published() {
   local tmp
   tmp=$(mktemp "$PLAN_FILE.XXXXXX")
   chmod --reference="$PLAN_FILE" -- "$tmp"
-  awk '
-    !done && /^Status:/ {
-      sub(/Status:[^|]*/, "Status: published ")
-      if (!sub(/Worktree:[^|]*\|/, "Worktree: |")) sub(/Worktree:[^|]*$/, "Worktree:")
-      done = 1
-    }
-    { print }' "$PLAN_FILE" > "$tmp"
+  awk '!done && /^Status:/ { sub(/Status:[^|]*/, "Status: published "); done = 1 } { print }' "$PLAN_FILE" > "$tmp"
   mv -- "$tmp" "$PLAN_FILE"
 }
 
-# A plan shares its worktree with its parent when both record the same path
+# A plan shares its worktree with its parent when both resolve to the same one
 # (an only child); the plan that created the worktree removes it.
 cmd_cleanup() {
   local checked="$1" out ignored children head tip
@@ -190,10 +189,10 @@ cmd_cleanup() {
   [[ -z "$children" ]] || fail "Unpublished plans stack on $PLAN_FILE or have an unreadable Stacks On line: ${children//$'\n'/ }. Clean up its children first, children before parents; fix an unreadable line first."
   verify_publication >/dev/null
   report_problems || fail 'Publication is not verified; cleanup keeps everything.'
-  if [[ -n "$WT" && -d "$WT" ]]; then
+  if [[ -n "$WT" ]]; then
     [[ -z "$(git -C "$WT" status --porcelain --untracked-files=all)" ]] || fail "Worktree $WT has uncommitted or untracked changes."
     head=$(git -C "$WT" symbolic-ref --quiet --short HEAD || true)
-    if [[ -n "$PARENT_PLAN" && "$(field "$PARENT_PLAN" Worktree)" == "$WT" ]]; then
+    if [[ -n "$PARENT_PLAN" && "$(worktree_of "$PARENT_PLAN")" == "$WT" ]]; then
       # Shared: hand the worktree back to the parent, which removes it later.
       [[ "$head" == "$BRANCH" || "$head" == "$TARGET" ]] || fail "Worktree $WT is on '${head:-a detached HEAD}', neither $BRANCH nor its parent's $TARGET."
       [[ "$head" == "$TARGET" ]] || git -C "$WT" switch --quiet "$TARGET" || fail "Cannot switch $WT to $TARGET."
@@ -214,13 +213,15 @@ cmd_cleanup() {
       out=$(bash "$SCRIPT_DIR/dev-worktree.sh" remove "$WT" 2>&1 | tail -1) || fail "Worktree removal failed: $out"
       printf 'WORKTREE removed %s; %s\n' "$WT" "$out"
     fi
-  elif [[ -n "$WT" ]]; then
-    printf 'WORKTREE already absent %s\n' "$WT"
+  else
+    printf 'WORKTREE none\n'
   fi
   # verify fetched origin, so a branch at origin's tip has nothing unpushed.
   if tip=$(local_sha "$BRANCH"); then
     [[ "$tip" == "$(origin_sha "$BRANCH" || true)" ]] ||
       fail "Local $BRANCH differs from origin; kept. Cleanup stopped; the plan stays unpublished."
+    # A worktree directory deleted by hand still holds the branch until pruned.
+    git_root worktree prune
     git_root branch -q -D "$BRANCH"
     printf 'deleted %s\n' "$BRANCH"
   fi

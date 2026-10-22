@@ -12,12 +12,15 @@ export LC_ALL=C
 # canonical_plan needs realpath -m; macOS ships a realpath without it.
 realpath -m -- / >/dev/null 2>&1 || { printf 'dev-plan-lib.sh requires realpath with -m support (GNU coreutils).\n' >&2; return 1; }
 
-# AI_PLANS_ROOT overrides the root, so tests never touch real plans.
+# AI_PLANS_ROOT and AI_WORKTREES_ROOT override the roots, so tests never
+# touch real plans or worktrees.
 PLANS_ROOT=$(realpath -m -- "${AI_PLANS_ROOT:-$HOME/work/ai-docs/plans}")
+WORKTREES_ROOT=$(realpath -m -- "${AI_WORKTREES_ROOT:-$HOME/work/ai-worktrees}")
 REPO_PLANS="$PLANS_ROOT/$(basename -- "$REPO_ROOT")"
 # A plan path relative to REPO_PLANS.
 PLAN_REL_RE='^[0-9]+_[a-z0-9-]+/pr[1-9][0-9]*\.spec\.md$'
-PLAN_FORMAT="${REPO_PLANS/#"$HOME"/\~}/<issue>_<slug>/pr<N>.spec.md"
+PLAN_FORMAT="$REPO_PLANS/<issue>_<slug>/pr<N>.spec.md"
+[[ "$REPO_PLANS" != "$HOME"/* ]] || PLAN_FORMAT="~/${PLAN_FORMAT#"$HOME"/}"
 
 # ── paths ─────────────────────────────────────────────────────────────
 
@@ -51,56 +54,173 @@ plan_label() { printf '%s\n' "${1#"$REPO_PLANS"/}"; }
 # The N of pr<N>.spec.md.
 plan_number() { local n="${1##*/pr}"; printf '%s\n' "${n%.spec.md}"; }
 
-# One field of the Status line ("Status: x | Base: y | ..."), trimmed.
-field() {
-  awk -v key="$2" '
-    /^Status:/ {
-      n = split($0, f, /\|/)
-      for (i = 1; i <= n; i++) {
-        x = f[i]; gsub(/^[[:space:]]+|[[:space:]]+$/, "", x)
-        if (index(x, key ":") == 1) { sub("^" key ":[[:space:]]*", "", x); print x; exit }
-      }
-      exit
-    }' "$1" 2>/dev/null
+# ── headers ───────────────────────────────────────────────────────────
+
+# Per plan file, one record: "<path> US <Status line> US <raw Stacks On
+# value> US <last Plan review line> US <spec> RS". The Status line is the
+# first outside a fence. The spec is the file without its records: that
+# line's Status value and the Plan review lines. The Stacks On
+# value is "!" when the line is unreadable: anything that reads as a Stacks
+# On line but is not exactly one unindented, plain `Stacks On:` line in the
+# header — indented, bulleted, emphasized, repeated, empty, below the header,
+# or with an unclosed fence — since a missed line would read the plan as a
+# root. An empty file prints nothing.
+PLAN_AWK='
+  function flush() {
+    if (file == "") return
+    printf "%s\037%s\037%s\037%s\037%s\036", file, status,
+      (fenced || n > 1 || bad || (n && line == "")) ? "!" : line, review, text
+  }
+  FNR == 1 { flush(); file = FILENAME; status = line = review = text = ""; got = fenced = body = n = bad = 0 }
+  /^Plan review:/ { review = $0 }
+  !/^Plan review: (READY|NEEDS CHANGES) at [0-9a-f]+$/ {
+    t = $0
+    if (!got && !fenced && /^Status:/) { status = $0; got = 1; sub(/Status:[^|]*/, "Status: ", t) }
+    text = text t "\n"
+  }
+  /^[[:space:]]*(```|~~~)/ { fenced = !fenced; next }
+  fenced { next }
+  /^## / { body = 1 }
+  { l = $0; sub(/^[[:space:]>*_-]+/, "", l) }
+  tolower(l) ~ /^stacks[[:space:]]+on/ {
+    n++; if (body || $0 !~ /^Stacks On:/) bad = 1
+    l = $0; sub(/^Stacks On:[[:space:]]*/, "", l); sub(/[[:space:]]+$/, "", l); line = l
+  }
+  END { flush() }'
+
+# What PLAN_AWK read, by plan path, and each indexed directory's plan files in
+# number order. A process caches every plan it reads, so it reads a plan
+# before changing it, never after.
+declare -gA PLAN_STATUS=() PLAN_STACKS=() PLAN_REVIEW=() PLAN_SPEC=() PLAN_FILES=()
+
+# Reads plans $@, each a readable file, into the cache.
+load_plans() {
+  local f path status stacks review spec
+  for f in "$@"; do PLAN_STATUS[$f]="" PLAN_STACKS[$f]="" PLAN_REVIEW[$f]="" PLAN_SPEC[$f]=""; done
+  while IFS=$'\037' read -r -d $'\036' path status stacks review spec; do
+    PLAN_STATUS[$path]=$status PLAN_STACKS[$path]=$stacks PLAN_REVIEW[$path]=$review PLAN_SPEC[$path]=$spec
+  done < <(awk "$PLAN_AWK" "$@" 2>/dev/null)
 }
 
-# The plan's parent from its `Stacks On: pr<K>` line, as a canonical path in
-# the same directory with K below the plan's own number, so the tree never
-# cycles; empty without one. Fails closed on any line that reads as a Stacks
-# On line but is not exactly one unindented, plain `Stacks On: pr<K>` in the
-# header — indented, bulleted, emphasized, repeated, empty, or below the
-# header — since a missed line would read the plan as a root.
-stacks_on() {
-  local raw k
-  raw=$(awk '/^[[:space:]]*(```|~~~)/ { fenced = !fenced; next }
-    fenced { next }
-    /^## / { body = 1 }
-    { l = $0; sub(/^[[:space:]>*_-]+/, "", l) }
-    tolower(l) ~ /^stacks[[:space:]]+on/ {
-      n++; if (body || $0 !~ /^Stacks On:/) bad = 1
-      sub(/^Stacks On:[[:space:]]*/, ""); sub(/[[:space:]]+$/, ""); line = $0
-    }
-    END { if (fenced || n > 1 || bad || (n && line == "")) exit 1; if (n) print line }' "$1" 2>/dev/null) || return 1
-  [[ -n "$raw" ]] || return 0
-  [[ "$raw" =~ ^pr([1-9][0-9]*)$ ]] || return 1
+# Reads every plan in plan $1's directory, the registered worktrees, and the
+# local branches once, for a process that reads them often and changes none
+# of them. Without it, plans load one at a time and Git is asked each time.
+index_stack() {
+  local dir="${1%/*}" files=() f
+  PLAN_FILES[$dir]=$(printf '%s\n' "$dir"/pr*.spec.md | sort -V)
+  while IFS= read -r f; do [[ ! -f "$f" || ! -r "$f" ]] || files+=("$f"); done <<<"${PLAN_FILES[$dir]}"
+  (( ${#files[@]} == 0 )) || load_plans "${files[@]}"
+  WORKTREE_LIST=$(git -C "$REPO_ROOT" worktree list --porcelain 2>/dev/null) || WORKTREE_LIST=""
+  LOCAL_BRANCHES=$(git -C "$REPO_ROOT" for-each-ref --format='%(refname)' refs/heads 2>/dev/null) || LOCAL_BRANCHES=""
+  GIT_INDEXED=1
+}
+
+# Loads plan $1 unless cached; fails when the file cannot be read.
+plan_loaded() {
+  [[ ! -v PLAN_STATUS[$1] ]] || return 0
+  [[ -f "$1" && -r "$1" ]] || return 1
+  load_plans "$1"
+}
+
+# The *_get readers set REPLY instead of printing, so loops over a stack
+# call them without a subshell; the printing forms wrap them.
+
+# Sets REPLY to one field of plan $1's Status line ("Status: x | Base: y |
+# ..."), trimmed; empty without it. Fails when the file cannot be read.
+field_get() {
+  local part parts
+  REPLY=""
+  plan_loaded "$1" || return 1
+  IFS='|' read -ra parts <<<"${PLAN_STATUS[$1]}"
+  for part in "${parts[@]}"; do
+    part=${part#"${part%%[![:space:]]*}"}; part=${part%"${part##*[![:space:]]}"}
+    [[ "$part" == "$2:"* ]] || continue
+    part=${part#"$2:"}; REPLY=${part#"${part%%[![:space:]]*}"}
+    return 0
+  done
+}
+field() { field_get "$@" || return 1; [[ -z "$REPLY" ]] || printf '%s\n' "$REPLY"; }
+
+# Sets REPLY to the plan's parent from its `Stacks On: pr<K>` line, as a
+# canonical path in the same directory with K below the plan's own number, so
+# the tree never cycles; empty without one. Fails on an unreadable line
+# (PLAN_AWK).
+parent_get() {
+  local k n=${1##*/pr}
+  REPLY=""
+  plan_loaded "$1" || return 1
+  [[ -n "${PLAN_STACKS[$1]}" ]] || return 0
+  [[ "${PLAN_STACKS[$1]}" =~ ^pr([1-9][0-9]*)$ ]] || return 1
   k=${BASH_REMATCH[1]}
-  (( k < $(plan_number "$1") )) || return 1
-  printf '%s/pr%s.spec.md\n' "$(dirname -- "$1")" "$k"
+  (( k < ${n%.spec.md} )) || return 1
+  REPLY="${1%/*}/pr$k.spec.md"
+}
+stacks_on() { parent_get "$1" || return 1; [[ -z "$REPLY" ]] || printf '%s\n' "$REPLY"; }
+
+# Sets REPLY to plan $1's status: its Status value, with a reviewed plan's SHA
+# cut off. A bare `reviewed`, missing its SHA, and any malformed value read as
+# unknown statuses.
+status_get() {
+  field_get "$1" Status || true
+  if [[ "$REPLY" =~ ^reviewed\ [0-9a-f]{7,40}$ ]]; then REPLY=reviewed
+  elif [[ "$REPLY" == reviewed ]]; then REPLY='reviewed without its SHA'; fi
+}
+status_of() { status_get "$1"; printf '%s\n' "$REPLY"; }
+
+# The SHA review-code recorded in `Status: reviewed <sha>`; empty without one.
+green_of() {
+  field_get "$1" Status || true
+  if [[ "$REPLY" =~ ^reviewed\ ([0-9a-f]{7,40})$ ]]; then printf '%s\n' "${BASH_REMATCH[1]}"; fi
 }
 
 # A published plan: create-pr's cleanup finished; no phase resumes it.
-is_published() { [[ "$(field "$1" Status)" == published ]]; }
+is_published() { status_get "$1"; [[ "$REPLY" == published ]]; }
 
-# Unpublished plans stacked on plan $1; "!<plan>" for one whose Stacks On is
-# malformed or names no plan, or that is a symlink, since it may mean $1.
-child_plans() {
-  local f spec
-  for f in "$(dirname -- "$1")"/pr*.spec.md; do
-    [[ -f "$f" && "$f" != "$1" ]] && ! is_published "$f" || continue
-    if [[ -L "$f" ]] || ! spec=$(stacks_on "$f" 2>/dev/null); then printf '!%s\n' "$f"
-    elif [[ "$spec" == "$1" ]]; then printf '%s\n' "$f"
-    elif [[ -n "$spec" && ! -f "$spec" ]]; then printf '!%s\n' "$f"; fi
+# The path dev-worktree.sh create gives worktree <name>.
+worktree_path() { printf '%s/%s-%s\n' "$WORKTREES_ROOT" "${REPO_ROOT##*/}" "$1"; }
+
+# The name plan $1's own worktree is created under: <issue>_<slug>-pr<N>.
+worktree_name() { local dir=${1%/*} n=${1##*/pr}; printf '%s-pr%s\n' "${dir##*/}" "${n%.spec.md}"; }
+
+is_worktree() {
+  local list=${WORKTREE_LIST-}
+  [[ -d "$1" && "$1" != "$REPO_ROOT" ]] || return 1
+  [[ -n "${GIT_INDEXED-}" ]] || list=$(git -C "$REPO_ROOT" worktree list --porcelain 2>/dev/null)
+  [[ $'\n'"$list"$'\n' == *$'\n'"worktree $1"$'\n'* ]]
+}
+
+branch_exists() {
+  if [[ -n "${GIT_INDEXED-}" ]]; then [[ $'\n'"$LOCAL_BRANCHES"$'\n' == *$'\n'"refs/heads/$1"$'\n'* ]]
+  else git -C "$REPO_ROOT" show-ref --verify -q "refs/heads/$1"; fi
+}
+
+# Plan $1's worktree, which nothing records: its own when registered; else,
+# once its Branch exists, the one it shares with its parent; else empty, as
+# for a plan not yet executed.
+worktree_of() {
+  local plan="$1" dir n own
+  while :; do
+    # worktree_path of worktree_name, inline: this runs once per level.
+    dir=${plan%/*}; n=${plan##*/pr}
+    own="$WORKTREES_ROOT/${REPO_ROOT##*/}-${dir##*/}-pr${n%.spec.md}"
+    if is_worktree "$own"; then printf '%s\n' "$own"; return 0; fi
+    field_get "$plan" Branch && [[ -n "$REPLY" ]] && branch_exists "$REPLY" || return 0
+    parent_get "$plan" 2>/dev/null && [[ -n "$REPLY" ]] || return 0
+    plan=$REPLY
   done
+}
+
+# Unpublished plans stacked on plan $1, by number; "!<plan>" for one whose
+# Stacks On is malformed or names no plan, or that is a symlink, since it may
+# mean $1.
+child_plans() {
+  local f
+  while IFS= read -r f; do
+    [[ -f "$f" && "$f" != "$1" ]] && ! is_published "$f" || continue
+    if [[ -L "$f" ]] || ! parent_get "$f"; then printf '!%s\n' "$f"
+    elif [[ "$REPLY" == "$1" ]]; then printf '%s\n' "$f"
+    elif [[ -n "$REPLY" && ! -f "$REPLY" ]]; then printf '!%s\n' "$f"; fi
+  done < <(if [[ -v PLAN_FILES[${1%/*}] ]]; then printf '%s\n' "${PLAN_FILES[${1%/*}]}"; else printf '%s\n' "${1%/*}"/pr*.spec.md | sort -V; fi)
 }
 
 # Every unpublished plan stacked above plan $1, breadth first, each once.
@@ -142,13 +262,8 @@ pr_target() {
   if [[ -n "$parent" ]]; then field "$parent" Branch; else field "$1" Base; fi
 }
 
-# The SHA of plan $1's last `Green: <sha>` line; empty without one.
-green_of() {
-  sed -nE 's/^[[:space:]]*([-*][[:space:]]*)?Green: ([0-9a-f]{7,40})([^0-9a-f].*)?$/\2/p' "$1" 2>/dev/null | tail -1
-}
-
 # Whether plan $1 was reviewed on top of its parent $2's current reviewed tip:
-# its Green contains the parent's Green.
+# its reviewed SHA contains the parent's.
 contains_parent_green() {
   local parent_green plan_green
   parent_green=$(green_of "$2"); plan_green=$(green_of "$1")
@@ -156,18 +271,14 @@ contains_parent_green() {
     git -C "$REPO_ROOT" merge-base --is-ancestor "$parent_green" "$plan_green" 2>/dev/null
 }
 
-# The spec without its records: Plan review and Run stop lines, Green lines
-# as green_of reads them, Test lines of the Test Cases section, and the Status
-# and Worktree values. Base, Branch, Type, Issue, and Stacks On stay, as does
-# a Test or Green line written as spec text elsewhere.
-spec_text() {
-  awk '
-    /^## / { tc = ($0 ~ /^## Test Cases[[:space:]]*$/) }
-    /^Plan review:/ || /^Run stop:/ { next }
-    /^[[:space:]]*([-*][[:space:]]*)?Green: [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]+([^0-9a-f].*)?$/ { next }
-    tc && /^[[:space:]]*Test:/ { next }
-    !done && /^Status:/ { gsub(/Status:[^|]*/, "Status: "); gsub(/Worktree:[^|]*/, "Worktree: "); done = 1 }
-    { print }' "$1"
+# Sets REPLY to plan $1's spec, without trailing newlines, and SPEC_LAST to its
+# last Plan review line; both empty for a file it cannot read.
+spec_get() {
+  REPLY="" SPEC_LAST=""
+  plan_loaded "$1" || return 0
+  SPEC_LAST=${PLAN_REVIEW[$1]}
+  REPLY=${PLAN_SPEC[$1]}
+  REPLY=${REPLY%"${REPLY##*[!$'\n']}"}
 }
 
 # A hash of plan $1's spec and the specs below it, so a change to any of them
@@ -177,8 +288,10 @@ plan_hash() {
   local plan="$1" text=""
   while [[ -n "$plan" ]]; do
     [[ -f "$plan" ]] || return 1
-    text+="$(spec_text "$plan")"$'\n'
-    plan=$(stacks_on "$plan") || return 1
+    spec_get "$plan"
+    text+="$REPLY"$'\n'
+    parent_get "$plan" || return 1
+    plan=$REPLY
   done
   printf '%s' "$text" | git hash-object --stdin
 }
@@ -188,7 +301,8 @@ plan_hash() {
 # empty without one. Fails when the hash does.
 review_state() {
   local rec hash
-  rec=$(grep '^Plan review:' "$1" | tail -1 || true)
+  spec_get "$1"
+  rec=$SPEC_LAST
   [[ -n "$rec" ]] || return 0
   hash=$(plan_hash "$1") || return 1
   if [[ "$rec" =~ ^Plan\ review:\ (READY|NEEDS\ CHANGES)\ at\ ([0-9a-f]{40,64})$ && "${BASH_REMATCH[2]}" == "$hash" ]]; then
