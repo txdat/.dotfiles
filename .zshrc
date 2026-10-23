@@ -280,3 +280,12 @@ md2pdf() {
 }
 '
 }
+
+npx() {
+    if [[ $1 == jest ]]; then
+        shift
+        NODE_OPTIONS="--max-old-space-size=2048" command npx jest --runInBand --bail=1 --no-watchman "$@"
+    else
+        command npx "$@"
+    fi
+}
