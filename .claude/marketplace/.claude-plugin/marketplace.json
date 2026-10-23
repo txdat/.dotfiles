@@ -14,6 +14,11 @@
       "name": "pyright-lsp",
       "source": "./plugins/pyright-lsp",
       "description": "Python language server"
+    },
+    {
+      "name": "dev-stack-next",
+      "source": "./plugins/dev-stack-next",
+      "description": "/dev-stack-next <spec>: show the progress tree of a plan stack"
     }
   ]
 }
