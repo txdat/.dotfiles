@@ -144,7 +144,7 @@ require_worktree() {
   local plan="${1-$PLAN}" name
   [[ -z "$(worktree_of "$plan")" ]] || return 0
   name=$(worktree_name "$plan")
-  block "Plan $plan has no worktree: neither $(worktree_path "$name") nor, once its Branch exists, its parent's. Create it with dev-worktree.sh create $name $(field "$plan" Branch) <PR target>, which reattaches an existing Branch, or share an only child's parent worktree with git switch -c <Branch> <parent Branch> there. If publication cleanup removed it, rerun dev-publish.sh cleanup on the plans not yet published (skills/dev/plan.md#worktree)."
+  block "Plan $plan has no worktree: neither $(worktree_path "$name") nor, once its Branch exists, its parent's. Create it with dev-worktree.sh create $name $(field "$plan" Branch) <PR target> [sparse directory ...], which reattaches an existing Branch, or share an only child's parent worktree with git switch -c <Branch> <parent Branch> there. If publication cleanup removed it, rerun dev-publish.sh cleanup on the plans not yet published (skills/dev/plan.md#worktree)."
 }
 
 # The plan's worktree is on its Branch: a parent and its only child share a

@@ -6,12 +6,13 @@ SCRIPT_DIR=$(dirname -- "$(realpath -- "${BASH_SOURCE[0]}")")
 fail() { printf '%s\n' "$*" >&2; exit 1; }
 usage() {
   printf '%s\n' \
-    'Usage: dev-worktree.sh create <slug> <branch> <parent>' \
+    'Usage: dev-worktree.sh create <slug> <branch> <parent> [directory ...]' \
     '       dev-worktree.sh link-deps <worktree> [dependency-name ...]' \
     '       dev-worktree.sh isolate-dep <worktree> <dependency-name>' \
     '       dev-worktree.sh remove <worktree>' \
     'create makes <repo>-<slug> under $AI_WORKTREES_ROOT, or $HOME/work/ai-worktrees, on <branch> from <parent>,' \
     'or on <branch> as it is when it exists, and prints the new path.' \
+    'Directories make it a cone-mode sparse checkout of root files plus those repo-relative directories.' \
     'link-deps defaults to node_modules vendor .venv venv Pods.' \
     'Dependencies must be direct-child directory names. Existing local content is preserved.' \
     'remove unlinks link-deps links, deletes a clean worktree, then its local branch only when origin/<branch> has the same tip;' \
@@ -21,6 +22,13 @@ usage() {
 
 valid_name() {
   [[ "$1" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]*$ || "$1" =~ ^\.[a-zA-Z0-9][a-zA-Z0-9._-]*$ ]] || fail "Invalid directory name: $1"
+}
+
+# A repo-relative directory: valid names joined by single slashes. One anchored
+# match over the whole argument, so no newline or other byte slips past it.
+valid_dir() {
+  local name='\.?[a-zA-Z0-9][a-zA-Z0-9._-]*'
+  [[ "$1" =~ ^$name(/$name)*/?$ ]] || fail "Invalid directory: $1"
 }
 
 registered_worktree() {
@@ -40,9 +48,11 @@ REPO_ROOT="$MAIN_ROOT"
 
 case "$1" in
   create)
-    [[ $# -eq 4 ]] || fail 'create requires slug, branch, and parent.'
+    [[ $# -ge 4 ]] || fail 'create requires slug, branch, and parent.'
     slug="$2"; branch="$3"; parent="$4"
+    shift 4
     valid_name "$slug"
+    for dir in "$@"; do valid_dir "$dir"; done
     git check-ref-format --branch "$branch" >/dev/null
     [[ -n "$parent" ]] || fail 'An explicit parent is required.'
     git -C "$MAIN_ROOT" rev-parse --verify --quiet --end-of-options "${parent}^{commit}" >/dev/null || fail "Parent does not resolve: $parent"
@@ -52,10 +62,23 @@ case "$1" in
     # A plan whose worktree went missing gets it back on its existing branch;
     # prune drops the registration a deleted directory leaves behind.
     git -C "$MAIN_ROOT" worktree prune
+    # Sparse: check out only after the cone is set. Git turns on the shared
+    # extensions.worktreeConfig and keeps the cone in this worktree's config, so
+    # the main root stays a full checkout.
+    add=(git -C "$MAIN_ROOT" worktree add); [[ $# -eq 0 ]] || add+=(--no-checkout)
+    created=""
     if git -C "$MAIN_ROOT" show-ref --verify -q "refs/heads/$branch"; then
-      git -C "$MAIN_ROOT" worktree add "$destination" "$branch" >&2
+      "${add[@]}" "$destination" "$branch" >&2
     else
-      git -C "$MAIN_ROOT" worktree add "$destination" -b "$branch" "$parent" >&2
+      created=$(git -C "$MAIN_ROOT" rev-parse "${parent}^{commit}")
+      "${add[@]}" "$destination" -b "$branch" "$parent" >&2
+    fi
+    if [[ $# -gt 0 ]] && ! { git -C "$destination" sparse-checkout set --cone -- "$@" >&2 && git -C "$destination" checkout >&2; }; then
+      # Nothing is checked out yet. Undo the worktree and any branch made here,
+      # which the gates would otherwise take as this plan's or its parent's.
+      git -C "$MAIN_ROOT" worktree remove --force "$destination" >&2
+      [[ -z "$created" ]] || git -C "$MAIN_ROOT" update-ref -d "refs/heads/$branch" "$created"
+      fail "Sparse checkout failed; removed $destination${created:+ and branch $branch}."
     fi
     printf '%s\n' "$destination" ;;
   link-deps)
