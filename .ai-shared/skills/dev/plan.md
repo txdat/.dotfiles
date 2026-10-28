@@ -22,7 +22,7 @@ A gate blocks each phase until its entry status holds. No phase resumes or edits
 
 ## Artifact
 
-One plan delivers one PR. Plans live outside the repository, at `~/work/ai-docs/plans/<repo>/<issue>_<slug>/pr<N>.spec.md`: `<repo>` is the main working tree's directory name ([dev-utils.sh](../../bin/dev-utils.sh) `main-root`), `<issue>` the issue number or `0`, and `<slug>` lowercase words joined by hyphens. One directory holds one stack; a parent's number is below its children's. Plans are never committed: the code, its tests, and the PR carry what ships. Every phase takes exactly one plan path; never pick a plan by slug or recency.
+One plan delivers one PR. Plans live outside the repository, at `~/work/plans/<repo>/<issue>_<slug>/pr<N>.spec.md`: `<repo>` is the main working tree's directory name ([dev-utils.sh](../../bin/dev-utils.sh) `main-root`), `<issue>` the issue number or `0`, and `<slug>` lowercase words joined by hyphens. One directory holds one stack; a parent's number is below its children's. Plans are never committed: the code, its tests, and the PR carry what ships. Every phase takes exactly one plan path; never pick a plan by slug or recency.
 
 Write plan, PR, and review prose in the linked issue's primary language, or English without one. Keep headings, field names, statuses, IDs, code, and paths as written below.
 
@@ -81,11 +81,12 @@ Whoever revises a plan returns every plan above it to `planning` when the contra
 
 ## Worktree
 
-A plan's worktree is found, never recorded: its own at `~/work/ai-worktrees/<repo>-<issue>_<slug>-pr<N>`, or, once its Branch exists, its parent's. A plan shares its parent's worktree when no other plan stacks on that parent at setup; otherwise, as does a sibling designed later, it creates its own. The create-pr gate refuses a worktree shared between siblings. A linear stack runs in one worktree.
+A plan's worktree is found, never recorded: its own at `~/work/wt/<repo>-<issue>_<slug>-pr<N>`, or, once its Branch exists, its parent's. A plan shares its parent's worktree when no other plan stacks on that parent at setup; otherwise, as does a sibling designed later, it creates its own. The create-pr gate refuses a worktree shared between siblings. A linear stack runs in one worktree.
 
 - Create one only with [dev-worktree.sh](../../bin/dev-worktree.sh) `create <issue>_<slug>-pr<N> <Branch> <target>`, where target is the PR target (`origin/<Base>` without a local Base); on an existing Branch it reattaches that Branch as it is. To share, run `git switch -c <Branch> <parent Branch>` in the parent's worktree.
+- Append the repo-relative directories the plan changes, plus those its build and tests read, to make a cone-mode sparse checkout; root files always come along. Omit them for a full checkout. In a sparse worktree, run `git sparse-checkout add <dir>` before a phase, a child sharing it, or a merge forward touches another directory.
 - One phase runs in a worktree at a time, on the plan's own Branch. A repair to a parent that shares its worktree waits until the child's running phase returns.
-- The worktree stays until create-pr's cleanup: a child sharing it returns it to the parent's Branch, and the plan that created it removes it. If it goes missing earlier, recreate it with `create`.
+- The worktree stays until create-pr's cleanup: a child sharing it returns it to the parent's Branch, and the plan that created it removes it. If it goes missing earlier, recreate it with `create`, passing the directories again; nothing records them.
 - `link-deps <worktree>` links installed dependencies from the main root. Before any command that changes a linked dependency directory, run `isolate-dep <worktree> <name>`; installing through the symlink corrupts the main root.
 - Run code, tests, and branch Git operations in the worktree. Never stash, reset, or clean to get past unrelated changes in the worktree or the main root.
 - Fix a plan on its own Branch, then merge it forward into each plan above it and rerun their checks; a merge that changes a reviewed plan's tip returns it to `implemented`. Never rebase, reset, or force-push.

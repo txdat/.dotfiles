@@ -81,6 +81,40 @@ equal "$(bash "$WORKTREES" create kept feature/kept main)" "$kept" 'a worktree d
 git worktree remove "$kept"
 printf 'PASS: worktree creation, root-only plan, explicit parent, and refusal cases\n'
 
+full=$(bash "$WORKTREES" create sparse-base sparse-base main)
+mkdir -p "$full/keep/deep" "$full/other" "$full/skip"
+for path in top.txt keep/shallow.txt keep/deep/f.txt other/f.txt skip/f.txt; do printf '%s\n' "$path" > "$full/$path"; done
+git -C "$full" add . && git -C "$full" commit -qm dirs
+git worktree remove "$full"
+# A full worktree add runs post-checkout with skip/ written; the sparse path must
+# not. The environment pins hooksPath so a user's core.hooksPath cannot skip it.
+hook="$(git rev-parse --git-common-dir)/hooks/post-checkout"
+printf '%s\n' '#!/usr/bin/env bash' "[[ ! -e skip ]] || echo full >> '$TEST_ROOT/checkouts.log'" > "$hook" && chmod +x "$hook"
+sparse=$(GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0="$(dirname "$hook")" bash "$WORKTREES" create sparse feature/sparse sparse-base keep/deep other)
+rm "$hook"
+[[ "$(cat "$TEST_ROOT/checkouts.log" 2>/dev/null)" != *full* ]] || fail 'the sparse worktree was fully checked out before its cone was set'
+equal "$(cd "$sparse" && git ls-files -t | LC_ALL=C sort | tr '\n' ' ')" 'H README.md H keep/deep/f.txt H keep/shallow.txt H other/f.txt H top.txt S skip/f.txt ' 'cone checks out root files and the given directories'
+[[ ! -e "$sparse/skip" ]] || fail 'directory outside the cone checked out'
+equal "$(git -C "$sparse" status --porcelain --untracked-files=all)" '' 'sparse worktree clean'
+equal "$(git config core.sparseCheckout || true)" '' 'main root stays a full checkout'
+equal "$(bash "$WORKTREES" remove "$sparse" 2>/dev/null)" 'kept feature/sparse' 'sparse worktree removed'
+again=$(bash "$WORKTREES" create sparse feature/sparse main other)
+equal "$(git -C "$again" sparse-checkout list) $(git -C "$again" rev-parse HEAD)" "other $(git rev-parse sparse-base)" 'an existing branch is reattached sparse'
+git worktree remove "$again"
+for dir in ../escape /abs 'a//b' -x . a/../b $'src\nlib' ''; do reject bash "$WORKTREES" create bad feature/bad main "$dir"; done
+[[ ! -e "$TEST_ROOT/worktrees/main repo-bad" ]] && ! git rev-parse -q --verify refs/heads/feature/bad >/dev/null || fail 'an invalid directory created a worktree or branch'
+# A stand-in git whose sparse-checkout fails: create removes the empty worktree.
+mkdir -p "$TEST_ROOT/failing-git"
+printf '%s\n' '#!/usr/bin/env bash' 'for a; do [[ $a == sparse-checkout ]] && exit 1; done' "exec $(command -v git) \"\$@\"" > "$TEST_ROOT/failing-git/git"
+chmod +x "$TEST_ROOT/failing-git/git"
+out=$(PATH="$TEST_ROOT/failing-git:$PATH" bash "$WORKTREES" create failed feature/failed main other 2>&1) && fail 'a failed sparse checkout succeeded'
+[[ "$out" == *'Sparse checkout failed'* ]] || fail "sparse failure message: $out"
+[[ ! -e "$TEST_ROOT/worktrees/main repo-failed" && "$(git worktree list)" != *repo-failed* ]] || fail 'a failed sparse checkout left a worktree'
+! git rev-parse -q --verify refs/heads/feature/failed >/dev/null || fail 'a failed sparse checkout left the branch it created'
+PATH="$TEST_ROOT/failing-git:$PATH" bash "$WORKTREES" create failed feature/sparse main other >/dev/null 2>&1 && fail 'a failed reattach succeeded'
+git rev-parse -q --verify refs/heads/feature/sparse >/dev/null || fail 'a failed reattach deleted an existing branch'
+printf 'PASS: sparse worktree creation, rollback, and directory refusals\n'
+
 mkdir -p node_modules vendor "$worktree/vendor"
 printf 'shared sentinel\n' > node_modules/keep.txt
 printf 'local sentinel\n' > "$worktree/vendor/keep.txt"

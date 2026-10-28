@@ -11,10 +11,10 @@ git -C "$repo" config user.email handoff-path@example.test
 git -C "$repo" config user.name handoff-path-test
 git -C "$repo" commit --allow-empty -qm seed
 cd "$repo"
-[[ "$(CLAUDE_CODE_SESSION_ID=env-session bash "$SCRIPT_DIR/handoff-path.sh")" == "$HOME/work/ai-docs/handoff/env-session.md" ]] || fail 'session id from environment'
-[[ "$(CLAUDE_CODE_SESSION_ID=env-session bash "$SCRIPT_DIR/handoff-path.sh" arg-session)" == "$HOME/work/ai-docs/handoff/arg-session.md" ]] || fail 'explicit session id overrides environment'
+[[ "$(CLAUDE_CODE_SESSION_ID=env-session bash "$SCRIPT_DIR/handoff-path.sh")" == "$HOME/work/handoff/env-session.md" ]] || fail 'session id from environment'
+[[ "$(CLAUDE_CODE_SESSION_ID=env-session bash "$SCRIPT_DIR/handoff-path.sh" arg-session)" == "$HOME/work/handoff/arg-session.md" ]] || fail 'explicit session id overrides environment'
 # The path depends on the session only, not on the repository or worktree.
-[[ "$(cd "$TEST_ROOT" && CLAUDE_CODE_SESSION_ID= bash "$SCRIPT_DIR/handoff-path.sh" 0a1b-2c3d)" == "$HOME/work/ai-docs/handoff/0a1b-2c3d.md" ]] || fail 'outside a repository'
+[[ "$(cd "$TEST_ROOT" && CLAUDE_CODE_SESSION_ID= bash "$SCRIPT_DIR/handoff-path.sh" 0a1b-2c3d)" == "$HOME/work/handoff/0a1b-2c3d.md" ]] || fail 'outside a repository'
 reject env CLAUDE_CODE_SESSION_ID= bash "$SCRIPT_DIR/handoff-path.sh"
 reject env CLAUDE_CODE_SESSION_ID= bash "$SCRIPT_DIR/handoff-path.sh" ../escape
 reject env CLAUDE_CODE_SESSION_ID=../escape bash "$SCRIPT_DIR/handoff-path.sh"

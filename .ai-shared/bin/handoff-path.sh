@@ -3,7 +3,7 @@
 set -euo pipefail
 if [[ "${1-}" == --help || "${1-}" == -h ]]; then
   printf '%s\n' 'Usage: handoff-path.sh [session-id]' \
-    'Prints $HOME/work/ai-docs/handoff/<session-id>.md; writes nothing.' \
+    'Prints $HOME/work/handoff/<session-id>.md; writes nothing.' \
     'Defaults to $CLAUDE_CODE_SESSION_ID; an argument overrides it. Fails without an id.'
   exit 0
 fi
@@ -24,4 +24,4 @@ else
   exit 2
 fi
 
-printf '%s/work/ai-docs/handoff/%s.md\n' "$HOME" "$id"
+printf '%s/work/handoff/%s.md\n' "$HOME" "$id"

@@ -14,8 +14,8 @@ realpath -m -- / >/dev/null 2>&1 || { printf 'dev-plan-lib.sh requires realpath 
 
 # AI_PLANS_ROOT and AI_WORKTREES_ROOT override the roots, so tests never
 # touch real plans or worktrees.
-PLANS_ROOT=$(realpath -m -- "${AI_PLANS_ROOT:-$HOME/work/ai-docs/plans}")
-WORKTREES_ROOT=$(realpath -m -- "${AI_WORKTREES_ROOT:-$HOME/work/ai-worktrees}")
+PLANS_ROOT=$(realpath -m -- "${AI_PLANS_ROOT:-$HOME/work/plans}")
+WORKTREES_ROOT=$(realpath -m -- "${AI_WORKTREES_ROOT:-$HOME/work/wt}")
 REPO_PLANS="$PLANS_ROOT/$(basename -- "$REPO_ROOT")"
 # A plan path relative to REPO_PLANS.
 PLAN_REL_RE='^[0-9]+_[a-z0-9-]+/pr[1-9][0-9]*\.spec\.md$'

@@ -18,7 +18,7 @@ usage() {
     'Usage: dev-publish.sh check <plan>' \
     '       dev-publish.sh verify <plan>' \
     '       dev-publish.sh cleanup <plan> [--ignored-checked]' \
-    '<plan> is ~/work/ai-docs/plans/<repo>/<issue>_<slug>/pr<N>.spec.md, run from the repository.' \
+    '<plan> is ~/work/plans/<repo>/<issue>_<slug>/pr<N>.spec.md, run from the repository.' \
     'cleanup sets Status: published and keeps the plan as a record.' \
     'Exit: 0 ok, 1 failure, 2 usage, 4 confirmation needed (cleanup).'
 }

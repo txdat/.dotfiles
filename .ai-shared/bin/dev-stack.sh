@@ -24,7 +24,7 @@ usage() {
     'in the stack'"'"'s stops.log why run-stack stopped a plan; it holds until the' \
     'plan changes or resume clears it, and one citing "Failed fixes: 3/3" or more' \
     'holds until resume. Only the user runs resume.' \
-    '<plan> is ~/work/ai-docs/plans/<repo>/<issue>_<slug>/pr<N>.spec.md, run from the repository.' \
+    '<plan> is ~/work/plans/<repo>/<issue>_<slug>/pr<N>.spec.md, run from the repository.' \
     'Exit: 0 ok, 1 failure, 2 usage.'
 }
 

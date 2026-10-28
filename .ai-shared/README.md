@@ -1,18 +1,74 @@
 # ai-shared
 
-Install the skills below. Delegation uses platform-provided general-purpose subagents with the owning skill; no custom agent definitions or registrations are needed.
+Shared agent rules, workflow skills, and helper scripts for every harness on this machine. Platform-specific skill wrappers are generated locally and point at the markdown files here.
 
-## claude
+Delegation uses platform-provided general-purpose subagents with the owning skill; no custom agent definitions or registrations are needed.
 
-Symlink `~/.claude/CLAUDE.md` → `~/.dotfiles/.ai-shared/AGENTS.md`
+Paths below assume the dotfiles checkout is at `~/.dotfiles`.
 
-**skills** — create `~/.claude/skills/<name>/SKILL.md` per [template](#claude-template) and [references](#references)
+| Harness | Rules file | Skills |
+| ------- | ---------- | ------ |
+| Claude Code | `~/.claude/CLAUDE.md` | `~/.claude/skills/<name>/SKILL.md` |
+| Codex | `~/.codex/CODEX.md` | `~/.codex/skills/<name>/SKILL.md` |
+| Antigravity | `~/.gemini/config/GEMINI.md` | `~/.gemini/config/skills/<name>/SKILL.md`, or a path in `skills.json` |
+| Pi | `~/.pi/agent/AGENTS.md` | reuses `~/.claude/skills` |
+| dsh | `~/.dsh/AGENTS.md` | `~/.dsh/skills/<name>/SKILL.md` |
 
-**hooks** — in `~/.claude/settings.json`, register `~/.dotfiles/.ai-shared/bin/gate-check.sh` for `PreToolUse` with matcher `Skill` (model-invoked skills) and for `UserPromptSubmit` (user-typed `/dev-*` commands, which bypass the Skill tool)
+## Claude Code
 
-**marketplace** — add local marketplace (`~/.dotfiles/.claude/marketplace/`) via `claude plugin marketplace add <path>`, install plugins via `/plugin`
+Symlink `~/.claude/CLAUDE.md` → `~/.dotfiles/.ai-shared/AGENTS.md`.
 
-### claude template
+**skills** — create `~/.claude/skills/<name>/SKILL.md` from the [Claude template](#claude-template), taking name, description, effort, and model from [references](#references).
+
+**hooks** — in `~/.claude/settings.json`, register `~/.dotfiles/.ai-shared/bin/gate-check.sh` for `PreToolUse` with matcher `Skill` (model-invoked skills) and for `UserPromptSubmit` (user-typed `/dev-*` commands, which bypass the Skill tool).
+
+**marketplace** — add the local marketplace at `~/.dotfiles/.claude/marketplace/` with `claude plugin marketplace add <path>`, then install plugins via `/plugin`.
+
+## Codex
+
+Symlink `~/.codex/CODEX.md` → `~/.dotfiles/.ai-shared/AGENTS.md`.
+
+`CODEX.md` is the only setup-managed symlink. Do not remove or modify other symlinks in `~/.codex`: Codex creates them for its runtime under `packages/` and `tmp/`.
+
+**skills** — create `~/.codex/skills/<name>/SKILL.md` from the [Codex template](#codex-template). Take name, description, and effort from [references](#references), then map the Claude model through the [model mapping](#model-mapping) table.
+
+## Antigravity
+
+Symlink `~/.gemini/config/GEMINI.md` → `~/.dotfiles/.ai-shared/AGENTS.md`, and `~/.gemini/GEMINI.md` → the same file.
+
+**skills** — create `~/.gemini/config/skills/<name>/SKILL.md` from the [Antigravity template](#antigravity-template), or register the path in `~/.gemini/config/skills.json`. Map the model through [model mapping](#model-mapping) and take the other fields from [references](#references).
+
+**hooks** — register lifecycle hooks in `~/.gemini/config/hooks.json`, for example the `gate-check.sh` command as a `PreToolUse` hook.
+
+## Pi
+
+Symlink:
+
+- `~/.pi/agent/AGENTS.md` → `~/.dotfiles/.ai-shared/AGENTS.md`
+- `~/.pi/agent/extensions` → `~/.dotfiles/.pi/agent/extensions`
+- `~/.pi/agent/themes` → `~/.dotfiles/.pi/agent/themes`
+
+**skills** — Pi reuses the Claude skills; set `"skills": ["~/.claude/skills"]` in `settings.json`.
+
+**mcp** — Pi reuses Claude MCP servers; set `"imports": ["claude-code"]` in `mcp-adapter.json`.
+
+**phase loading and gates** — to enter a development phase, use Pi's `read` tool on the phase's Claude `SKILL.md` wrapper or on the shared `.ai-shared/skills/dev/<phase>.md` instructions.
+
+The [gate extension](../.pi/agent/extensions/gate-check.ts) checks that read against its phase arguments: the text of the assistant message that issued it when that text names a plan, and otherwise the latest user message. Where the phase requires it, those arguments must give the exact plan path.
+
+The extension gates recognized reads, not phase execution. It cannot distinguish an audit read from invocation, and shell reads or previously loaded instructions are outside its interception. Documentation-only inspection may therefore read source without invoking a phase, which grants no authority to execute it. It also permits reads on timeout, process failure, or invalid output. Treat it as a workflow aid rather than comprehensive enforcement: agents must still establish the phase prerequisites under [skills/dev/plan.md](skills/dev/plan.md). Stronger enforcement would require a separate phase-entry operation.
+
+## dsh
+
+Symlink `~/.dsh/AGENTS.md` → `~/.dotfiles/.ai-shared/AGENTS.md`.
+
+**skills** — create `~/.dsh/skills/<name>/SKILL.md` from the [dsh template](#dsh-template); the harness scans the user root `~/.dsh/skills`. Take name, description, `model`, and `effort` from [references](#references), using the Claude column.
+
+## Wrapper templates
+
+Each wrapper names one skill and delegates to its markdown file. Keep the body to that single instruction.
+
+### Claude template
 
 ```
 ---
@@ -25,15 +81,7 @@ effort: <effort>
 Read <md file> and follow all instructions exactly.
 ```
 
-## chatgpt/codex
-
-Symlink `~/.codex/CODEX.md` → `~/.dotfiles/.ai-shared/AGENTS.md`
-
-`CODEX.md` is the only setup-managed symlink. Do not remove or modify other symlinks in `~/.codex`: Codex creates them for its runtime under `packages/` and `tmp/`.
-
-**skills** — create `~/.codex/skills/<name>/SKILL.md` per [template](#chatgpt-template). Use the matching row in [references](#references) for its name, description, and effort, then map its model through the [model mapping](#model-mapping) table.
-
-### chatgpt template
+### Codex template
 
 ```
 ---
@@ -46,15 +94,7 @@ effort: <effort>
 Read <md file> and follow all instructions exactly.
 ```
 
-## gemini/antigravity
-
-Symlink `~/.gemini/config/GEMINI.md` → `~/.dotfiles/.ai-shared/AGENTS.md` (and `~/.gemini/GEMINI.md`)
-
-**skills** — create `~/.gemini/config/skills/<name>/SKILL.md`, or register path in `~/.gemini/config/skills.json`; see [template](#gemini-template), [references](#references), and [model mapping](#model-mapping) to map model
-
-**hooks** — register lifecycle hooks in `~/.gemini/config/hooks.json` (e.g., `gate-check.sh` command for `PreToolUse`)
-
-### gemini template
+### Antigravity template
 
 ```
 ---
@@ -66,30 +106,6 @@ effort: <effort>
 
 Read <md file> and follow all instructions exactly.
 ```
-
-## pi
-
-Symlink `~/.pi/agent/AGENTS.md` → `~/.dotfiles/.ai-shared/AGENTS.md`
-
-Symlink `~/.pi/agent/extensions` → `~/.dotfiles/.pi/agent/extensions`
-
-Symlink `~/.pi/agent/themes` → `~/.dotfiles/.pi/agent/themes`
-
-**skills** — reuses Claude skills; set `"skills": ["~/.claude/skills"]` in `settings.json`
-
-**phase loading and gates** — to enter a development phase, use Pi's `read` tool on its Claude `SKILL.md` wrapper or the shared `.ai-shared/skills/dev/<phase>.md` instructions. The [gate extension](../.pi/agent/extensions/gate-check.ts) checks that read using, as the phase arguments, the text of the assistant message that issued it when that text names a plan, and otherwise the latest user message; either must give the exact plan path where required. A shell read does not invoke this check and is not a substitute for gated phase loading.
-
-The extension gates recognized reads, not phase execution: it cannot distinguish an audit read from invocation, and shell reads or previously loaded instructions are outside its interception. For documentation-only inspection, source may be read without invoking a phase; this grants no authority to execute it. The extension also permits reads on timeout, process failure, or invalid output, so it is a workflow aid rather than comprehensive enforcement. Agents must still establish the phase prerequisites under skills/dev/plan.md. Stronger enforcement would require a separate phase-entry operation.
-
-**mcp** — reuses Claude mcp; set `"imports": ["claude-code"]` in `mcp-adapter.json`
-
-## dsh
-
-Symlink `~/.dsh/AGENTS.md` → `~/.dotfiles/.ai-shared/AGENTS.md`
-
-Symlink `~/.dsh/.agent-presets` → `~/.dotfiles/.dsh/.agent-presets`
-
-**skills** — create `~/.dsh/skills/<name>/SKILL.md` per [template](#dsh-template). The `minimal-skills` preset ([agent.cordis.yml](../.dsh/.agent-presets/minimal-skills/agent.cordis.yml)) mounts `@deepseek-ai/dsh-skill-filesystem`, which scans the user root `~/.dsh/skills`. Take each skill's name, description, `model`, and `effort` from [references](#references), using the Claude column.
 
 ### dsh template
 
@@ -105,18 +121,20 @@ effort: <effort>
 Read <md file> and follow all instructions exactly.
 ```
 
-## references
+## References
 
-### model mapping
+### Model mapping
 
 | claude | chatgpt | gemini |
 | ------ | ------- | ------ |
 | haiku | gpt-6-luna | flash |
-| sonnet | gpt-6-luna | flash |
+| sonnet | gpt-6.1-terra | flash |
 | opus | gpt-6.1-sol | pro |
 | fable | gpt-6-astra | pro |
 
-### skills
+### Skills
+
+Where a row leaves effort or model blank, the wrapper installs without that field and the harness default applies.
 
 #### swe
 

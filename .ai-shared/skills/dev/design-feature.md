@@ -17,15 +17,15 @@ Resolve what the requirement means before writing:
 
 Before creating the plan file, send one brief and wait for the answer:
 
-```text
-Goal: <intended outcome>
-Scope: in <…>; out <…>
-Outcomes:
-1. <one observable outcome per future AC>
-Decisions:
-| # | Choice | Options | Tradeoffs | Recommendation |
-Stack: <prN — branch — parent — outcome, root first; omit for one PR>
-```
+- **Goal:** <intended outcome>
+- **Scope:** in <…>; out <…>
+- **Outcomes:**
+  1. <one observable outcome per future AC>
+- **Decisions:**
+
+  | # | Choice | Options | Tradeoffs | Recommendation |
+  |---|--------|---------|-----------|----------------|
+- **Stack:** <prN — branch — parent — outcome, root first; omit for one PR>
 
 Decisions that affect behavior, scope, contracts, the data model, dependencies, or cost belong to the user; list each with options and one recommendation. Other technical choices are yours; record the non-obvious ones as DDs with their rationale. Dropping or narrowing anything the user asked for also needs the user's decision. Record every decision as a `DD-n` and cite it rather than repeating it.
 
