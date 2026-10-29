@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# dev-stack.sh against scratch repositories: the stack listing, plan review
-# records, and next, whose runnable actions must pass their gates.
+# dev-stack.sh against scratch repositories: the stack listing, review
+# verdicts, and next, whose runnable actions must pass their gates.
 set -euo pipefail
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 STACK="$SCRIPT_DIR/dev-stack.sh"
@@ -28,7 +28,7 @@ name_of() { case "$1" in "$R") echo root ;; "$C") echo child ;; "$S") echo sib ;
 # write_plan <plan> <status> <branch> [parent pr<K>]
 write_plan() {
   {
-    printf '# Stack test\nStatus: %s | Type: feature | Base: main | Branch: %s | Issue: #12\n' "$2" "$3"
+    printf '# Stack test\nStatus: %s\nSpec: -\nTip: -\nType: feature\nBase: main\nBranch: %s\nIssue: #12\n' "$2" "$3"
     [[ -z "${4-}" ]] || printf 'Stacks On: %s\n' "$4"
     printf '\n## Goal\nA %s.\n\n' "$(basename "$1")"
     printf '## Acceptance Criteria\nAC-1 — outcome\n  Source: request\n  Success: yes\n  Failure: no\n\n'
@@ -36,7 +36,8 @@ write_plan() {
     printf '## Implementation Steps\nST-1 — change — satisfies TC-1\n'
   } > "$1"
 }
-set_status() { sed -i "s/^Status: [^|]*/Status: $2 /" "$1"; }
+# set_status <plan> <status> [tip]
+set_status() { sed -i "s/^Status: .*/Status: $2/; s/^Tip: .*/Tip: ${3:--}/" "$1"; }
 run() { (cd "$REPO" && bash "$STACK" "$@"); }
 expect_fail() {
   local label="$1" want="$2" out code=0; shift 2
@@ -87,20 +88,28 @@ write_plan "$G" planning feat/grand
 expect_fail 'a directory holds one root' 'more than one plan without a' stack "$R"
 write_plan "$G" planning feat/grand pr2
 
-# ── next and plan review records ──
+# ── next and review verdicts ──
 expect_next 'root review-feature child wait-parent sib wait-parent grand wait-parent' 'only the root is reviewable at first'
 expect_fail 'review needs a verdict' 'Usage' review "$R" maybe
+lines=$(wc -l < "$R")
 out=$(run review "$R" ready)
-[[ "$out" == "Plan review: READY recorded in $R" ]] || fail "review: $out"
-grep -qE '^Plan review: READY at [0-9a-f]{40}$' "$R" || fail 'review record'
-expect_next 'root wait-user child wait-parent sib wait-parent grand wait-parent' 'a READY record waits for the user to approve'
+[[ "$out" == "Status: ready, Spec: "*" recorded in $R" ]] || fail "review: $out"
+[[ "$(sed -n 2,8p "$R" | tr '\n' ' ')" =~ ^'Status: ready Spec: '[0-9a-f]{40}' Tip: - Type: feature Base: main Branch: feat/root Issue: #12 '$ ]] || fail "review fields: $(sed -n 2,8p "$R")"
+[[ "$(wc -l < "$R")" -eq "$lines" ]] || fail 'review appended a line'
+pass 'review sets Status and Spec in place'
+expect_next 'root wait-user child wait-parent sib wait-parent grand wait-parent' 'a ready verdict waits for the user to approve'
 sed -i 's/^A pr1/An edited pr1/' "$R"
 expect_next 'root review-feature child wait-parent sib wait-parent grand wait-parent' 'a spec edit voids the review'
 run review "$R" needs-changes >/dev/null
-expect_next 'root revise child wait-parent sib wait-parent grand wait-parent' 'NEEDS CHANGES asks for a revision'
+grep -qx 'Status: needs-changes' "$R" && grep -qE '^Spec: [0-9a-f]{40}$' "$R" || fail 'needs-changes fields'
+expect_next 'root revise child wait-parent sib wait-parent grand wait-parent' 'needs-changes asks for a revision'
+sed -i 's/^An edited pr1/A revised pr1/' "$R"
+expect_next 'root review-feature child wait-parent sib wait-parent grand wait-parent' 'a revision after needs-changes returns to review-feature'
 run review "$R" ready >/dev/null
+spec=$(sed -n 's/^Spec: //p' "$R")
 set_status "$R" approved
-expect_fail 'review records only for a planning plan' "a plan review records only for a planning plan" review "$R" ready
+grep -qx "Spec: $spec" "$R" || fail 'approval changed the Spec hash'
+expect_fail 'review records only for a planning plan' "a verdict records only before approval" review "$R" ready
 expect_next 'root execute-feature child review-feature sib review-feature grand wait-parent' 'an approved root opens its children to review'
 run review "$C" ready >/dev/null
 sed -i '/^## Goal/a Revised contract.' "$R"
@@ -133,15 +142,15 @@ out=$(run next "$R" | awk -F'\t' 'NR==1 { print $4 "|" $5 }')
 
 pass "next reports the gate's reason when it blocks a phase"
 seed=$(git -C "$REPO" rev-parse HEAD)
-for p in "$R" "$C" "$S"; do set_status "$p" "reviewed $seed"; done
+for p in "$R" "$C" "$S"; do set_status "$p" reviewed "$seed"; done
 expect_next 'root done child done sib done grand review-feature' 'the root waits until every plan is reviewed'
 set_status "$R" implemented
 expect_next 'root blocked child blocked sib blocked grand review-feature' 'a reviewed child of a parent back in implementation is blocked'
 git -C "$REPO" commit -q --allow-empty -m 'fix: root repair'
-set_status "$R" "reviewed $(git -C "$REPO" rev-parse HEAD)"
+set_status "$R" reviewed "$(git -C "$REPO" rev-parse HEAD)"
 [[ "$(run next "$R" | awk -F'\t' -v p="$C" '$1 == p { print $4 "|" $5 }')" == "blocked|its reviewed SHA does not contain $R's"* ]] || fail 'stale child review'
 pass "a child reviewed before its parent's repair is blocked"
-for p in "$C" "$S" "$G"; do set_status "$p" "reviewed $(git -C "$REPO" rev-parse HEAD)"; done
+for p in "$C" "$S" "$G"; do set_status "$p" reviewed "$(git -C "$REPO" rev-parse HEAD)"; done
 [[ "$(run next "$R" | awk -F'\t' 'NR==1 { print $4 "|" $5 }')" == 'blocked|create-pr: '* ]] || fail 'create-pr gate'
 pass 'a fully reviewed stack offers create-pr on the root, through its gate'
 set_status "$G" bogus
@@ -161,8 +170,10 @@ run stop "$S" 'review round limit; Failed fixes: 2/3 — x' >/dev/null
 [[ "$(reason_of "$S")" == 'stopped|review round limit; Failed fixes: 2/3 — x' ]] || fail "stop: $(reason_of "$S")"
 pass 'next shows a stopped plan with its reason'
 run review "$S" ready >/dev/null
-[[ "$(reason_of "$S")" == stopped* ]] || fail 'a review record cleared the stop'
-pass 'records do not clear a stop'
+[[ "$(reason_of "$S")" == stopped* ]] || fail 'a review verdict cleared the stop'
+run review "$S" needs-changes >/dev/null
+[[ "$(reason_of "$S")" == stopped* ]] || fail 'a changed verdict cleared the stop'
+pass 'review verdicts do not clear a stop'
 sed -i '/^## Goal/a Revised scope.' "$S"
 [[ "$(reason_of "$S")" == review-feature* ]] || fail "spec edit: $(reason_of "$S")"
 pass 'a spec edit clears a stop'
@@ -210,16 +221,22 @@ pass 'three failed fixes hold through later stops, read from every count'
 # ── records and failures ──
 write_plan "$S" planning feat/sib pr1
 run review "$S" ready >/dev/null
-printf 'Plan review: READY at nothex\n' >> "$S"
-[[ "$(run next "$R" | awk -F'\t' -v p="$S" '$1 == p { print $4 }')" == review-feature ]] || fail 'malformed last record'
-pass 'a malformed last record does not count as a verdict'
+sed -i 's/^Spec: .*/Spec: nothex/' "$S"
+[[ "$(run next "$R" | awk -F'\t' -v p="$S" '$1 == p { print $4 }')" == review-feature ]] || fail 'malformed Spec'
+pass 'a malformed Spec hash does not count as a verdict'
+write_plan "$S" planning feat/sib pr1
+sed -i '/^Spec: -$/d; /^Tip: -$/d' "$S"
+run review "$S" ready >/dev/null
+[[ "$(sed -n 2,4p "$S" | tr '\n' ' ')" =~ ^'Status: ready Spec: '[0-9a-f]{40}' Type: feature '$ ]] || fail "missing Spec: $(sed -n 2,4p "$S")"
+[[ "$(run next "$R" | awk -F'\t' -v p="$S" '$1 == p { print $4 }')" == wait-user ]] || fail 'added Spec is not current'
+pass 'review adds a missing Spec field after Status'
 X="$DIR/pr7.spec.md"
 write_plan "$X" planning feat/x pr6
 expect_fail 'stop needs a hash' 'Cannot hash' stop "$X" x
 grep -qs '^pr7:' "$DIR/stops.log" && fail 'a failed stop wrote a record'
 pass 'a failed stop writes no record'
 expect_fail 'review fails when a plan below is missing' 'Cannot hash' review "$X" ready
-grep -q '^Plan review:' "$X" && fail 'review wrote a record after a hash failure'
+grep -qx 'Status: planning' "$X" || fail 'review changed Status after a hash failure'
 pass 'review writes nothing when the hash fails'
 expect_fail 'next fails on a stack it cannot read' 'Unreadable' next "$R"
 
@@ -242,10 +259,27 @@ state_of() { (cd "$REPO" && REPO_ROOT="$REPO" && . "$SCRIPT_DIR/dev-plan-lib.sh"
 H="$E/pr1.spec.md"
 write_plan "$H" planning feat/e1
 run review "$H" ready >/dev/null
-set_status "$H" "reviewed $(printf '%040d' 0)"
-[[ "$(state_of "$H")" == READY ]] || fail "a status change voided the review: $(state_of "$H")"
+set_status "$H" reviewed "$(printf '%040d' 0)"
+[[ "$(state_of "$H")" == ready ]] || fail "a Status or Tip change voided the review: $(state_of "$H")"
 printf 'Note: added later\n' >> "$H"
 [[ "$(state_of "$H")" == stale ]] || fail 'a line added after approval was ignored'
-pass 'the review hash ignores only the Status value and Plan review records'
+pass 'the review hash ignores only the Status, Spec, and Tip values'
+
+# ── header fields ──
+lib() { (cd "$REPO" && REPO_ROOT="$REPO" && . "$SCRIPT_DIR/dev-plan-lib.sh" && "$@"); }
+F="$E/pr3.spec.md"
+printf '# Fields\nStatus: planning\nTipping: x\nSpec: old\nSpec: dup\n```\nTip: fenced\n```\n\n## Goal\nTip: body\n' > "$F"
+[[ "$(lib field "$F" Tip)" == "" && "$(lib field "$F" Spec)" == old ]] || fail 'field read a prefix, fenced, body, or later duplicate line'
+lib set_header "$F" Status ready Spec new Tip t1 || fail 'set_header'
+want=$'# Fields\nStatus: ready\nTip: t1\nTipping: x\nSpec: new\nSpec: dup\n```\nTip: fenced\n```\n\n## Goal\nTip: body'
+[[ "$(cat "$F")" == "$want" ]] || fail "set_header: $(cat "$F")"
+printf '# Fields\nStatus: planning\nType: fix\n' > "$F"
+lib set_header "$F" Spec abc || fail 'set_header without Status'
+[[ "$(cat "$F")" == $'# Fields\nStatus: planning\nSpec: abc\nType: fix' ]] || fail "missing key without Status in the call: $(cat "$F")"
+printf '# Fields\nType: fix\n' > "$F"
+lib set_header "$F" Status x && fail 'set_header wrote a plan without Status'
+[[ "$(cat "$F")" == $'# Fields\nType: fix' && -z "$(ls "$E" | grep -v '\.spec\.md$')" ]] || fail 'a failed set_header left changes or a temporary file'
+rm "$F"
+pass 'set_header replaces the first header line of each key, adds missing keys after Status, and skips prefixes, fences, and the body'
 
 printf 'All dev-stack.sh tests passed. Temporary fixtures: %s\n' "$TEST_ROOT"

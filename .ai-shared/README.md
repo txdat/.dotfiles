@@ -2,7 +2,7 @@
 
 Shared agent rules, workflow skills, and helper scripts for every harness on this machine. Platform-specific skill wrappers are generated locally and point at the markdown files here.
 
-Delegation uses platform-provided general-purpose subagents with the owning skill; no custom agent definitions or registrations are needed.
+Delegation uses platform-provided subagents with the owning skill; no custom agent definitions or registrations are needed.
 
 Paths below assume the dotfiles checkout is at `~/.dotfiles`.
 
@@ -144,22 +144,22 @@ Where a row leaves effort or model blank, the wrapper installs without that fiel
 | dev-create-pr | Publish a reviewed plan, with every plan stacked on it, as draft or ready pull requests, one per plan, mark the plans published, and clean up their worktrees and branches. | skills/dev/create-pr.md | medium | sonnet |
 | dev-design-feature | Design a feature, fix, or refactor plan before implementation: decisions, acceptance criteria, concrete test cases, ordered steps, and a stack of plans when the work needs several PRs. | skills/dev/design-feature.md | high | sonnet |
 | dev-design-infra | Design a runnable infrastructure operations plan from live-state evidence, verification gates, and rollback requirements. | skills/dev/design-infra.md | high | sonnet |
-| dev-design-system | Design cross-cutting architecture changes such as new communication patterns, service boundaries, or integrations, with options, contracts, migration, rollback, and decomposition. | skills/dev/design-system.md | high | opus |
-| dev-execute-feature | Implement an approved plan with test-first commits and verification at its branch tip. | skills/dev/execute-feature.md | high | sonnet |
+| dev-design-system | Design cross-cutting architecture changes such as new communication patterns, service boundaries, or integrations, with options, contracts, migration, rollback, and decomposition. | skills/dev/design-system.md | high | sonnet |
+| dev-execute-feature | Implement an approved plan with test-first commits and verification at its branch tip. | skills/dev/execute-feature.md | medium | sonnet |
 | dev-explore | Read-only exploration of a codebase area to identify entry points, key files, data flow, established patterns, gotchas, and planning questions. | skills/dev/explore.md | medium | haiku |
 | dev-fix-bug | Diagnose a bug from evidence, propose fix options and follow-ups, and route a requested fix: plan-backed delivery when asked, otherwise a direct edit. | skills/dev/fix-bug.md | high | sonnet |
 | dev-review-code | Independently review an implemented plan for TDD proof, test results, correctness, security, scope, and hygiene, then record the reviewed tip. | skills/dev/review-code.md | high | sonnet |
 | dev-review-feature | Independently review a planning-stage plan for missing obligations, untraced decisions, weak test cases, delivery order, and simpler designs before human approval. | skills/dev/review-feature.md | high | sonnet |
 | dev-review-infra | Review an infra/devops runbook against live state with read-only commands: phase ordering, rollback safety, DNS/traffic cutover sequencing, IaC completeness, and CI/CD coverage. | skills/dev/review-infra.md | high | sonnet |
-| dev-review-system | Review an architecture design for measurable outcomes, viable alternatives, boundary contracts, failure modes, migration and rollback safety, and dependency-ordered decomposition. | skills/dev/review-system.md | high | opus |
-| dev-run-stack | Drive a stack of plans, or one plan, through review-feature, execute-feature, and review-code in dependency order, then report what needs the user: approvals, decisions, and publication. | skills/dev/run-stack.md | high | sonnet |
-| dev-recap | Session lessons and workflow improvement proposals from a plan-based session. | skills/dev/recap.md | — | — |
+| dev-review-system | Review an architecture design for measurable outcomes, viable alternatives, boundary contracts, failure modes, migration and rollback safety, and dependency-ordered decomposition. | skills/dev/review-system.md | high | sonnet |
+| dev-run-stack | Drive a stack of plans, or one plan, through review-feature, execute-feature, and review-code in dependency order, then report what needs the user: approvals, decisions, and publication. | skills/dev/run-stack.md | medium | sonnet |
+| dev-recap | Session lessons and workflow improvement proposals from a plan-based session. | skills/dev/recap.md | medium | sonnet |
 
 #### sre
 
 | skill | description | md file | effort | model |
 | ----- | ----------- | ------- | ------ | ----- |
-| gke-inspect-incident | Investigate GKE incidents with read-only collection and targeted diagnostic evidence. | skills/gke/inspect-incident.md | — | — |
+| gke-inspect-incident | Investigate GKE incidents with read-only collection and targeted diagnostic evidence. | skills/gke/inspect-incident.md | high | sonnet |
 
 #### ielts
 

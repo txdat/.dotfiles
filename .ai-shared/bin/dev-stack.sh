@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The stack tree of live plans (../skills/dev/plan.md#stacks), for create-pr
-# and run-stack. `review` appends a record to a planning plan; `stop` and
+# and run-stack. `review` sets a planning plan's Status and Spec; `stop` and
 # `resume` append to the stack's stops.log; the rest only read.
 set -euo pipefail
 
@@ -16,11 +16,12 @@ usage() {
     'stack lists the plans, parents before children. next prints, per plan,' \
     '"<plan> <status> <parent> <action> <reason>" tab-separated, with "-" for none;' \
     'action is a runnable phase (review-feature, execute-feature, review-code,' \
-    'create-pr), revise after a NEEDS CHANGES review, or stopped, wait-parent,' \
+    'create-pr), revise after a needs-changes review, or stopped, wait-parent,' \
     'wait-user, blocked, or done. --tree prints the stack as a tree instead, and' \
     '--md as a Markdown table, both with a colored dot per status and a mark per' \
     'action.' \
-    'review records a review-feature verdict for the current spec. stop records' \
+    'review sets Status to the review-feature verdict, ready or needs-changes,' \
+    'and Spec to its hash of the current spec. stop records' \
     'in the stack'"'"'s stops.log why run-stack stopped a plan; it holds until the' \
     'plan changes or resume clears it, and one citing "Failed fixes: 3/3" or more' \
     'holds until resume. Only the user runs resume.' \
@@ -49,15 +50,18 @@ stack_plans() {
   [[ -z "$plans" ]] || printf '%s\n' "$plans"
 }
 
-# What a stop record is bound to: plan $1's Status value, its spec
-# with the specs below it, and its branch's tip. Not the worktree's HEAD: a parent and its
-# only child share a worktree, and switching between them changes neither.
+# What a stop record is bound to: plan $1's Status value, a verdict read as
+# planning so recording one keeps the stop, and its Tip; its spec with the
+# specs below it; and its branch's tip. Not the worktree's HEAD: a parent and
+# its only child share a worktree, and switching between them changes neither.
 stop_key() {
-  local hash branch tip=-
+  local hash branch tip=- status
   hash=$(plan_hash "$1") || fail "Cannot hash $1: a plan below it is missing or unreadable."
   branch=$(field "$1" Branch)
   [[ -z "$branch" ]] || tip=$(git -C "$REPO_ROOT" rev-parse --verify -q "refs/heads/$branch^{commit}" 2>/dev/null || printf -)
-  printf '%s\n%s\n%s\n' "$(field "$1" Status)" "$hash" "$tip" | git hash-object --stdin
+  status=$(field "$1" Status)
+  [[ "$(status_rank "$status")" != 0 ]] || status=planning
+  printf '%s %s\n%s\n%s\n' "$status" "$(field "$1" Tip)" "$hash" "$tip" | git hash-object --stdin
 }
 
 # Whether stop reason $1 cites three or more failed fixes of three.
@@ -106,14 +110,15 @@ cmd_resume() {
   printf 'Stop cleared in %s\n' "$(stops_log "$1")"
 }
 
+# Sets Status to verdict $2 and Spec to its hash of the current spec, in place.
 cmd_review() {
-  local verdict hash
-  case "$2" in ready) verdict=READY ;; needs-changes) verdict='NEEDS CHANGES' ;; *) usage >&2; exit 2 ;; esac
-  [[ "$(status_of "$1")" == planning ]] || fail "$1 is '$(status_of "$1")'; a plan review records only for a planning plan."
+  local hash
+  case "$2" in ready|needs-changes) ;; *) usage >&2; exit 2 ;; esac
+  [[ "$(status_rank "$(status_of "$1")")" == 0 ]] || fail "$1 is '$(status_of "$1")'; a verdict records only before approval."
   hash=$(plan_hash "$1") || fail "Cannot hash $1: a plan below it is missing, has an unreadable 'Stacks On:' line, or forms a cycle."
-  [[ -z "$(tail -c1 "$1")" ]] || printf '\n' >> "$1"
-  printf 'Plan review: %s at %s\n' "$verdict" "$hash" >> "$1"
-  printf 'Plan review: %s recorded in %s\n' "$verdict" "$1"
+  hash=$(verdict_hash "$hash" "$2")
+  set_header "$1" Status "$2" Spec "$hash" || fail "Cannot write the header of $1."
+  printf 'Status: %s, Spec: %s recorded in %s\n' "$2" "$hash" "$1"
 }
 
 # The gate's reason for running skill $1 on plan $2; empty when it passes.
@@ -140,18 +145,18 @@ cmd_next() {
     reason=$(stop_reason "$plan")
     if [[ -n "$reason" ]]; then
       status_case=stopped
-    elif [[ "$status" != planning && "$state" == stale ]]; then
+    elif [[ "$(status_rank "$status")" != 0 && "$state" == stale ]]; then
       status_case=stale
     else
       status_case=$status
     fi
     case "$status_case" in
       stopped) action=stopped ;;
-      stale) action=blocked; reason="its spec or a plan below it changed since its Plan review; return it to planning and review it again (skills/dev/plan.md#stacks)" ;;
-      planning)
+      stale) action=blocked; reason="its spec or a plan below it changed since its review; return it to planning and review it again (skills/dev/plan.md#stacks)" ;;
+      planning|needs-changes|ready)
         if (( ${prank:-0} < 1 )); then action=wait-parent; reason="$parent must be approved first"
-        elif [[ "$state" == READY ]]; then action=wait-user; reason='review-feature READY; the user approves it'
-        elif [[ "$state" == 'NEEDS CHANGES' ]]; then action=revise; reason='review-feature NEEDS CHANGES; revise it (skills/dev/design-feature.md#7-revise-after-review), then review it again'
+        elif [[ "$state" == ready ]]; then action=wait-user; reason='review-feature ready; the user approves it'
+        elif [[ "$state" == needs-changes ]]; then action=revise; reason='review-feature needs-changes; revise it (skills/dev/design-feature.md#7-revise-after-review), then review it again'
         else skill=review-feature; fi ;;
       approved|implemented)
         if (( ${prank:-0} < 3 )); then action=wait-parent; reason="$parent must be reviewed first"
@@ -190,7 +195,7 @@ VIEW_AWK='
   function pairs(list, map,   a, i) { split(list, a, " "); for (i = 1; (i + 1) in a; i += 2) map[a[i]] = a[i + 1] }
   function marked(v, map) { return ((v in map) ? map[v] : "❔") " " v }
   BEGIN {
-    pairs("planning ⚪ approved 🔵 implemented 🟡 reviewed 🟢 published 🟣", dot)
+    pairs("planning ⚪ needs-changes 🟠 ready 🟤 approved 🔵 implemented 🟡 reviewed 🟢 published 🟣", dot)
     pairs("review-feature ▶ execute-feature ▶ review-code ▶ create-pr ▶ revise ✏️ wait-user 👤 wait-parent ⏳ blocked ⛔ stopped 🛑 done ✅", mark)
   }'
 

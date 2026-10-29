@@ -79,13 +79,13 @@ plan_worktree() {
 write_plan() {
   {
     printf '# Publish demo\n'
-    printf 'Status: reviewed %s | Type: feature | Base: main | Branch: %s | Issue: #7\n' "$3" "$2"
+    printf 'Status: reviewed\nSpec: -\nTip: %s\nType: feature\nBase: main\nBranch: %s\nIssue: #7\n' "${3:--}" "$2"
     [[ -z "${4-}" ]] || printf 'Stacks On: %s\n' "$4"
     printf '\n## Goal\nPublish.\n'
   } > "$1"
 }
 # reviewed <plan> <sha>: what review-code records.
-reviewed() { sed -i "s/^Status: [^|]*/Status: reviewed $2 /" "$1"; }
+reviewed() { sed -i "s/^Status: .*/Status: reviewed/; s/^Tip: .*/Tip: ${2:--}/" "$1"; }
 
 run() { (cd "$REPO" && bash "$PUBLISH" "$@"); }
 expect_fail() {
@@ -127,7 +127,7 @@ pass 'an unrelated Base advance does not block check'
 reviewed "$P2" "$g1"
 expect_fail 'a tip that differs from its reviewed SHA blocks' "differs from the reviewed $g1" check "$P2"
 reviewed "$P2" ''
-expect_fail 'a reviewed status without its SHA blocks' "no 'Status: reviewed <sha>'" check "$P2"
+expect_fail 'a reviewed status without its SHA blocks' "no 'Status: reviewed' with a 'Tip:' SHA" check "$P2"
 reviewed "$P2" "${g2:0:7}"
 run check "$P2" >/dev/null
 pass 'an abbreviated reviewed SHA resolves'
@@ -177,7 +177,7 @@ reviewed "$P1" "$g1"
 out=$(run cleanup "$P2")
 [[ "$out" == *"WORKTREE $wt returned to feat/demo-1"* && "$out" == *'deleted feat/demo-2'* && "$out" == *'Status: published'* ]] || fail "shared cleanup: $out"
 [[ -d "$wt" && "$(git -C "$wt" symbolic-ref --short HEAD)" == feat/demo-1 ]] || fail 'the shared worktree was not handed back'
-grep -qx 'Status: published | Type: feature | Base: main | Branch: feat/demo-2 | Issue: #7' "$P2" || fail "published header: $(grep '^Status:' "$P2")"
+[[ "$(sed -n 2,8p "$P2")" == "Status: published"$'\n'"Spec: -"$'\n'"Tip: $g2"$'\n'"Type: feature"$'\n'"Base: main"$'\n'"Branch: feat/demo-2"$'\n'"Issue: #7" ]] || fail "published header: $(sed -n 2,8p "$P2")"
 pass 'cleanup of a child sharing the worktree hands it back, deletes its branch, and keeps the plan as published'
 [[ "$(run cleanup "$P2")" == *'already complete'* ]] || fail 'cleanup rerun'
 pass 'a cleanup rerun after completion is a no-op'

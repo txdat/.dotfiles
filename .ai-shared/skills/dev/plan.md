@@ -13,9 +13,10 @@ The workflow applies when the user invokes a phase: design-feature, review-featu
 | Status | Set by |
 |---|---|
 | `planning` | design-feature, or any revision |
-| `approved` | the user only |
+| `needs-changes`, `ready` | review-feature's verdict, recorded with `Spec:` |
+| `approved` | the user only, from `ready` |
 | `implemented` | execute-feature, or any change to a reviewed Branch |
-| `reviewed <sha>` | review-code, with the tip it passed |
+| `reviewed` | review-code, with `Tip:` set to the tip it passed |
 | `published` | create-pr's cleanup |
 
 A gate blocks each phase until its entry status holds. No phase resumes or edits a published plan.
@@ -32,7 +33,13 @@ Write these lines unfenced in the plan:
 
 ```text
 # <title>
-Status: planning | Type: feature|fix|refactor | Base: <branch> | Branch: <branch> | Issue: #N|none
+Status: planning
+Spec: -
+Tip: -
+Type: feature|fix|refactor
+Base: <branch>
+Branch: <branch>
+Issue: #N|none
 Stacks On: pr<K>
 ## Goal
 ## Scope
@@ -54,10 +61,9 @@ TC-1 — <scenario>
 ## Implementation Steps
 ST-1 — <change, files/symbols> — satisfies TC-1
   PC-1 — <fact about current code the step relies on> — Check: <command that fails when the fact is false>
-Plan review: READY|NEEDS CHANGES at <hash>, recorded by dev-stack.sh review
 ```
 
-`Branch:` is the plan's PR branch, never its Base. `Stacks On:` names the parent plan in this directory, numbered below this one; the root omits it. The PR targets the parent's Branch, or Base for the root.
+The header is the `<Key>: <value>` lines between the title and the first `##` heading, outside code fences, one field per line; the first line of each key counts. `Spec:` binds the last verdict to the spec it judged, set by [dev-stack.sh](../../bin/dev-stack.sh) `review`; `Tip:` is the Branch tip review-code passed. Both start as `-` and change in place. `Branch:` is the plan's PR branch, never its Base. `Stacks On:` names the parent plan in this directory, numbered below this one; the root omits it. The PR targets the parent's Branch, or Base for the root.
 
 Optional sections: `## Context`, `## Affected Existing Tests` (how to find them and the expected effect). Omit Design Decisions when there are none.
 
@@ -65,7 +71,7 @@ IDs are `AC`, `TC`, `ST`, `PC`, and `DD`, numbered from 1, never renumbered or r
 
 ## Changes
 
-After approval only `Status:` changes; everything else in the plan is frozen. `Plan review:` lines are written while planning; run-stack records its stops in the stack directory's `stops.log`. Execution decides only details that are not design choices, such as names and internal structure.
+After approval only `Status:` and `Tip:` change; everything else in the plan is frozen. To approve, the user changes `ready` to `approved` and leaves `Spec:` as it is. run-stack records its stops in the stack directory's `stops.log`. Execution decides only details that are not design choices, such as names and internal structure.
 
 Anything else stops the affected work: a failed PC, an unmeetable fixture or obligation, a step that cannot be followed, a different PR split, or new scope. Bring the user options, tradeoffs, and a recommendation. If the user chooses to revise: set `planning`, revise, re-review, and wait for approval again. The worktree stays.
 
@@ -97,7 +103,7 @@ When this session wrote the artifact, run the review in a fresh subagent without
 
 Preferences and style never block. The reviewer is read-only: it may read, run tests, and inspect Git, but never edits files, mutates Git or switches branches, or changes status. The main agent repairs. A review-only request returns findings and changes nothing.
 
-A `Plan review:` record holds while the spec and the specs below it are unchanged; [dev-stack.sh](../../bin/dev-stack.sh) compares its hash, and the last record counts. The execute-feature, review-code, and create-pr gates require a current READY record; create-pr requires one for every plan in the stack.
+A verdict holds while the spec and the specs below it are unchanged: the spec hash ignores only the header's Status, Spec, and Tip lines, and [dev-stack.sh](../../bin/dev-stack.sh) compares it with `Spec:`. The execute-feature, review-code, and create-pr gates require a current ready `Spec:`; create-pr requires one for every plan in the stack.
 
 Round 1 covers the whole artifact. A re-review covers the prior findings and what the repair changed. After two re-reviews in one review phase, stop and report the remaining blockers; the user decides whether to narrow, decide, or grant more rounds.
 

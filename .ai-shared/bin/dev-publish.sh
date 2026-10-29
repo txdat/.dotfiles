@@ -44,7 +44,7 @@ load_fields() {
   WT=$(worktree_of "$PLAN_FILE")
 }
 
-# The SHA of `Status: reviewed <sha>`, recorded by review-code.
+# The Tip SHA of a `Status: reviewed` plan, recorded by review-code.
 green_sha() {
   local sha
   sha=$(green_of "$PLAN_FILE")
@@ -108,7 +108,7 @@ cmd_check() {
     if ! parent_sha=$(git_root merge-base "$target" "$tip"); then
       PROBLEMS+=("no merge base with $TARGET")
     elif ! green=$(green_sha); then
-      PROBLEMS+=("no 'Status: reviewed <sha>'")
+      PROBLEMS+=("no 'Status: reviewed' with a 'Tip:' SHA")
     else
       [[ "$green" == "$tip" ]] ||
         PROBLEMS+=("tip $tip differs from the reviewed $green; changed code returns to review")
@@ -146,7 +146,7 @@ verify_publication() {
     [[ -z "$origin_tip" || "$green" == "$origin_tip" ]] ||
       PROBLEMS+=("origin/$BRANCH differs from the reviewed $green")
   else
-    PROBLEMS+=("no 'Status: reviewed <sha>'")
+    PROBLEMS+=("no 'Status: reviewed' with a 'Tip:' SHA")
   fi
   # The body links the PR of every plan below this one.
   while IFS= read -r plan; do
@@ -172,13 +172,7 @@ cmd_verify() {
 }
 
 # The plan with its Status set to published.
-mark_published() {
-  local tmp
-  tmp=$(mktemp "$PLAN_FILE.XXXXXX")
-  chmod --reference="$PLAN_FILE" -- "$tmp"
-  awk '!done && /^Status:/ { sub(/Status:[^|]*/, "Status: published "); done = 1 } { print }' "$PLAN_FILE" > "$tmp"
-  mv -- "$tmp" "$PLAN_FILE"
-}
+mark_published() { set_header "$PLAN_FILE" Status published || fail "Cannot set Status: published in $PLAN_FILE."; }
 
 # A plan shares its worktree with its parent when both resolve to the same one
 # (an only child); the plan that created the worktree removes it.

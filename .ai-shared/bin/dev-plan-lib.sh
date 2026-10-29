@@ -1,5 +1,5 @@
 # Plan reading shared by gate-check.sh, dev-stack.sh, and dev-publish.sh: plan
-# paths, Status-line fields, and the Stacks On tree (../skills/dev/plan.md).
+# paths, header fields, and the Stacks On tree (../skills/dev/plan.md).
 # Source it with REPO_ROOT set to the main working-tree root. Plans live
 # outside the repository, under $PLANS_ROOT/<repo>/<issue>_<slug>/pr<N>.spec.md;
 # functions take and print canonical absolute plan paths. Functions only print
@@ -56,10 +56,11 @@ plan_number() { local n="${1##*/pr}"; printf '%s\n' "${n%.spec.md}"; }
 
 # ── headers ───────────────────────────────────────────────────────────
 
-# Per plan file, one record: "<path> US <Status line> US <raw Stacks On
-# value> US <last Plan review line> US <spec> RS". The Status line is the
-# first outside a fence. The spec is the file without its records: that
-# line's Status value and the Plan review lines. The Stacks On
+# Per plan file, one record: "<path> US <header> US <raw Stacks On value> US
+# <spec> RS". The header is the "Key: value" lines above the first "## "
+# heading and outside fences, the first of each key, one per line. The spec
+# is the file without its records: the header's Status, Spec, and Tip lines.
+# The Stacks On
 # value is "!" when the line is unreadable: anything that reads as a Stacks
 # On line but is not exactly one unindented, plain `Stacks On:` line in the
 # header — indented, bulleted, emphasized, repeated, empty, below the header,
@@ -68,15 +69,17 @@ plan_number() { local n="${1##*/pr}"; printf '%s\n' "${n%.spec.md}"; }
 PLAN_AWK='
   function flush() {
     if (file == "") return
-    printf "%s\037%s\037%s\037%s\037%s\036", file, status,
-      (fenced || n > 1 || bad || (n && line == "")) ? "!" : line, review, text
+    printf "%s\037%s\037%s\037%s\036", file, head,
+      (fenced || n > 1 || bad || (n && line == "")) ? "!" : line, text
   }
-  FNR == 1 { flush(); file = FILENAME; status = line = review = text = ""; got = fenced = body = n = bad = 0 }
-  /^Plan review:/ { review = $0 }
-  !/^Plan review: (READY|NEEDS CHANGES) at [0-9a-f]+$/ {
-    t = $0
-    if (!got && !fenced && /^Status:/) { status = $0; got = 1; sub(/Status:[^|]*/, "Status: ", t) }
-    text = text t "\n"
+  FNR == 1 { flush(); file = FILENAME; head = line = text = ""; fenced = body = n = bad = 0; split("", seen) }
+  {
+    record = 0
+    if (!fenced && !body && match($0, /^[A-Z][A-Za-z ]*:/)) {
+      key = substr($0, 1, RLENGTH - 1)
+      if (!(key in seen)) { seen[key] = 1; head = head $0 "\n"; record = key == "Status" || key == "Spec" || key == "Tip" }
+    }
+    if (!record) text = text $0 "\n"
   }
   /^[[:space:]]*(```|~~~)/ { fenced = !fenced; next }
   fenced { next }
@@ -89,16 +92,16 @@ PLAN_AWK='
   END { flush() }'
 
 # What PLAN_AWK read, by plan path, and each indexed directory's plan files in
-# number order. A process caches every plan it reads, so it reads a plan
+# number order. A header starts with a newline, so every key follows one. A process caches every plan it reads, so it reads a plan
 # before changing it, never after.
-declare -gA PLAN_STATUS=() PLAN_STACKS=() PLAN_REVIEW=() PLAN_SPEC=() PLAN_FILES=()
+declare -gA PLAN_HEAD=() PLAN_STACKS=() PLAN_SPEC=() PLAN_FILES=()
 
 # Reads plans $@, each a readable file, into the cache.
 load_plans() {
-  local f path status stacks review spec
-  for f in "$@"; do PLAN_STATUS[$f]="" PLAN_STACKS[$f]="" PLAN_REVIEW[$f]="" PLAN_SPEC[$f]=""; done
-  while IFS=$'\037' read -r -d $'\036' path status stacks review spec; do
-    PLAN_STATUS[$path]=$status PLAN_STACKS[$path]=$stacks PLAN_REVIEW[$path]=$review PLAN_SPEC[$path]=$spec
+  local f path head stacks spec
+  for f in "$@"; do PLAN_HEAD[$f]="" PLAN_STACKS[$f]="" PLAN_SPEC[$f]=""; done
+  while IFS=$'\037' read -r -d $'\036' path head stacks spec; do
+    PLAN_HEAD[$path]=$'\n'$head PLAN_STACKS[$path]=$stacks PLAN_SPEC[$path]=$spec
   done < <(awk "$PLAN_AWK" "$@" 2>/dev/null)
 }
 
@@ -117,7 +120,7 @@ index_stack() {
 
 # Loads plan $1 unless cached; fails when the file cannot be read.
 plan_loaded() {
-  [[ ! -v PLAN_STATUS[$1] ]] || return 0
+  [[ ! -v PLAN_HEAD[$1] ]] || return 0
   [[ -f "$1" && -r "$1" ]] || return 1
   load_plans "$1"
 }
@@ -125,19 +128,46 @@ plan_loaded() {
 # The *_get readers set REPLY instead of printing, so loops over a stack
 # call them without a subshell; the printing forms wrap them.
 
-# Sets REPLY to one field of plan $1's Status line ("Status: x | Base: y |
-# ..."), trimmed; empty without it. Fails when the file cannot be read.
+# Sets REPLY to header field $2 of plan $1 (its "$2: value" line), trimmed;
+# empty without it. Fails when the file cannot be read.
 field_get() {
-  local part parts
+  local value
   REPLY=""
   plan_loaded "$1" || return 1
-  IFS='|' read -ra parts <<<"${PLAN_STATUS[$1]}"
-  for part in "${parts[@]}"; do
-    part=${part#"${part%%[![:space:]]*}"}; part=${part%"${part##*[![:space:]]}"}
-    [[ "$part" == "$2:"* ]] || continue
-    part=${part#"$2:"}; REPLY=${part#"${part%%[![:space:]]*}"}
-    return 0
-  done
+  [[ "${PLAN_HEAD[$1]}" == *$'\n'"$2:"* ]] || return 0
+  value=${PLAN_HEAD[$1]#*$'\n'"$2:"}; value=${value%%$'\n'*}
+  value=${value#"${value%%[![:space:]]*}"}; REPLY=${value%"${value##*[![:space:]]}"}
+}
+
+# Sets header fields of plan $1 in place from "<key> <value>" pairs: each
+# replaces its key's header line, and a missing key goes after Status, which
+# must exist. Writes through a temporary file, so a failure leaves the plan.
+set_header() {
+  local plan="$1" tmp pairs=""
+  shift
+  while (( $# >= 2 )); do pairs+="$1"$'\037'"$2"$'\036'; shift 2; done
+  field_get "$plan" Status && [[ -n "$REPLY" ]] || return 1
+  tmp=$(mktemp "$plan.XXXXXX") || return 1
+  chmod --reference="$plan" -- "$tmp"
+  # Two passes over the plan: the first finds the header keys present, the
+  # second rewrites the first line of each given key.
+  PAIRS="$pairs" awk '
+    BEGIN {
+      n = split(ENVIRON["PAIRS"], kv, "\036") - 1
+      for (i = 1; i <= n; i++) { split(kv[i], p, "\037"); keys[i] = p[1]; val[p[1]] = p[2] }
+    }
+    FNR == 1 { pass++; fenced = body = 0; split("", seen) }
+    /^[[:space:]]*(```|~~~)/ { fenced = !fenced }
+    /^## / && !fenced { body = 1 }
+    !fenced && !body && match($0, /^[A-Z][A-Za-z ]*:/) && !((key = substr($0, 1, RLENGTH - 1)) in seen) {
+      seen[key] = 1
+      if (pass == 1) { present[key] = 1; next }
+      if (key in val) print key ": " val[key]; else print
+      if (key == "Status") for (i = 1; i <= n; i++) if (!(keys[i] in present)) print keys[i] ": " val[keys[i]]
+      next
+    }
+    pass == 2 { print }' "$plan" "$plan" > "$tmp" || { rm -f -- "$tmp"; return 1; }
+  mv -- "$tmp" "$plan"
 }
 field() { field_get "$@" || return 1; [[ -z "$REPLY" ]] || printf '%s\n' "$REPLY"; }
 
@@ -157,20 +187,22 @@ parent_get() {
 }
 stacks_on() { parent_get "$1" || return 1; [[ -z "$REPLY" ]] || printf '%s\n' "$REPLY"; }
 
-# Sets REPLY to plan $1's status: its Status value, with a reviewed plan's SHA
-# cut off. A bare `reviewed`, missing its SHA, and any malformed value read as
-# unknown statuses.
+# Sets REPLY to plan $1's Status value. A `reviewed` plan without a Tip SHA
+# reads as an unknown status.
 status_get() {
   field_get "$1" Status || true
-  if [[ "$REPLY" =~ ^reviewed\ [0-9a-f]{7,40}$ ]]; then REPLY=reviewed
-  elif [[ "$REPLY" == reviewed ]]; then REPLY='reviewed without its SHA'; fi
+  [[ "$REPLY" == reviewed ]] || return 0
+  field_get "$1" Tip || true
+  if [[ "$REPLY" =~ ^[0-9a-f]{7,40}$ ]]; then REPLY=reviewed; else REPLY='reviewed without its SHA'; fi
 }
 status_of() { status_get "$1"; printf '%s\n' "$REPLY"; }
 
-# The SHA review-code recorded in `Status: reviewed <sha>`; empty without one.
+# The Tip SHA review-code recorded on a `reviewed` plan; empty otherwise.
 green_of() {
-  field_get "$1" Status || true
-  if [[ "$REPLY" =~ ^reviewed\ ([0-9a-f]{7,40})$ ]]; then printf '%s\n' "${BASH_REMATCH[1]}"; fi
+  status_get "$1"
+  [[ "$REPLY" == reviewed ]] || return 0
+  field_get "$1" Tip
+  printf '%s\n' "$REPLY"
 }
 
 # A published plan: create-pr's cleanup finished; no phase resumes it.
@@ -249,9 +281,10 @@ root_plans() {
   done
 }
 
-# The rank of a status in the sequence; empty for an unknown status.
+# The rank of a status in the sequence; empty for an unknown status. A review
+# verdict is still planning.
 status_rank() {
-  case "$1" in planning) echo 0 ;; approved) echo 1 ;; implemented) echo 2 ;; reviewed) echo 3 ;; published) echo 4 ;; esac
+  case "$1" in planning|needs-changes|ready) echo 0 ;; approved) echo 1 ;; implemented) echo 2 ;; reviewed) echo 3 ;; published) echo 4 ;; esac
 }
 
 # The branch plan $1's PR targets: its parent plan's Branch, or its Base for
@@ -271,12 +304,11 @@ contains_parent_green() {
     git -C "$REPO_ROOT" merge-base --is-ancestor "$parent_green" "$plan_green" 2>/dev/null
 }
 
-# Sets REPLY to plan $1's spec, without trailing newlines, and SPEC_LAST to its
-# last Plan review line; both empty for a file it cannot read.
+# Sets REPLY to plan $1's spec, without trailing newlines; empty for a file it
+# cannot read.
 spec_get() {
-  REPLY="" SPEC_LAST=""
+  REPLY=""
   plan_loaded "$1" || return 0
-  SPEC_LAST=${PLAN_REVIEW[$1]}
   REPLY=${PLAN_SPEC[$1]}
   REPLY=${REPLY%"${REPLY##*[!$'\n']}"}
 }
@@ -296,18 +328,23 @@ plan_hash() {
   printf '%s' "$text" | git hash-object --stdin
 }
 
-# Plan $1's last Plan review record against its current spec: READY or
-# NEEDS CHANGES when it matches, stale when it does not or is malformed, and
-# empty without one. Fails when the hash does.
+# The Spec value verdict $2 records for spec hash $1: the hash itself for
+# ready, and for needs-changes a hash bound to the verdict, so a Status set
+# to approved by hand cannot pass a needs-changes verdict off as ready.
+verdict_hash() {
+  if [[ "$2" == ready ]]; then printf '%s\n' "$1"; else printf '%s %s\n' "$1" "$2" | git hash-object --stdin; fi
+}
+
+# The verdict plan $1's Spec value records for its current spec: ready or
+# needs-changes; stale when it matches neither or is malformed; empty
+# without one. Fails when the hash does.
 review_state() {
   local rec hash
-  spec_get "$1"
-  rec=$SPEC_LAST
-  [[ -n "$rec" ]] || return 0
+  field_get "$1" Spec || true
+  rec=$REPLY
+  [[ -n "$rec" && "$rec" != - ]] || return 0
   hash=$(plan_hash "$1") || return 1
-  if [[ "$rec" =~ ^Plan\ review:\ (READY|NEEDS\ CHANGES)\ at\ ([0-9a-f]{40,64})$ && "${BASH_REMATCH[2]}" == "$hash" ]]; then
-    printf '%s\n' "${BASH_REMATCH[1]}"
-  else
-    printf 'stale\n'
-  fi
+  if [[ "$rec" == "$hash" ]]; then printf 'ready\n'
+  elif [[ "$rec" == "$(verdict_hash "$hash" needs-changes)" ]]; then printf 'needs-changes\n'
+  else printf 'stale\n'; fi
 }

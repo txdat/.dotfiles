@@ -51,23 +51,24 @@ ST-1 — add the status gate — satisfies TC-1
 GRAPH
 }
 
-# A current READY plan review record for plan file $1, as dev-stack.sh review
-# writes it.
+# A current Spec hash for plan file $1, as dev-stack.sh review writes it.
 ready() {
   local hash
   hash=$(REPO_ROOT=/unused bash -c '. "$1"; plan_hash "$2"' _ "$ROOT/bin/dev-plan-lib.sh" "$1") || hash=none
-  printf 'Plan review: READY at %s\n' "$hash" >> "$1"
+  sed -i "0,/^Spec:/ s/^Spec: .*/Spec: $hash/" "$1"
 }
 
 # write_plan <file> <status> [graph] [type] [issue] [extra header line] [branch]
-# A bare `reviewed` gets the repository's HEAD as its reviewed SHA.
+# A bare `reviewed` gets the repository's HEAD as its Tip; `reviewed <sha>`
+# gets <sha>.
 write_plan() {
-  local file="$1" status="$2" graph="${3-$(valid_graph)}" type="${4-feature}" issue="${5-#12}" extra="${6-}" branch="${7-feat/gate}"
+  local file="$1" status="$2" graph="${3-$(valid_graph)}" type="${4-feature}" issue="${5-#12}" extra="${6-}" branch="${7-feat/gate}" tip=-
   [[ "$status" != reviewed ]] || status="reviewed $(git -C "$repo" rev-parse HEAD)"
+  [[ "$status" != 'reviewed '* ]] || { tip=${status#reviewed }; status=reviewed; }
   mkdir -p "$(dirname "$file")"
   {
     printf '# Gate test\n'
-    printf 'Status: %s | Type: %s | Base: main | Branch: %s | Issue: %s\n' "$status" "$type" "$branch" "$issue"
+    printf 'Status: %s\nSpec: -\nTip: %s\nType: %s\nBase: main\nBranch: %s\nIssue: %s\n' "$status" "$tip" "$type" "$branch" "$issue"
     if [[ -n "$extra" ]]; then printf '%s\n' "$extra"; fi
     printf '\n## Goal\nGate the phases.\n\n%s\n' "$graph"
   } > "$file"
@@ -90,8 +91,10 @@ plan_with_worktree() {
   write_plan "$P" "$status" "${2-$(valid_graph)}" "${3-feature}"
 }
 
-# The reviewed SHA in plan $1's Status line.
-green_in() { sed -n 's/^Status: reviewed \([0-9a-f]*\).*/\1/p' "$1"; }
+# The Tip SHA of plan $1 when it is reviewed.
+green_in() { grep -qx 'Status: reviewed' "$1" && sed -n '0,/^Tip:/ s/^Tip: \([0-9a-f]*\)$/\1/p' "$1"; }
+# set_reviewed <plan> [sha]: Status reviewed with Tip <sha>, or none.
+set_reviewed() { sed -i "s/^Status: .*/Status: reviewed/; s/^Tip: .*/Tip: ${2:--}/" "$1"; }
 
 # A proof on top of commit $1: a test(red) commit, then an implementation.
 proof_on() {
@@ -109,7 +112,7 @@ wt_commit() {
 }
 
 # The gate for skill $2 on args $3 in repo $1. Fixtures edit specs freely, so
-# each plan past planning first gets a current READY review, unless
+# each plan past planning first gets a current ready Spec, unless
 # STALE_OK=1 keeps its records as they are.
 run_gate() {
   local main f
@@ -260,7 +263,7 @@ assert_pass "$(run_gate "$repo" dev-review-feature "$P")" 'the type lives in the
 write_plan "$P" planning "$(valid_graph)" chore
 assert_block "$(run_gate "$repo" dev-review-feature "$P")" "write feature, fix, or refactor" 'an unknown type blocks'
 write_plan "$P" planning
-sed -i 's/| Base: main |/| Base: |/' "$P"
+sed -i 's/^Base: main$/Base:/' "$P"
 assert_block "$(run_gate "$repo" dev-review-feature "$P")" 'no Base branch' 'review requires a Base'
 write_plan "$P" planning "$(valid_graph)" feature '#12' '' ''
 assert_block "$(run_gate "$repo" dev-review-feature "$P")" "has 'Branch: '" 'review requires a Branch'
@@ -473,11 +476,11 @@ assert_block "$(run_gate "$repo" dev-review-feature "$FE $BE")" 'takes one plan 
 assert_pass "$(run_gate "$repo" dev-review-feature "$BE")" 'the root plan reviews on its own'
 fe_repo approved planning
 assert_pass "$(run_gate "$repo" dev-review-feature "$FE")" 'review enters once the parent is approved'
-sed -i 's/| Branch: feat\/fe |/| Branch: feat\/gate |/' "$FE"
+sed -i 's/^Branch: feat\/fe$/Branch: feat\/gate/' "$FE"
 assert_block "$(run_gate "$repo" dev-review-feature "$FE")" "its PR targets its parent plan's branch, 'feat/gate'" 'a stacked plan has its own branch'
-sed -i 's/| Branch: feat\/gate |/| Branch: feat\/fe |/; s/| Base: main |/| Base: feat\/gate |/' "$FE"
+sed -i 's/^Branch: feat\/gate$/Branch: feat\/fe/; s/^Base: main$/Base: feat\/gate/' "$FE"
 assert_block "$(run_gate "$repo" dev-review-feature "$FE")" "a stacked plan uses its parent's Base" 'a stacked plan must share the parent Base'
-sed -i 's/| Base: feat\/gate |/| Base: main |/' "$FE"
+sed -i 's/^Base: feat\/gate$/Base: main/' "$FE"
 sed -i '/^Status:/a Stacks On: pr2' "$BE"
 assert_block "$(run_gate "$repo" dev-execute-feature "$BE")" "'Stacks On:' line that is misplaced, repeated, or malformed" 'a plan stacks only on a lower number, so no cycle forms'
 sed -i '/^Stacks On:/d' "$BE"
@@ -488,7 +491,7 @@ fe_repo implemented approved
 assert_block "$(run_gate "$repo" dev-execute-feature "$FE")" "is 'implemented'; execute-feature needs it 'reviewed' or later" 'execution waits for the parent review'
 fe_repo reviewed approved
 assert_pass "$(run_gate "$repo" dev-execute-feature "$FE")" 'execution enters once the parent is reviewed'
-sed -i 's/| Branch: feat\/gate |/| Branch: feat\/fe |/' "$BE"
+sed -i 's/^Branch: feat\/gate$/Branch: feat\/fe/' "$BE"
 assert_block "$(run_gate "$repo" dev-execute-feature "$FE")" "its PR targets its parent plan's branch, 'feat/fe'" 'execution rechecks stacking after a parent revision'
 fe_repo published approved
 assert_block "$(run_gate "$repo" dev-execute-feature "$FE")" 'a published plan never becomes a parent' 'a published plan cannot be a parent'
@@ -516,7 +519,7 @@ assert_pass "$(run_gate "$repo" dev-execute-feature "$P")" 'an approved plan wit
 
 use_repo
 write_plan "$P" planning
-sed -i '2i ```\nStatus: approved | Branch: feat/gate\n```' "$P"
+sed -i '2i ```\nStatus: approved\n```' "$P"
 assert_block "$(run_gate "$repo" dev-execute-feature "$P")" "Plan status is 'planning'" 'a fenced Status line is not the header'
 
 # ── review-code ──
@@ -652,7 +655,7 @@ assert_block "$(run_gate "$repo" dev-review-code "$FE")" "Parent plan $BE is 'im
 # ── create-pr ──
 use_repo
 plan_with_worktree reviewed
-sed -i 's/^Status: reviewed [0-9a-f]*/Status: reviewed/' "$P"
+set_reviewed "$P"
 assert_block "$(run_gate "$repo" dev-create-pr "$P")" "Plan status is 'reviewed without its SHA'" 'create-pr needs the root reviewed SHA'
 use_repo
 write_plan "$P" "reviewed $(git -C "$repo" rev-parse HEAD)"
@@ -661,7 +664,7 @@ use_repo
 plan_with_worktree implemented
 assert_block "$(run_gate "$repo" dev-create-pr "$P")" 'run review-code first' 'an implemented plan cannot skip review-code'
 wt_commit "$(wt_of "$P")" 'feat(gate): no test first' src/gate.py
-sed -i "s/^Status: implemented/Status: reviewed $(git -C "$repo" rev-parse feat/gate)/" "$P"
+set_reviewed "$P" "$(git -C "$repo" rev-parse feat/gate)"
 assert_block "$(run_gate "$repo" dev-create-pr "$P")" "has no 'test(red):' commit followed by implementation after" 'a reviewed status set by hand does not skip the proof'
 use_repo
 plan_with_worktree reviewed
@@ -691,7 +694,7 @@ stack_on "$C4" approved pr2 feat/c4
 assert_block "$(run_gate "$repo" dev-create-pr "$P")" "Plan $C4 stacks above this plan and is 'approved'" 'the root waits for a grandchild to be reviewed'
 stack_on "$C4" reviewed pr2 feat/c4
 assert_pass "$(run_gate "$repo" dev-create-pr "$P")" 'the root publishes once every plan in its tree is reviewed'
-sed -i "s/^Status: reviewed [0-9a-f]*/Status: reviewed $(green_in "$C2")/" "$C4"
+set_reviewed "$C4" "$(green_in "$C2")"
 assert_block "$(run_gate "$repo" dev-create-pr "$P")" "Plan $C4's reviewed SHA $(green_in "$C2") has no 'test(red):' commit followed by implementation" 'a child without its own proof blocks publication'
 stack_on "$C4" reviewed pr2 feat/c4
 git -C "$repo" worktree remove "$(wt_of "$C3")"
@@ -699,21 +702,21 @@ assert_block "$(run_gate "$repo" dev-create-pr "$P")" "Plan $C3 has no worktree"
 git -C "$repo" branch -q feat/c3 main
 assert_block "$(run_gate "$repo" dev-create-pr "$P")" "Plan $C3 shares $P's worktree, but $P has other children" 'a sibling may not share its parent worktree'
 git -C "$repo" worktree add -q --detach "$(wt_of "$C3")" main
-sed -i 's/^Status: reviewed [0-9a-f]*/Status: reviewed/' "$C2"
+set_reviewed "$C2"
 assert_block "$(run_gate "$repo" dev-create-pr "$P")" "Plan $C2 stacks above this plan and is 'reviewed without its SHA'" 'each plan above needs its reviewed SHA'
 stack_on "$C2" reviewed pr1 feat/c2
 run_gate "$repo" dev-create-pr "$P" >/dev/null
 printf 'Note: added later\n' >> "$C4"
-assert_block "$(STALE_OK=1 run_gate "$repo" dev-create-pr "$P")" "Plan $C4 has no 'Plan review: READY' record" 'a line added after review voids it'
+assert_block "$(STALE_OK=1 run_gate "$repo" dev-create-pr "$P")" "Plan $C4 has no ready 'Spec:' hash" 'a line added after review voids it'
 stack_on "$C4" reviewed pr2 feat/c4
 sed -i 's/^Gate the phases\./Gate every phase./' "$C4"
-assert_block "$(STALE_OK=1 run_gate "$repo" dev-create-pr "$P")" "Plan $C4 has no 'Plan review: READY' record" 'a stack plan edited after review blocks publication'
+assert_block "$(STALE_OK=1 run_gate "$repo" dev-create-pr "$P")" "Plan $C4 has no ready 'Spec:' hash" 'a stack plan edited after review blocks publication'
 sed -i 's/^Gate the phases\./Gate every phase./' "$P"
-assert_block "$(STALE_OK=1 run_gate "$repo" dev-create-pr "$P")" "Plan $P has no 'Plan review: READY' record" 'a root edited after review blocks publication'
+assert_block "$(STALE_OK=1 run_gate "$repo" dev-create-pr "$P")" "Plan $P has no ready 'Spec:' hash" 'a root edited after review blocks publication'
 stale=$(green_in "$C2")
 wt_commit "$(wt_of "$P")" 'fix: root repair' src/root.py
 green=$(git -C "$(wt_of "$P")" rev-parse HEAD)
-sed -i "s/^Status: reviewed [0-9a-f]*/Status: reviewed $green/" "$P"
+set_reviewed "$P" "$green"
 assert_block "$(run_gate "$repo" dev-create-pr "$P")" "Plan $C2's reviewed SHA $stale does not contain its parent $P's, $green" 'a child reviewed before a root repair blocks publication'
 stack_on "$C2" reviewed pr1 feat/c2
 stack_on "$C3" reviewed pr1 feat/c3
@@ -739,12 +742,12 @@ rm "$PD/12_gate/pr6.spec.md"
 assert_block "$(run_gate "$repo" dev-create-pr "$C2")" "create-pr runs once, on the stack's root $P" 'create-pr on a stacked plan names the root'
 git -C "$repo" branch -q -D feat/c4
 assert_block "$(run_gate "$repo" dev-create-pr "$P")" "Plan $C4 has no worktree" 'publication needs every worktree in the stack'
-sed -i 's/^Status: reviewed [0-9a-f]*/Status: published/' "$C4"
+sed -i 's/^Status: reviewed$/Status: published/' "$C4"
 assert_pass "$(run_gate "$repo" dev-create-pr "$P")" 'a plan published by an earlier cleanup leaves the stack'
 
 
-# ── a current READY plan review ──
-NO_REVIEW="no 'Plan review: READY' record for its current spec"
+# ── a current ready Spec ──
+NO_REVIEW="no ready 'Spec:' hash for its current spec"
 use_repo
 write_plan "$P" approved
 assert_block "$(STALE_OK=1 run_gate "$repo" dev-execute-feature "$P")" "$NO_REVIEW" 'execution needs a recorded review'
@@ -752,8 +755,17 @@ ready "$P"
 assert_pass "$(STALE_OK=1 run_gate "$repo" dev-execute-feature "$P")" 'a current review admits execution'
 sed -i 's/^Gate the phases\./Gate every phase./' "$P"
 assert_block "$(STALE_OK=1 run_gate "$repo" dev-execute-feature "$P")" "$NO_REVIEW" 'a spec edit after review blocks execution'
-ready "$P"; sed -i '$ s/READY/NEEDS CHANGES/' "$P"
-assert_block "$(STALE_OK=1 run_gate "$repo" dev-execute-feature "$P")" "$NO_REVIEW" 'a NEEDS CHANGES verdict blocks execution'
+sed -i 's/^Spec: .*/Spec: nothex/' "$P"
+assert_block "$(STALE_OK=1 run_gate "$repo" dev-execute-feature "$P")" "$NO_REVIEW" 'a malformed Spec hash blocks execution'
+sed -i 's/^Status: approved$/Status: needs-changes/' "$P"; ready "$P"
+assert_block "$(STALE_OK=1 run_gate "$repo" dev-execute-feature "$P")" "Plan status is 'needs-changes' — not approved. Revise it" 'a needs-changes verdict blocks execution'
+assert_pass "$(STALE_OK=1 run_gate "$repo" dev-review-feature "$P")" 'a needs-changes plan re-enters review'
+(cd "$repo" && bash "$ROOT/bin/dev-stack.sh" review "$P" needs-changes >/dev/null)
+sed -i 's/^Status: needs-changes$/Status: approved/' "$P"
+assert_block "$(STALE_OK=1 run_gate "$repo" dev-execute-feature "$P")" "$NO_REVIEW" 'approving a needs-changes verdict by hand blocks execution'
+sed -i 's/^Status: approved$/Status: needs-changes/' "$P"
+sed -i 's/^Status: needs-changes$/Status: ready/' "$P"
+assert_pass "$(STALE_OK=1 run_gate "$repo" dev-review-feature "$P")" 'a ready plan may be reviewed again'
 fe_repo reviewed approved
 ready "$FE"
 assert_pass "$(STALE_OK=1 run_gate "$repo" dev-execute-feature "$FE")" 'a stacked plan with a current review executes'

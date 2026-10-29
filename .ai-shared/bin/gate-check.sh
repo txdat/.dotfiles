@@ -7,8 +7,8 @@
 #
 # Only review-feature, execute-feature, review-code, and create-pr are gated.
 # Each checks its entry status; review-feature and review-code also check the
-# plan's ID shape (id_report), every gate but review-feature a current READY
-# plan review (create-pr for each plan it publishes), and review-code the
+# plan's ID shape (id_report), every gate but review-feature a current ready
+# Spec (create-pr for each plan it publishes), and review-code the
 # RED/GREEN commit sequence.
 # The hook reads identifiers and fields, never prose: whether an AC is right
 # or a step satisfies its TC is the reviewer's judgment. It cannot tell who
@@ -439,10 +439,10 @@ require_stacked() {
 
 review_feature_gate() {
   case "$STATUS" in
-    planning) ;;
+    planning|needs-changes|ready) ;;
     approved) block "Plan is already approved. Run execute-feature next." ;;
     implemented|reviewed) block "Plan status is '$STATUS' — too late for review-feature. Continue forward." ;;
-    *) block "Plan status is '$STATUS' — expected 'planning'. Run design-feature first." ;;
+    *) block "Plan status is '$STATUS' — expected 'planning', 'needs-changes', or 'ready'. Run design-feature first." ;;
   esac
   check_name
   require_parent_rank 1 approved
@@ -451,19 +451,21 @@ review_feature_gate() {
   [[ -z "$PARENT_PLAN" ]] || require_stacked "$PLAN" "$PARENT_PLAN"
 }
 
-# The spec, with the specs below it, is the one review-feature passed: a
-# change after review voids the user's approval of it.
+# The spec, with the specs below it, is the one review-feature passed, by its
+# Spec: a change after review voids the user's approval of it.
 require_current_review() {
   local plan="${1:-$PLAN}" state
   state=$(review_state "$plan") || block "Cannot hash $plan with the plans below it: one is missing or has an unreadable 'Stacks On:' line."
-  [[ "$state" == READY ]] ||
-    block "Plan $plan has no 'Plan review: READY' record for its current spec and the specs below it: it changed after review-feature, or no verdict was recorded. Return it to planning, run review-feature, record the verdict with dev-stack.sh review, and have the user approve it again (skills/dev/plan.md#review)."
+  [[ "$state" == ready ]] ||
+    block "Plan $plan has no ready 'Spec:' hash for its current spec and the specs below it: it changed after review-feature, its verdict was needs-changes, or no verdict was recorded. Return it to planning, run review-feature, record the verdict with dev-stack.sh review, and have the user approve it again (skills/dev/plan.md#review)."
 }
 
 execute_feature_gate() {
   case "$STATUS" in
     approved) ;;
     planning) block "Plan status is 'planning' — not approved. Run review-feature; only the user sets 'Status: approved'." ;;
+    needs-changes) block "Plan status is 'needs-changes' — not approved. Revise it, then run review-feature again." ;;
+    ready) block "Plan status is 'ready' — awaiting the user's approval; only the user sets 'Status: approved'." ;;
     implemented) block "Plan is already implemented. Run review-code next." ;;
     reviewed) block "Plan is already reviewed. Run create-pr next." ;;
     *) block "Plan status is '$STATUS' — expected 'approved'." ;;
@@ -480,7 +482,7 @@ review_code_gate() {
   local target branch count
   case "$STATUS" in
     implemented) ;;
-    planning|approved) block "Plan status is '$STATUS' — not yet implemented. Run execute-feature first." ;;
+    planning|needs-changes|ready|approved) block "Plan status is '$STATUS' — not yet implemented. Run execute-feature first." ;;
     reviewed) block "Plan is already reviewed. Run create-pr next." ;;
     *) block "Plan status is '$STATUS' — expected 'implemented'." ;;
   esac
@@ -506,7 +508,7 @@ create_pr_gate() {
   case "$STATUS" in
     reviewed) ;;
     implemented) block "Plan status is 'implemented' — run review-code first." ;;
-    planning|approved) block "Plan status is '$STATUS' — not yet executed. Continue the workflow." ;;
+    planning|needs-changes|ready|approved) block "Plan status is '$STATUS' — not yet executed. Continue the workflow." ;;
     *) block "Plan status is '$STATUS' — expected 'reviewed'." ;;
   esac
   require_worktree

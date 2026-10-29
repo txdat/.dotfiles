@@ -19,4 +19,4 @@ Report your conclusion on each AC and the Goal, the decisive evidence, and locat
 
 ## Finalize
 
-On a passing review, the main agent runs the local checks and tests at the Branch tip, leaves the worktree on the Branch, sets `Status: reviewed <tip SHA>`, and hands off to [create-pr.md](create-pr.md). A later change to the Branch returns the plan to `implemented` for another review.
+On a passing review, the main agent runs the local checks and tests at the Branch tip, leaves the worktree on the Branch, sets `Status: reviewed` and `Tip: <tip SHA>`, and hands off to [create-pr.md](create-pr.md). A later change to the Branch returns the plan to `implemented` for another review.
