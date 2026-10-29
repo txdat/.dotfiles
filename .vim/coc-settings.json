@@ -89,9 +89,9 @@
         }
       }
     },
-    "tsc": {
-      "command": "tsc",
-      "args": ["--lsp", "--stdio"],
+    "vtsls": {
+      "command": "vtsls",
+      "args": ["--stdio"],
       "filetypes": [
         "javascript",
         "javascriptreact",

@@ -6,12 +6,9 @@
     "name": "txdat"
   },
   "lspServers": {
-    "tsc": {
-      "command": "tsc",
-      "args": [
-        "--lsp",
-        "--stdio"
-      ],
+    "vtsls": {
+      "command": "vtsls",
+      "args": ["--stdio"],
       "extensionToLanguage": {
         ".ts": "typescript",
         ".tsx": "typescriptreact",
