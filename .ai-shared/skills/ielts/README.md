@@ -22,7 +22,7 @@ Keep diagnosis certainty separate: `observed` requires a located mismatch; `poss
 
 [IELTS scoring reference](https://ielts.org/take-a-test/your-results/ielts-scoring-in-detail), previously checked 2026-09-05. Use [rubric.md](rubric.md) for Writing/Speaking assessment and target-band guidance.
 
-Use [ielts-score.py](scripts/ielts-score.py) for arithmetic (`--help` lists commands). Exam overall is calculated only from four known L/R/W/S components: `overall <L> <R> <W> <S>`, with literal `null` for missing values. Bands are 0–9 in half steps; zero is not missing. Retain the Decimal mean until final half-band rounding, with quarter ties upward. Preserve reported overall separately if it differs.
+Use [ielts-score.ts](scripts/ielts-score.ts) with Node 22.18+ for arithmetic (`--help` lists commands). Exam overall is calculated only from four known L/R/W/S components: `overall <L> <R> <W> <S>`, with literal `null` for missing values. Bands are 0–9 in half steps; zero is not missing. Retain the exact mean until final half-band rounding, with quarter ties upward. Preserve reported overall separately if it differs.
 
 Writing tasks have equally weighted criteria; combine both task means with Task 2 weighted twice. A single essay yields only an estimated task band, not a complete Writing component. Rubric.md owns evidence limits for incomplete tasks and transcripts. AI rewrites are demonstrations, not learner performance gains.
 
