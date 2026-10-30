@@ -99,7 +99,7 @@ A plan's worktree is found, never recorded: its own at `~/work/wt/<repo>-<issue>
 
 ## Review
 
-When this session wrote the artifact, run the review in a fresh subagent without the conversation. Give it only [CODING.md](../../CODING.md), the review skill and the files it links, the artifact path, the user's request, the worktree and refs it needs, and, for a re-review, the prior findings and what changed. A stacked plan's reviewer also reads the plans below it. If no subagent is available, review directly and say so.
+When this session wrote the artifact, run the review in a fresh subagent without the conversation: the [dev-reviewer](../../agents/dev-reviewer.md) agent where installed, on the model and effort [README](../../README.md#skills) gives the review skill. Give it only [CODING.md](../../CODING.md), the review skill and the files it links, the artifact path, the user's request, the worktree and refs it needs, and, for a re-review, the prior findings and what changed. A stacked plan's reviewer also reads the plans below it. If no subagent is available, review directly and say so.
 
 Preferences and style never block. The reviewer is read-only: it may read, run tests, and inspect Git, but never edits files, mutates Git or switches branches, or changes status. The main agent repairs. A review-only request returns findings and changes nothing.
 

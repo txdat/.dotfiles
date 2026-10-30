@@ -6,7 +6,7 @@ Take a stack ([plan.md — Stacks](plan.md#stacks)), or one plan, through review
 
 1. Run `dev-stack.sh next <root>`.
 2. Start every runnable plan except create-pr and held phases, each in its own subagent. This session is the main agent for every plan:
-   - **review-feature:** a fresh reviewer on the model [README](../../README.md#references) gives the review skill, set up under [plan.md — Review](plan.md#review), with the paths of the plans below it. Record its verdict with `dev-stack.sh review <plan> ready|needs-changes`. A re-review also gets the prior findings and what changed.
+   - **review-feature:** a fresh reviewer set up under [plan.md — Review](plan.md#review), with the paths of the plans below it. Record its verdict with `dev-stack.sh review <plan> ready|needs-changes`. A re-review also gets the prior findings and what changed.
    - **revise:** a subagent given the review's findings revises the plan under [design-feature.md — Revise](design-feature.md#7-revise-after-review), leaving its re-review to review-feature, which `next` then names. If the findings are lost, run review-feature again to get them. A finding that needs a decision stops the plan.
    - **execute-feature:** a subagent invokes the skill `dev-execute-feature <plan>` and returns without starting review-code.
    - **review-code:** a fresh reviewer as for review-feature. On a pass, finalize under [review-code.md — Finalize](review-code.md#finalize); otherwise repair in the plan's worktree and re-review.
