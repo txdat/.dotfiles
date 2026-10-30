@@ -146,7 +146,7 @@ conda() {
 
 # claude wrapper: model/telemetry defaults plus shorthands
 #   -d         skip permission prompts
-#   -k=IDX     token from the CLAUDE_API_KEY json array (or object key)
+#   --ak=IDX   token from the CLAUDE_API_KEY json array (or object key)
 #   --ds       deepseek endpoint and models
 claude() {
     local -a env_vars=(
@@ -156,15 +156,15 @@ claude() {
         CLAUDE_CODE_DISABLE_AUTO_MEMORY=1
         CLAUDE_CODE_SIMPLE_SYSTEM_PROMPT=1
         CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
-        CLAUDE_CODE_SUBAGENT_MODEL=haiku
         ENABLE_LSP_TOOL=1
         ENABLE_CLAUDEAI_MCP_SERVERS=false
     )
     local -a args=()
+    args+=(--dangerously-skip-permissions)
     local arg pro_model flash_model token
     for arg in "$@"; do
         case $arg in
-            -k=*|--key=*)
+            --ak=*)
                 token=$(print -r -- "$CLAUDE_API_KEY" |
                     jq -r -e --arg key "${arg#*=}" \
                         'if type == "array" then .[$key | tonumber] else .[$key] end') ||
@@ -177,14 +177,23 @@ claude() {
                 env_vars+=(
                     "ANTHROPIC_BASE_URL=https://api.deepseek.com/anthropic"
                     "ANTHROPIC_AUTH_TOKEN=$DEEPSEEK_API_KEY"
-                    "ANTHROPIC_DEFAULT_FABLE_MODEL=${pro_model}[1m]"
-                    "ANTHROPIC_DEFAULT_OPUS_MODEL=${pro_model}[1m]"
-                    "ANTHROPIC_DEFAULT_SONNET_MODEL=${flash_model}[1m]"
+                    "ANTHROPIC_DEFAULT_FABLE_MODEL=${pro_model}"
+                    "ANTHROPIC_DEFAULT_OPUS_MODEL=${pro_model}"
+                    "ANTHROPIC_DEFAULT_SONNET_MODEL=${flash_model}"
                     "ANTHROPIC_DEFAULT_HAIKU_MODEL=${flash_model}"
-                    "CLAUDE_CODE_SUBAGENT_MODEL=${flash_model}"
                 )
                 ;;
-            -d) args+=(--dangerously-skip-permissions) ;;
+            --oc)
+                env_vars+=(
+                    "ANTHROPIC_BASE_URL=https://opencode.ai/inference/go/anthropic"
+                    "ANTHROPIC_AUTH_TOKEN=$OPENCODE_API_KEY"
+                    "ANTHROPIC_DEFAULT_FABLE_MODEL=deepseek-v4-pro"
+                    "ANTHROPIC_DEFAULT_OPUS_MODEL=deepseek-v4-pro"
+                    "ANTHROPIC_DEFAULT_SONNET_MODEL=deepseek-v4.1-flash"
+                    "ANTHROPIC_DEFAULT_HAIKU_MODEL=mimo-v2.6-flash"
+                )
+                ;;
+            # -d) args+=(--dangerously-skip-permissions) ;;
             *)  args+=("$arg") ;;
         esac
     done
@@ -193,10 +202,11 @@ claude() {
 
 agy() {
     local -a args=()
+    args+=(--dangerously-skip-permissions)
     local arg
     for arg in "$@"; do
         case $arg in
-            -d) args+=(--dangerously-skip-permissions) ;;
+            # -d) args+=(--dangerously-skip-permissions) ;;
             *)  args+=("$arg") ;;
         esac
     done
@@ -205,11 +215,12 @@ agy() {
 
 codex() {
     local -a args=()
+    args+=(--yolo)
     local arg
     for arg in "$@"; do
         case $arg in
-            -d)          args+=(--yolo) ;;
             -r|--resume) args+=(resume) ;;
+            # -d)          args+=(--yolo) ;;
             *)           args+=("$arg") ;;
         esac
     done
@@ -244,14 +255,14 @@ md2pdf() {
         pandoc "$tmp" -o "$out" \
             --pdf-engine=lualatex \
             --template=eisvogel \
-            -V mainfont='Maple Mono NF CN' \
-            -V monofont='Maple Mono NF CN' \
-            -V fontsize=8pt \
+            -V mainfont='NotoSans-Regular' \
+            -V monofont='NotoSansMono-Regular' \
+            -V fontsize=9pt \
             -V header-includes='
 \directlua{luaotfload.add_fallback("fb", {"[NotoSans-Regular.ttf]", "[NotoSansMono-Regular.ttf]"})}
 \AtBeginDocument{%
-  \setmainfont[RawFeature={fallback=fb}]{Maple Mono NF CN}%
-  \setmonofont[RawFeature={fallback=fb}]{Maple Mono NF CN}%
+  \setmainfont[RawFeature={fallback=fb}]{NotoSans-Regular}%
+  \setmonofont[RawFeature={fallback=fb}]{NotoSansMono-Regular}%
 }
 '
     local rc=$?
