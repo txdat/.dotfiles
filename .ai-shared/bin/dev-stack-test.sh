@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# dev-stack.sh against scratch repositories: the stack listing, review
+# dev-stack.sh against scratch repositories: the stack listing, check, review
 # verdicts, and next, whose runnable actions must pass their gates.
 set -euo pipefail
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
@@ -88,6 +88,63 @@ write_plan "$G" planning feat/grand
 expect_fail 'a directory holds one root' 'more than one plan without a' stack "$R"
 write_plan "$G" planning feat/grand pr2
 
+# ── check ──
+out=$(run check "$R") || fail "check: $out"
+[[ "$out" == "PASS $R"$'\n'"PASS $C"$'\n'"PASS $S"$'\n'"PASS $G" ]] || fail "check: $out"
+pass 'check passes every plan in the stack before any parent is approved'
+sed -i 's/^  Proves: AC-1$/  Proves: AC-9/' "$S"
+out=$(run check "$R" 2>&1) && fail "check passed a broken plan: $out"
+[[ "$out" == *"BLOCK $S"$'\n'*"AC-9"* && "$out" == *"PASS $G"* ]] || fail "check block: $out"
+pass 'check reports the block of each broken plan and checks the rest'
+write_plan "$S" planning feat/sib pr1
+run review "$R" ready >/dev/null; set_status "$R" approved
+sed -i 's/^  Proves: AC-1$/  Proves: AC-9/' "$C"
+out=$(run check "$R" 2>&1) && fail "check passed a broken child of an approved root: $out"
+[[ "$out" == "SKIP $R (approved)"$'\n'"BLOCK $C"$'\n'* ]] || fail "check under an approved root: $out"
+pass 'check skips an approved plan and still checks the plans revised under it'
+write_plan "$C" planning feat/child pr1
+sed -i 's/^A pr1/An edited pr1/' "$R"
+out=$(run check "$R" 2>&1) && fail "check passed an approved plan whose spec changed: $out"
+[[ "$out" == "BLOCK $R"$'\n'"It is approved, but its spec or a plan below it changed since its review;"* ]] || fail "check on a stale approval: $out"
+pass 'check blocks an approved plan whose review no longer holds'
+write_plan "$R" planning feat/root
+sed -i 's#^Branch: .*#Branch: main#' "$R"
+out=$(run check "$R" 2>&1) && fail "check passed a root whose Branch is its Base: $out"
+[[ "$out" == "BLOCK $R"$'\n'*"Branch is its Base"* ]] || fail "check root branch: $out"
+write_plan "$R" planning feat/root
+sed -i 's#^Branch: .*#Branch: main#' "$S"
+out=$(run check "$R" 2>&1) && fail "check passed a plan whose Branch is its Base: $out"
+[[ "$out" == *"BLOCK $S"$'\n'*"Branch is its Base"* ]] || fail "check branch: $out"
+pass 'check keeps the branch checks, on the root and on a stacked plan'
+write_plan "$S" planning feat/sib pr1
+expect_fail 'check needs the root' "stacks on $R; pass the stack's root" check "$C"
+sed -i 's#^Stacks On: .*#- Stacks On: pr2#' "$G"
+expect_fail 'check fails on an unreadable Stacks On line' "Unreadable 'Stacks On:' lines in: $G" check "$R"
+write_plan "$G" planning feat/grand
+expect_fail 'check fails on a second root' 'more than one plan without a' check "$R"
+write_plan "$G" planning feat/grand pr2
+set_status "$R" needs-changes; set_status "$C" ready
+out=$(run check "$R") || fail "check on needs-changes and ready plans: $out"
+pass 'check passes plans awaiting revision or approval'
+set_status "$C" planning; set_status "$R" published
+expect_fail 'check refuses a published stack' 'is published; no phase resumes it' check "$R"
+out=$(cd "$REPO" && bash "$GATE" --design "$C" </dev/null)
+[[ "$out" == *"is published, and a published plan never becomes a parent"* ]] || fail "design check under a published parent: $out"
+pass 'a design check refuses a child of a published parent'
+set_status "$R" planning
+CRASH="$TEST_ROOT/crash-bin"
+mkdir -p "$CRASH" && cp "$SCRIPT_DIR"/dev-stack.sh "$SCRIPT_DIR"/dev-plan-lib.sh "$SCRIPT_DIR"/dev-utils.sh "$CRASH"/
+printf '#!/bin/bash\nexit 1\n' > "$CRASH/gate-check.sh"
+out=$(cd "$REPO" && bash "$CRASH/dev-stack.sh" check "$R" 2>&1) && fail "check passed a crashing gate: $out"
+[[ "$out" == "BLOCK $R"$'\n'"gate-check.sh failed without a verdict."* && "$out" == *"BLOCK $G"* ]] || fail "check with a crashing gate: $out"
+pass 'a gate crash blocks each plan without stopping the check'
+out=$(cd "$REPO" && bash "$GATE" --design '' </dev/null)
+[[ "$out" == *'none was named'* ]] || fail "design check with no plan: $out"
+pass 'a design check with no plan blocks'
+[[ "$(jq -cn --arg a "$C" '{tool_input:{skill:"dev-review-feature",args:$a}}' | (cd "$REPO" && "$GATE"))" == *"needs it 'approved'"* ]] ||
+  fail 'the review-feature hook let a child of an unapproved parent through'
+pass 'the review-feature hook still needs an approved parent'
+
 # ── next and review verdicts ──
 expect_next 'root review-feature child wait-parent sib wait-parent grand wait-parent' 'only the root is reviewable at first'
 expect_fail 'review needs a verdict' 'Usage' review "$R" maybe
@@ -124,7 +181,9 @@ out=$(run next "$R" --md)
 [[ "$(sed -n 3p <<<"$out")" == '| pr1 | 🔵 approved | - | ▶ execute-feature | - |' ]] || fail "md row: $out"
 [[ "$(sed -n 4p <<<"$out")" == '| pr2 | 🔵 approved | pr1 | ⏳ wait-parent | pr1 must be reviewed first |' ]] || fail "md child row: $out"
 [[ "$(wc -l <<<"$out")" -eq 6 ]] || fail "md rows: $out"
-expect_fail 'next takes only --md or --tree as an option' 'Usage' next "$R" --json
+expect_fail 'next takes only --tab, --tree, or --md as an option' 'Usage' next "$R" --json
+[[ "$(run next "$R" --tab)" == "$(run next "$R")" ]] || fail 'next --tab differs from the default rows'
+pass 'next --tab prints the default tab-separated rows'
 pass 'next --md prints a Markdown table with a dot per status and a mark per action'
 out=$(run next "$R" --tree)
 want='pr1 🔵 approved  ▶ execute-feature

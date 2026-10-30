@@ -58,6 +58,10 @@ The [gate extension](../.pi/agent/extensions/gate-check.ts) checks that read aga
 
 The extension gates recognized reads, not phase execution. It cannot distinguish an audit read from invocation, and shell reads or previously loaded instructions are outside its interception. Documentation-only inspection may therefore read source without invoking a phase, which grants no authority to execute it. It also permits reads on timeout, process failure, or invalid output. Treat it as a workflow aid rather than comprehensive enforcement: agents must still establish the phase prerequisites under [skills/dev/plan.md](skills/dev/plan.md). Stronger enforcement would require a separate phase-entry operation.
 
+**dev-stack** — the [extension](../.pi/agent/extensions/dev-stack.ts) ports the Claude `dev-stack` plugin's `/dev-stack-*` commands over the same `dev-stack.sh`. Pi runs a command even mid-turn, so a write (`review`, `stop`, `resume`) waits for the turn to end before it changes a plan or its stack's `stops.log`. Pi commands are user-initiated, so the Claude plugin's refusal of plugin-, SDK-, and agent-issued writes has no Pi equivalent.
+
+**types** — the extensions are TypeScript 7 under [tsconfig.json](../.pi/agent/extensions/tsconfig.json). `bash ~/.dotfiles/.pi/agent/extensions/typecheck.sh` checks them against the installed Pi release, whose API types they import.
+
 ## dsh
 
 Symlink `~/.dsh/AGENTS.md` → `~/.dotfiles/.ai-shared/AGENTS.md`.

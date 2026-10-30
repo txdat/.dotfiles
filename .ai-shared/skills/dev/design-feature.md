@@ -55,8 +55,10 @@ Use one plan and one PR unless review needs separable parts; judge by distinct b
 
 ## 6. Finish
 
-Link the issue the user supplied, or record `Issue: none` and `0` in the directory name. Before handoff, run every PC Check against the inspected branch (the PR target, or Base while that branch does not exist): a Check may fail only when an earlier step or a plan below it in the stack establishes its fact. Save the plan at its [plan.md — Artifact](plan.md#artifact) path with `Status: planning` and hand it to [review-feature.md](review-feature.md).
+Link the issue the user supplied, or record `Issue: none` and `0` in the directory name. Before handoff, run every PC Check against the inspected branch (the PR target, or Base while that branch does not exist): a Check may fail only when an earlier step or a plan below it in the stack establishes its fact. Save the plan at its [plan.md — Artifact](plan.md#artifact) path with `Status: planning`.
+
+Then, from the repository, run `~/.dotfiles/.ai-shared/bin/dev-stack.sh check <root plan>`: the review-feature gate, minus its parent-approval check, on every plan in the stack not yet approved. Fix each reported block within the recorded DDs and rerun until every plan passes, under the attempt limit in [AGENTS.md — Work](../../AGENTS.md#work). A pass proves shape, not correctness. Hand the stack to [review-feature.md](review-feature.md) only after it passes.
 
 ## 7. Revise after review
 
-On NEEDS CHANGES, correct each blocking finding within the recorded DDs and the user's answers, rerun the PC Checks the change touches, and re-review under [plan.md — Review](plan.md#review). A finding that needs a new or changed decision goes to the user with options and a recommendation.
+On NEEDS CHANGES, correct each blocking finding within the recorded DDs and the user's answers, rerun the PC Checks the change touches and the stack check from step 6, and re-review under [plan.md — Review](plan.md#review). A finding that needs a new or changed decision goes to the user with options and a recommendation.

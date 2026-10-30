@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# The stack tree of live plans (../skills/dev/plan.md#stacks), for create-pr
-# and run-stack. `review` sets a planning plan's Status and Spec; `stop` and
-# `resume` append to the stack's stops.log; the rest only read.
+# The stack tree of live plans (../skills/dev/plan.md#stacks), for
+# design-feature, create-pr, and run-stack. `review` sets a planning plan's
+# Status and Spec; `stop` and `resume` append to the stack's stops.log; the
+# rest only read.
 set -euo pipefail
 
 SCRIPT_DIR=$(dirname -- "$(realpath -- "${BASH_SOURCE[0]}")")
@@ -9,12 +10,14 @@ fail() { printf '%s\n' "$*" >&2; exit 1; }
 usage() {
   printf '%s\n' \
     'Usage: dev-stack.sh stack <root plan>' \
-    '       dev-stack.sh next <root plan> [--md|--tree]' \
+    '       dev-stack.sh next <root plan> [--tab|--tree|--md]' \
     '       dev-stack.sh review <plan> ready|needs-changes' \
     '       dev-stack.sh stop <plan> <reason>' \
     '       dev-stack.sh resume <plan>' \
+    '       dev-stack.sh check <root plan>' \
     'stack lists the plans, parents before children. next prints, per plan,' \
-    '"<plan> <status> <parent> <action> <reason>" tab-separated, with "-" for none;' \
+    '"<plan> <status> <parent> <action> <reason>" tab-separated, with "-" for none' \
+    '(--tab, the default);' \
     'action is a runnable phase (review-feature, execute-feature, review-code,' \
     'create-pr), revise after a needs-changes review, or stopped, wait-parent,' \
     'wait-user, blocked, or done. --tree prints the stack as a tree instead, and' \
@@ -25,6 +28,10 @@ usage() {
     'in the stack'"'"'s stops.log why run-stack stopped a plan; it holds until the' \
     'plan changes or resume clears it, and one citing "Failed fixes: 3/3" or more' \
     'holds until resume. Only the user runs resume.' \
+    'check runs the review-feature gate, without its parent check, on each plan' \
+    'in the stack still in planning, printing PASS or BLOCK and the reason, and' \
+    'SKIP for a plan approved or later whose review still holds (BLOCK when it' \
+    'does not); it exits 1 on a block.' \
     '<plan> is ~/work/plans/<repo>/<issue>_<slug>/pr<N>.spec.md, run from the repository.' \
     'Exit: 0 ok, 1 failure, 2 usage.'
 }
@@ -129,6 +136,33 @@ gate_reason() {
   [[ -z "$out" ]] || jq -r '.reason' <<<"$out" 2>/dev/null || printf '%s\n' "$out"
 }
 
+# The review-feature gate, without its parent check, on each plan in the
+# stack still in planning, as design-feature hands it over; fails when any
+# plan blocks. An approved plan whose review still holds is past design and
+# frozen (plan.md#changes), so a revision under it still checks; one whose
+# spec, or a spec below it, changed since blocks, as in next.
+cmd_check() {
+  local plans plan status rank out failed=0
+  # Not a process substitution: its failure would read as an empty, passing stack.
+  plans=$(stack_plans "$1") || exit 1
+  while IFS= read -r plan; do
+    status=$(status_of "$plan"); rank=$(status_rank "$status")
+    if [[ -n "$rank" ]] && (( rank >= 1 && rank <= 3 )); then
+      if [[ "$(review_state "$plan" || true)" == ready ]]; then printf 'SKIP %s (%s)\n' "$plan" "$status"; continue; fi
+      failed=1
+      printf 'BLOCK %s\nIt is %s, but its spec or a plan below it changed since its review; return it to planning and review it again (skills/dev/plan.md#stacks).\n' "$plan" "$status"
+      continue
+    fi
+    if ! out=$(bash "$SCRIPT_DIR/gate-check.sh" --design "$plan" </dev/null); then
+      failed=1; printf 'BLOCK %s\ngate-check.sh failed without a verdict.\n' "$plan"; continue
+    fi
+    if [[ -z "$out" ]]; then printf 'PASS %s\n' "$plan"; continue; fi
+    failed=1
+    printf 'BLOCK %s\n%s\n' "$plan" "$(jq -r '.reason' <<<"$out" 2>/dev/null || printf '%s' "$out")"
+  done <<<"$plans"
+  (( ! failed ))
+}
+
 # The next action for each plan in the stack. A runnable phase is one its gate
 # passes now, so next and the gates never disagree, except that a stopped
 # plan's gate may still pass.
@@ -231,7 +265,7 @@ tree_view() {
 }
 
 [[ "${1-}" != --help && "${1-}" != -h ]] || { usage; exit 0; }
-[[ $# -eq 2 || ( $# -eq 3 && ( "$1" == review || "$1" == stop || ( "$1" == next && ( "$3" == --md || "$3" == --tree ) ) ) ) ]] || { usage >&2; exit 2; }
+[[ $# -eq 2 || ( $# -eq 3 && ( "$1" == review || "$1" == stop || ( "$1" == next && ( "$3" == --tab || "$3" == --tree || "$3" == --md ) ) ) ) ]] || { usage >&2; exit 2; }
 command -v jq >/dev/null || fail 'jq is required.'
 REPO_ROOT=$(bash "$SCRIPT_DIR/dev-utils.sh" main-root)
 cd "$REPO_ROOT"
@@ -241,9 +275,10 @@ case "$1" in
   stack) require_live "$2"; stack_plans "$PLAN" ;;
   next)
     require_live "$2"
-    if [[ $# -eq 2 ]]; then cmd_next "$PLAN"; else rows=$(cmd_next "$PLAN"); "${3#--}_view" <<<"$rows"; fi ;;
+    if [[ "${3:---tab}" == --tab ]]; then cmd_next "$PLAN"; else rows=$(cmd_next "$PLAN"); "${3#--}_view" <<<"$rows"; fi ;;
   review) [[ $# -eq 3 ]] || { usage >&2; exit 2; }; require_live "$2"; cmd_review "$PLAN" "$3" ;;
   stop) [[ $# -eq 3 ]] || { usage >&2; exit 2; }; require_live "$2"; cmd_stop "$PLAN" "$3" ;;
   resume) require_live "$2"; cmd_resume "$PLAN" ;;
+  check) require_live "$2"; cmd_check "$PLAN" ;;
   *) usage >&2; exit 2 ;;
 esac

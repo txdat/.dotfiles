@@ -1,7 +1,7 @@
 #!/bin/bash
 # Gate checker for the plan-backed phases (../skills/dev/plan.md#sequence).
-# Reads hook JSON from stdin and prints block JSON when a phase's entry
-# condition fails. Two events reach it: PreToolUse for a model-invoked Skill
+# Reads hook JSON from stdin, or a plan after --design (below), and prints
+# block JSON when a phase's entry condition fails. Two hook events reach it: PreToolUse for a model-invoked Skill
 # call (arguments in tool_input.args; the Pi extension sends
 # tool_input.arguments), and UserPromptSubmit for a user-typed /dev-<skill>.
 #
@@ -25,7 +25,16 @@ set -euo pipefail
 # locale has crashed awk on invalid bytes, which the hook would read as a pass.
 export LC_ALL=C
 
-HOOK_INPUT=$(cat)
+# `--design <plan>`, which hooks never pass, runs the review-feature gate
+# without its parent check, for design-feature (dev-stack.sh check, which
+# needs jq itself). Without jq it exits 127 with no verdict, never a pass.
+DESIGN_CHECK=0
+if [[ "${1-}" == --design ]]; then
+  DESIGN_CHECK=1
+  HOOK_INPUT=$(jq -cn --arg a "${2-}" '{tool_input:{skill:"dev-review-feature",args:$a}}')
+else
+  HOOK_INPUT=$(cat)
+fi
 
 # UserPromptSubmit runs on every prompt, so a missing prerequisite blocks only
 # input that could invoke a dev skill.
@@ -445,7 +454,8 @@ review_feature_gate() {
     *) block "Plan status is '$STATUS' — expected 'planning', 'needs-changes', or 'ready'. Run design-feature first." ;;
   esac
   check_name
-  require_parent_rank 1 approved
+  # design-feature checks a stack before the user approves any of it.
+  if (( DESIGN_CHECK )); then require_parent_rank 0 planning; else require_parent_rank 1 approved; fi
   require_ids
   require_branch
   [[ -z "$PARENT_PLAN" ]] || require_stacked "$PLAN" "$PARENT_PLAN"
