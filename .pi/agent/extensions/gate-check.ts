@@ -85,13 +85,13 @@ function skillSlug(file: string): string | undefined {
   for (const form of pathForms(file)) {
     for (const base of CLAUDE_SKILLS) {
       const parts = segmentsUnder(base, form);
-      if (parts?.length === 2 && parts[0].startsWith("dev-") && parts[1] === "SKILL.md") {
-        return parts[0].slice("dev-".length);
+      if (parts?.length === 2 && parts[0]!.startsWith("dev-") && parts[1] === "SKILL.md") {
+        return parts[0]!.slice("dev-".length);
       }
     }
     for (const base of AI_SHARED_DEV) {
       const parts = segmentsUnder(base, form);
-      if (parts?.length === 1 && parts[0].endsWith(".md")) return parts[0].slice(0, -".md".length);
+      if (parts?.length === 1 && parts[0]!.endsWith(".md")) return parts[0]!.slice(0, -".md".length);
     }
   }
   return undefined;
@@ -126,7 +126,7 @@ function skillArguments(ctx: ExtensionContext, callId: string, lastAssistant?: M
   let prompt = "";
   const branch = ctx.sessionManager.getBranch();
   for (let i = branch.length - 1; i >= 0 && !prompt; i--) {
-    const e = branch[i];
+    const e = branch[i]!;
     if (e.type !== "message") continue;
     if (!issuer && issued(e.message, callId)) issuer = e.message;
     if (e.message.role === "user") prompt = textOf(e.message);
@@ -176,7 +176,7 @@ export default function gateCheckExtension(pi: ExtensionAPI) {
 
     // A call another tool made has id "<parent id>/<n>"; the root is the
     // model-issued call recorded in the transcript.
-    const callId = event.toolCallId.split("/")[0];
+    const callId = event.toolCallId.split("/")[0]!;
     const hookJson = JSON.stringify({
       hook_event_name: "PreToolUse",
       tool_name: "Skill",

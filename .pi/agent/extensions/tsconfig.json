@@ -1,0 +1,23 @@
+{
+  // TypeScript 7. Pi loads these files directly, so nothing is emitted.
+  // typecheck.sh points paths and typeRoots at the installed Pi release, whose
+  // API types the extensions import; a bare tsc -p cannot resolve that module.
+  "compilerOptions": {
+    "target": "esnext",
+    "lib": ["esnext"],
+    "types": ["node"],
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "skipLibCheck": true
+  },
+  "include": ["**/*.ts"]
+}
