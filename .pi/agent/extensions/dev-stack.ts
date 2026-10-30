@@ -43,8 +43,11 @@ const plansRoot = () =>
   (process.env["AI_PLANS_ROOT"] || path.join(HOME, "work", "plans")).replace(/\/+$/, "");
 
 // The output shows plan paths relative to the plans root, so one typed as shown
-// is read back from there.
-const absolute = (text: string, root: string) => (/^[/~]/.test(text) ? text : `${root}/${text}`);
+// is read back from there. A leading @ is the prompt's file mention, not part of the path.
+const absolute = (text: string, root: string) => {
+  const file = text.replace(/^@/, "");
+  return /^[/~]/.test(file) ? file : `${root}/${file}`;
+};
 
 const planOnly =
   (sub: Sub) =>
@@ -117,10 +120,12 @@ const COMMANDS: Command[] = [
 
 /**
  * Plan paths show relative to the plans root, as dev-plan-lib.sh resolves it.
- * The format hint in "Plan must be ~/work/plans/<repo>/..." keeps its prefix.
+ * The format hint in "Plan must be ~/work/plans/<repo>/<issue>_..." keeps its
+ * prefix: it names the repository or <repo>, never a plan, so a path followed
+ * by <issue> is left whole.
  */
 function shorten(text: string, root: string): string {
-  const prefix = new RegExp(`(?:${escapeRegExp(root)}|~/work/plans)/(?!<)`, "g");
+  const prefix = new RegExp(`(?:${escapeRegExp(root)}|~/work/plans)/(?![^\\s]*<issue>)`, "g");
   return text.replace(prefix, "");
 }
 

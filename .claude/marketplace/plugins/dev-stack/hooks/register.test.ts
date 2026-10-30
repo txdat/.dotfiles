@@ -126,6 +126,24 @@ test('AI_PLANS_ROOT moves the prefix, and the format hint keeps its own', async 
   ])
 })
 
+test('the format hint keeps its prefix when it names the repository', async ($, on) => {
+  engine(on, {
+    exitCode: 1,
+    stdout: '',
+    stderr: 'Plan must be ~/work/plans/repo/<issue>_<slug>/pr<N>.spec.md: /home/u/work/plans/x/pr1.spec.md',
+  })
+  const out = await $.command.run(typed('dev-stack-next', PLAN))
+  expect(out.text?.split('\n')[0]).toBe(
+    'Plan must be ~/work/plans/repo/<issue>_<slug>/pr<N>.spec.md: x/pr1.spec.md',
+  )
+})
+
+test('a leading @ file mention is not part of the plan path', async ($, on) => {
+  const calls = engine(on)
+  await $.command.run(typed('dev-stack-next', '@repo/12_s/pr1.spec.md'))
+  expect(calls.pop()).toEqual(['bash', SH, 'next', '/home/u/work/plans/repo/12_s/pr1.spec.md'])
+})
+
 test('a write runs only from the user, at the terminal or through Remote Control', async ($, on) => {
   const calls = engine(on)
   const others = [

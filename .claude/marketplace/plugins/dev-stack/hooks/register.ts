@@ -23,8 +23,11 @@ type Command = {
 const USER_ORIGINS = new Set(['composer', 'bridge'])
 
 // The plugin shows plan paths relative to the plans root (`short` below), so one without a leading
-// / or ~ is read back from there.
-const absolute = (text: string, root: string) => (/^[/~]/.test(text) ? text : `${root}/${text}`)
+// / or ~ is read back from there. A leading @ is the prompt's file mention, not part of the path.
+const absolute = (text: string, root: string) => {
+  const path = text.replace(/^@/, '')
+  return /^[/~]/.test(path) ? path : `${root}/${path}`
+}
 
 // Every plan path ends in .spec.md, so anything else, such as an unknown trailing flag, is a usage
 // error; matching up to it keeps a path with spaces whole.
@@ -126,9 +129,10 @@ export const register: Register = on => {
       const home = await $.env.get('HOME')
       if (!home) return { text: `${c.name}: HOME is not set.` }
       // Plan paths show relative to the plans root, as dev-plan-lib.sh resolves it. The format
-      // hint in "Plan must be ~/work/plans/<repo>/..." keeps its prefix.
+      // hint in "Plan must be ~/work/plans/<repo>/<issue>_..." keeps its prefix: it names the
+      // repository or <repo>, never a plan, so a path followed by <issue> is left whole.
       const root = ((await $.env.get('AI_PLANS_ROOT')) || home + '/work/plans').replace(/\/+$/, '')
-      const prefix = new RegExp(`(?:${escapeRegExp(root)}|~/work/plans)/(?!<)`, 'g')
+      const prefix = new RegExp(`(?:${escapeRegExp(root)}|~/work/plans)/(?![^\\s]*<issue>)`, 'g')
       const short = (text: string) => text.replace(prefix, '')
       try {
         const [sub, plan, ...rest] = parsed.argv
