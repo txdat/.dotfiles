@@ -1,0 +1,5 @@
+{
+  "name": "dev-stack",
+  "version": "0.4.3",
+  "description": "/dev-stack-* commands: dev-stack.sh next, stack, check, review, stop, and resume for a plan stack"
+}

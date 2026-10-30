@@ -16,9 +16,9 @@
       "description": "Python language server"
     },
     {
-      "name": "dev-stack-next",
-      "source": "./plugins/dev-stack-next",
-      "description": "/dev-stack-next <spec>: show the progress tree of a plan stack"
+      "name": "dev-stack",
+      "source": "./plugins/dev-stack",
+      "description": "/dev-stack-* commands: dev-stack.sh next, stack, check, review, stop, and resume for a plan stack"
     }
   ]
 }

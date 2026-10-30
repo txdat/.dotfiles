@@ -1,0 +1,22 @@
+{
+  // TypeScript 7. .claude-plugin/types holds the engine's API types, which Claude Code writes beside a
+  // plugin it loads from a folder you own; until then, list a copy of claude-code.d.ts in "files".
+  "compilerOptions": {
+    "target": "esnext",
+    "lib": ["esnext"],
+    "types": [],
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "skipLibCheck": true
+  },
+  "include": [".claude-plugin/types", "hooks"]
+}
