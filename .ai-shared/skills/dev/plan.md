@@ -4,7 +4,7 @@ The shared contract for application plans. Phase skills say how to do each phase
 
 ## Scope
 
-The workflow applies when the user invokes a phase: design-feature, review-feature, execute-feature, review-code, or create-pr, or [run-stack](run-stack.md), which runs the middle three. It governs application code and developer tooling other than this dev flow, with their tests, including refactors. Docs, declarative config, and this dev flow — its skills and its [scripts](../../bin) with their tests — take the direct-edit path under [AGENTS.md — Work](../../AGENTS.md#work), even inside plan work; mixed changes follow the workflow for their governed part.
+The workflow applies when the user invokes a phase: design-feature, review-feature, execute-feature, review-code, or create-pr, or [run-stack](run-stack.md), which runs review-feature through create-pr. It governs application code and developer tooling other than this dev flow, with their tests, including refactors. Docs, declarative config, and this dev flow — its skills and its [scripts](../../bin) with their tests — take the direct-edit path under [AGENTS.md — Work](../../AGENTS.md#work), even inside plan work; mixed changes follow the workflow for their governed part.
 
 ## Sequence
 
