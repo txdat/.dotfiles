@@ -212,4 +212,101 @@ reject env PATH="$TEST_ROOT/bin:$PATH" bash "$UTILS" issue-create title "$TEST_R
 reject env PATH="$TEST_ROOT/bin:$PATH" bash "$UTILS" issue-create '' "$body"
 printf 'PASS: issue-create arguments and refusals (stubbed)\n'
 
+cd "$repo"
+# scratch: a detached throwaway under the scratch root, made at a ref behind HEAD
+# so a scratch made at HEAD fails, that never reaches a plan's worktree, the
+# main root, or shared dependencies.
+base=$(git rev-parse HEAD)
+git tag scratch-ref "$base"
+git commit -q --allow-empty -m ahead
+scratch=$(bash "$WORKTREES" scratch r1 scratch-ref 2>/dev/null)
+equal "$scratch" "$AI_WORKTREES_ROOT/scratch/main repo-r1" 'scratch path'
+equal "$(git -C "$scratch" rev-parse HEAD)" "$base" 'scratch at the ref'
+git -C "$scratch" symbolic-ref -q HEAD >/dev/null && fail 'scratch HEAD is not detached'
+[[ -L "$scratch/node_modules" && -L "$scratch/vendor" ]] || fail 'scratch dependencies not linked'
+reject bash "$WORKTREES" scratch r1 scratch-ref
+reject bash "$WORKTREES" scratch ../escape scratch-ref
+reject bash "$WORKTREES" scratch r2 no-such-ref
+reject bash "$WORKTREES" scratch r2 scratch-ref "$TEST_ROOT/missing.patch"
+printf 'plan sentinel\n' > "$worktree/plan-sentinel.txt"
+# Each guard alone: a worktree under the scratch root without a recorded base,
+# and a plan's worktree with one.
+nobase="$AI_WORKTREES_ROOT/scratch/main repo-nobase"
+git worktree add -q --detach "$nobase" scratch-ref
+plan_base="$(git -C "$worktree" rev-parse --absolute-git-dir)/scratch-base"
+printf '%s\n' "$base" > "$plan_base"
+for target in "$worktree" "$repo" "$TEST_ROOT" "$nobase"; do
+  reject bash "$WORKTREES" scratch-diff "$target"
+  reject bash "$WORKTREES" scratch-remove "$target"
+done
+rm -- "$plan_base" && git worktree remove --force "$nobase"
+equal "$(<"$worktree/plan-sentinel.txt")" 'plan sentinel' 'scratch commands left a plan worktree alone'
+[[ -d "$worktree" && -d "$repo/node_modules" ]] || fail 'scratch refusal removed something'
+printf 'PASS: scratch creation and refusals\n'
+
+printf 'broken\n' > "$scratch/README.md"
+mkdir -p "$scratch/tests" && printf 'repro\n' > "$scratch/tests/repro.txt" && printf 'other\n' > "$scratch/tests/other.txt"
+git -C "$scratch" add README.md
+staged=$(git -C "$scratch" diff --cached --name-only)
+patch="$TEST_ROOT/r1.patch"
+bash "$WORKTREES" scratch-diff "$scratch" > "$patch"
+grep -q '^+broken' "$patch" || fail 'diff misses a tracked change'
+grep -q 'tests/repro.txt' "$patch" || fail 'diff misses a new file'
+grep -q 'vendor' "$patch" && fail 'diff includes an unignored dependency link'
+equal "$(git -C "$scratch" diff --cached --name-only)" "$staged" 'diff changed the scratch index'
+only=$(bash "$WORKTREES" scratch-diff "$scratch" -- tests/repro.txt)
+[[ "$only" == *tests/repro.txt* && "$only" != *README.md* && "$only" != *other.txt* ]] || fail 'diff paths did not limit the patch'
+reject bash "$WORKTREES" scratch-diff "$scratch" tests/repro.txt
+committed=$(bash "$WORKTREES" scratch r5 scratch-ref 2>/dev/null)
+printf 'committed\n' > "$committed/README.md" && git -C "$committed" commit -qam committed
+bash "$WORKTREES" scratch-diff "$committed" | grep -q '^+committed' || fail 'diff misses a change committed in the scratch'
+printf 'x\n' > "$committed/x.txt"
+[[ "$(bash "$WORKTREES" scratch-diff "$committed" -- x.txt)" != *committed* ]] || fail 'diff paths let a commit outside them through'
+bash "$WORKTREES" scratch-remove "$committed" 2>/dev/null
+rerun=$(bash "$WORKTREES" scratch r2 scratch-ref "$patch" 2>/dev/null)
+equal "$(<"$rerun/README.md")" 'broken' 'scratch applies the patch'
+equal "$(<"$rerun/tests/repro.txt")" 'repro' 'scratch applies new files'
+bash "$WORKTREES" scratch-remove "$rerun" 2>/dev/null
+# A ref that adopted the repro's file still takes the patch; one that changed it
+# does not, and leaves no scratch behind.
+tree_with() { (git ls-tree "$base"; printf '040000 tree %s\ttests\n' "$(printf '100644 blob %s\trepro.txt\n' "$(printf '%s\n' "$1" | git hash-object -w --stdin)" | git mktree)") | git mktree; }
+adopted=$(git commit-tree "$(tree_with repro)" -p "$base" -m adopted)
+diverged=$(git commit-tree "$(tree_with changed)" -p "$base" -m diverged)
+later=$(bash "$WORKTREES" scratch r3 "$adopted" "$patch" 2>/dev/null) || fail 'a patch did not apply at a ref that adopted its test'
+equal "$(<"$later/README.md")" 'broken' 'a patch applies at a ref that adopted its test'
+bash "$WORKTREES" scratch-remove "$later" 2>/dev/null
+reject bash "$WORKTREES" scratch r4 "$diverged" "$patch"
+[[ ! -e "$AI_WORKTREES_ROOT/scratch/main repo-r4" ]] || fail 'a failed patch left its scratch'
+git worktree list --porcelain | grep -qF 'main repo-r4' && fail 'a failed patch left its scratch registered'
+# Deletions, paths with spaces, and several patches round-trip; an isolated
+# dependency stays out of the diff, and a patch touching a dependency name never
+# writes through a link into the main root.
+rm -- "$scratch/README.md" && printf 'spaced\n' > "$scratch/with space.txt"
+bash "$WORKTREES" isolate-dep "$scratch" vendor && printf 'local\n' > "$scratch/vendor/local.txt"
+bash "$WORKTREES" scratch-diff "$scratch" -- README.md "with space.txt" > "$TEST_ROOT/r1b.patch"
+grep -q 'vendor' <(bash "$WORKTREES" scratch-diff "$scratch") && fail 'diff includes an isolated dependency'
+printf 'shared\n' > "$repo/vendor/shared.txt"
+printf 'diff --git a/vendor/shared.txt b/vendor/shared.txt\nnew file mode 100644\n--- /dev/null\n+++ b/vendor/shared.txt\n@@ -0,0 +1 @@\n+junk\n' > "$TEST_ROOT/dep.patch"
+both=$(bash "$WORKTREES" scratch r6 scratch-ref "$TEST_ROOT/r1b.patch" "$TEST_ROOT/dep.patch" 2>/dev/null) || fail 'several patches did not apply'
+[[ ! -e "$both/README.md" ]] || fail 'a deletion did not round-trip'
+equal "$(<"$both/with space.txt")" 'spaced' 'a path with a space round-trips'
+equal "$(<"$repo/vendor/shared.txt")" 'shared' 'a patch wrote through a dependency link'
+bash "$WORKTREES" scratch-remove "$both" 2>/dev/null
+git -C "$worktree" commit -q --allow-empty -m 'worktree only'
+here=$(cd "$worktree" && bash "$WORKTREES" scratch r7 HEAD 2>/dev/null)
+equal "$(git -C "$here" rev-parse HEAD)" "$(git -C "$worktree" rev-parse HEAD)" 'HEAD resolves in the calling worktree'
+bash "$WORKTREES" scratch-remove "$here" 2>/dev/null
+rm -- "$repo/vendor/shared.txt"
+printf 'PASS: scratch-diff and scratch with patches\n'
+
+bash "$WORKTREES" scratch-remove "$scratch" 2>/dev/null
+[[ ! -e "$scratch" ]] || fail 'scratch not removed'
+git worktree list --porcelain | grep -qF "worktree $scratch" && fail 'scratch still registered'
+equal "$(<"$repo/node_modules/keep.txt")" 'shared sentinel' 'scratch-remove preserved the shared dependency'
+lost=$(bash "$WORKTREES" scratch lost scratch-ref 2>/dev/null)
+unlink -- "$lost/node_modules" && unlink -- "$lost/vendor" && rm -rf -- "$lost"
+equal "$(bash "$WORKTREES" scratch lost scratch-ref 2>/dev/null)" "$lost" 'a scratch lost with its directory is recreated'
+bash "$WORKTREES" scratch-remove "$lost" 2>/dev/null
+printf 'PASS: scratch removal and recreation after loss\n'
+
 printf 'All dev utility tests passed. Temporary fixtures: %s\n' "$TEST_ROOT"

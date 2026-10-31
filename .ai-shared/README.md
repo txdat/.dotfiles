@@ -227,4 +227,4 @@ Where a row leaves effort or model blank, the wrapper installs without that fiel
 
 | agent | description | md file | tools |
 | ----- | ----------- | ------- | ----- |
-| dev-reviewer | Review one artifact read-only in a fresh context through review-feature, review-code, review-system, or review-infra, and return the verdict and findings. | agents/dev-reviewer.md | Read, Grep, Glob, Bash, Skill |
+| dev-reviewer | Review one artifact in a fresh context through review-feature, review-code, review-system, or review-infra, editing only where plan.md — Review allows, and return the verdict and findings. | agents/dev-reviewer.md | Read, Grep, Glob, Bash, Skill, Edit, Write |

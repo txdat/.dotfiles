@@ -22,7 +22,9 @@ Within authorized work, run local checks and read-only inspection, and fix in-sc
 
 Never wait on background work or CI. While something is pending, continue independent authorized work; when none remains, report what is pending and end the turn. Do not poll, loop on sleep, or hold the turn open; a bounded readiness probe for a service the current step needs is part of that step. After a push or PR, cite known CI results or mark CI unverified. Monitor, retry, or repair CI only when the user asks in the current task, or asked before a handoff; a push, PR, or CI notification is not a request.
 
-After three failed fix-and-verify attempts at the same failure, stop and report what you tried, what happened, and the evidence or decision you need; stop sooner when attempts yield no new evidence. The count persists across hypotheses, delegation, and sessions until verification passes or the user grants three more; record it as `Failed fixes: <n>/3 — <failure>` in a [handoff](skills/handoff.md). Read-only diagnosis and other authorized work may continue.
+When a fix fails in a way its assumed cause did not predict, or before a third fix on the same assumed cause, state that cause and run a check whose result would differ if it were false; base the next fix on the result. The check is not a fix attempt.
+
+After three failed fix-and-verify attempts at the same failure, stop and report what you tried, what happened, and the evidence or decision you need; stop sooner when attempts yield no new evidence. The count persists across hypotheses, delegation, and sessions until verification passes or the user grants three more; record it as `Failed fixes: <n>/3 — <failure>` in a [handoff](skills/handoff.md). Diagnosis that makes no lasting change and other authorized work may continue.
 
 ## Load on demand
 
