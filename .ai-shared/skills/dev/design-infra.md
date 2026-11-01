@@ -2,7 +2,7 @@
 
 Use for migrations, deployments, DNS, IaC, and database operations within established boundaries; architecture changes use [design-system.md](design-system.md). The lane is design → review → human execution → optional post-execution audit. This skill writes a runbook from read-only live-state checks; it never mutates infrastructure.
 
-Write `docs/runbooks/<date>_<slug>.md` with `Status: draft | Date: <date> | Issue: #N|none | Review:`, in the language [plan.md — Artifact](plan.md#artifact) prescribes. Declare each ID at the start of a line in its section, outside code fences; write the phase template unfenced. `Status` stays `draft` until the main agent sets `executed` under [review-infra.md — After execution](review-infra.md#after-execution); `Review:` holds the passing review ([review-infra.md](review-infra.md)).
+Write `docs/runbooks/<issue>_<slug>.md` with `Status: draft | Date: <date> | Issue: #N|none | Review:`, in the language [plan.md — Artifact](plan.md#artifact) prescribes. Declare each ID at the start of a line in its section, outside code fences; write the phase template unfenced. `Status` stays `draft` until the main agent sets `executed` under [review-infra.md — After execution](review-infra.md#after-execution); `Review:` holds the passing review ([review-infra.md](review-infra.md)).
 
 - **`## Success Criteria`:** each measurable criterion as `SC-n` with its read-only verification command.
 - **`## Evidence`:** each material live-state claim as `CL-n`: value, source command, observation time, and status — verified, assumed, or revalidate before execution. An assumed claim needs a verification gate before any phase relies on it.

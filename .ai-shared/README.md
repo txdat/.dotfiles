@@ -2,7 +2,7 @@
 
 Shared agent rules, workflow skills, and helper scripts for every harness on this machine. Platform-specific skill and agent wrappers are generated locally and point at the markdown files here.
 
-Reviews under [plan.md — Review](skills/dev/plan.md#review) run in the [dev-reviewer](#agents) agent where installed; other delegation uses platform-provided subagents with the owning skill.
+Reviews under [plan.md — Review](skills/dev/plan.md#review) run in the [dev-reviewer](#agents) agent and delegated implementation in the [dev-executor](#agents) agent, where installed; other delegation uses platform-provided subagents with the owning skill.
 
 Paths below assume the dotfiles checkout is at `~/.dotfiles`.
 
@@ -198,7 +198,7 @@ Where a row leaves effort or model blank, the wrapper installs without that fiel
 | dev-review-feature | Independently review a planning-stage plan for missing obligations, untraced decisions, weak test cases, delivery order, and simpler designs before human approval. | skills/dev/review-feature.md | medium | opus |
 | dev-review-infra | Review an infra/devops runbook against live state with read-only commands: phase ordering, rollback safety, DNS/traffic cutover sequencing, IaC completeness, and CI/CD coverage. | skills/dev/review-infra.md | high | haiku |
 | dev-review-system | Review an architecture design for measurable outcomes, viable alternatives, boundary contracts, failure modes, migration and rollback safety, and dependency-ordered decomposition. | skills/dev/review-system.md | medium | opus |
-| dev-run-stack | Drive a stack of plans, or one plan, through review-feature, execute-feature, and review-code in dependency order, then report what needs the user: approvals, decisions, and publication. | skills/dev/run-stack.md | medium | haiku |
+| dev-run-stack | Drive a stack of plans, or one plan, through the design loop (review-feature and revise until ready), the execute loop (execute-feature, review-code, and repair until reviewed), and create-pr in dependency order, then report the PRs and what needs the user. | skills/dev/run-stack.md | medium | haiku |
 | dev-recap | Session lessons and workflow improvement proposals from a plan-based session. | skills/dev/recap.md | medium | haiku |
 
 #### sre
@@ -227,4 +227,5 @@ Where a row leaves effort or model blank, the wrapper installs without that fiel
 
 | agent | description | md file | tools |
 | ----- | ----------- | ------- | ----- |
+| dev-executor | Implement while the main agent works: run execute-feature on one approved plan, or one assigned chunk in its exclusive files, and return the changes and check results. | agents/dev-executor.md | Read, Grep, Glob, Bash, Skill, Edit, Write |
 | dev-reviewer | Review one artifact in a fresh context through review-feature, review-code, review-system, or review-infra, editing only where plan.md — Review allows, and return the verdict and findings. | agents/dev-reviewer.md | Read, Grep, Glob, Bash, Skill, Edit, Write |

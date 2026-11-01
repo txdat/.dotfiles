@@ -6,6 +6,6 @@ Implement an `approved` plan test-first under [plan.md](plan.md).
 2. Before each step, run its PC Checks; a failure stops that step and everything depending on it under [plan.md — Changes](plan.md#changes).
 3. Follow [plan.md — Verification](plan.md#verification): RED commit, then implementation.
 
-If you delegate, the main agent owns the RED tests and their commit; workers never edit tests or the plan.
+To delegate chunks, use [dev-executor](../../agents/dev-executor.md) where installed. Whoever runs this skill owns the RED tests, their commit, and the plan; chunk workers never edit them.
 
 When the plan passes its checks, set `Status: implemented`, report each TC's test with its RED failure or baseline result, and hand off to [review-code.md](review-code.md).

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The stack tree of live plans (../skills/dev/plan.md#stacks), for
+# The stack tree of plans (../skills/dev/plan.md#stacks), for
 # design-feature, create-pr, and run-stack. `review` sets a planning plan's
 # Status and Spec; `stop` and `resume` append to the stack's stops.log; the
 # rest only read.
@@ -15,7 +15,8 @@ usage() {
     '       dev-stack.sh stop <plan> <reason>' \
     '       dev-stack.sh resume <plan>' \
     '       dev-stack.sh check <root plan>' \
-    'stack lists the plans, parents before children. next prints, per plan,' \
+    'stack lists the unpublished plans, or every plan once the root is' \
+    'published, parents before children. next prints, per listed plan,' \
     '"<plan> <status> <parent> <action> <reason>" tab-separated, with "-" for none' \
     '(--tab, the default);' \
     'action is a runnable phase (review-feature, execute-feature, review-code,' \
@@ -36,12 +37,17 @@ usage() {
     'Exit: 0 ok, 1 failure, 2 usage.'
 }
 
-# An unpublished plan of this repository, a regular file; sets PLAN.
-require_live() {
+# A plan of this repository, a regular file; sets PLAN.
+require_plan() {
   PLAN=$(canonical_plan "$1") || fail "Plan must be $PLAN_FORMAT: $1"
   [[ -f "$PLAN" && ! -L "$PLAN" ]] || fail "Plan not found: $PLAN"
-  ! is_published "$PLAN" || fail "$PLAN is published; no phase resumes it."
   index_stack "$PLAN"
+}
+
+# An unpublished plan of this repository, a regular file; sets PLAN.
+require_live() {
+  require_plan "$1"
+  ! is_published "$PLAN" || fail "$PLAN is published; no phase resumes it."
 }
 
 # Plan $1 and every plan stacked above it, parents before children; fails on a
@@ -55,6 +61,12 @@ stack_plans() {
   [[ "$plans" != *'!'* ]] || fail "Unreadable 'Stacks On:' lines in: $(grep '^!' <<<"$plans" | tr -d '!' | tr '\n' ' ')"
   printf '%s\n' "$1"
   [[ -z "$plans" ]] || printf '%s\n' "$plans"
+}
+
+# stack_plans for stack and next: cleanup publishes the root last, so a
+# published root means a published stack, listed whole.
+listed_plans() {
+  if is_published "$1"; then INCLUDE_PUBLISHED=1 stack_plans "$1"; else stack_plans "$1"; fi
 }
 
 # What a stop record is bound to: plan $1's Status value, a verdict read as
@@ -168,10 +180,12 @@ cmd_check() {
 # plan's gate may still pass.
 cmd_next() {
   local plans plan status status_case parent pstatus prank all=1 action reason skill state
-  plans=$(stack_plans "$1")
+  # Not inherited by $(...) under set -e: a failed lookup would print a bogus row.
+  plans=$(listed_plans "$1") || exit 1
   while IFS= read -r plan; do [[ "$(status_of "$plan")" == reviewed ]] || all=0; done <<<"$plans"
   while IFS= read -r plan; do
     status=$(status_of "$plan"); parent=$(stacks_on "$plan")
+    if [[ "$status" == published ]]; then printf '%s\tpublished\t%s\tdone\t-\n' "$plan" "${parent:--}"; continue; fi
     pstatus=""; prank=3
     if [[ -n "$parent" ]]; then pstatus=$(status_of "$parent"); prank=$(status_rank "$pstatus"); fi
     state=$(review_state "$plan") || fail "Cannot hash $plan: a plan below it is missing or unreadable."
@@ -272,9 +286,9 @@ cd "$REPO_ROOT"
 . "$SCRIPT_DIR/dev-plan-lib.sh"
 
 case "$1" in
-  stack) require_live "$2"; stack_plans "$PLAN" ;;
+  stack) require_plan "$2"; listed_plans "$PLAN" ;;
   next)
-    require_live "$2"
+    require_plan "$2"
     if [[ "${3:---tab}" == --tab ]]; then cmd_next "$PLAN"; else rows=$(cmd_next "$PLAN"); "${3#--}_view" <<<"$rows"; fi ;;
   review) [[ $# -eq 3 ]] || { usage >&2; exit 2; }; require_live "$2"; cmd_review "$PLAN" "$3" ;;
   stop) [[ $# -eq 3 ]] || { usage >&2; exit 2; }; require_live "$2"; cmd_stop "$PLAN" "$3" ;;

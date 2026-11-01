@@ -20,6 +20,8 @@ REPO_PLANS="$PLANS_ROOT/$(basename -- "$REPO_ROOT")"
 # A plan path relative to REPO_PLANS.
 PLAN_REL_RE='^[0-9]+_[a-z0-9-]+/pr[1-9][0-9]*\.spec\.md$'
 PLAN_FORMAT="$REPO_PLANS/<issue>_<slug>/pr<N>.spec.md"
+# child_plans keeps published plans only where a caller sets this for one call.
+INCLUDE_PUBLISHED=0
 [[ "$REPO_PLANS" != "$HOME"/* ]] || PLAN_FORMAT="~/${PLAN_FORMAT#"$HOME"/}"
 
 # ── paths ─────────────────────────────────────────────────────────────
@@ -244,18 +246,19 @@ worktree_of() {
 
 # Unpublished plans stacked on plan $1, by number; "!<plan>" for one whose
 # Stacks On is malformed or names no plan, or that is a symlink, since it may
-# mean $1.
+# mean $1. INCLUDE_PUBLISHED=1 keeps published plans (dev-stack.sh, for a
+# published stack).
 child_plans() {
   local f
   while IFS= read -r f; do
-    [[ -f "$f" && "$f" != "$1" ]] && ! is_published "$f" || continue
+    [[ -f "$f" && "$f" != "$1" ]] && { [[ "${INCLUDE_PUBLISHED:-0}" == 1 ]] || ! is_published "$f"; } || continue
     if [[ -L "$f" ]] || ! parent_get "$f"; then printf '!%s\n' "$f"
     elif [[ "$REPLY" == "$1" ]]; then printf '%s\n' "$f"
     elif [[ -n "$REPLY" && ! -f "$REPLY" ]]; then printf '!%s\n' "$f"; fi
   done < <(if [[ -v PLAN_FILES[${1%/*}] ]]; then printf '%s\n' "${PLAN_FILES[${1%/*}]}"; else printf '%s\n' "${1%/*}"/pr*.spec.md | sort -V; fi)
 }
 
-# Every unpublished plan stacked above plan $1, breadth first, each once.
+# Every plan child_plans lists stacked above plan $1, breadth first, each once.
 descendant_plans() {
   local queue=("$1") seen=$'\n'"$1"$'\n' cur child
   while (( ${#queue[@]} > 0 )); do

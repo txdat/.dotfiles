@@ -219,6 +219,24 @@ set_status "$G" published
 [[ "$(run next "$R" | grep -c .)" -eq 3 ]] || fail 'a published plan is listed'
 expect_fail 'a published plan takes no command' 'is published' review "$G" ready
 pass 'a published plan leaves the stack and takes no command'
+for p in "$R" "$C" "$S"; do set_status "$p" published; done
+expect_next 'root done child done sib done grand done' 'a published stack lists every plan, done'
+out=$(run next "$R" | awk -F'\t' '{ print $2 }' | sort -u)
+[[ "$out" == published ]] || fail "a published stack shows each plan published: $out"
+out=$(run next "$R" --tree)
+want=$'pr1 🟣 published  ✅ done\n├─ pr2 🟣 published  ✅ done\n│  └─ pr4 🟣 published  ✅ done\n└─ pr3 🟣 published  ✅ done'
+[[ "$out" == "$want" ]] || fail "published stack tree: $out"
+[[ "$(run stack "$R" | grep -c .)" -eq 4 ]] || fail 'stack on a published stack lists every plan'
+[[ "$(run next "$R" --md | sed -n 3p)" == '| pr1 | 🟣 published | - | ✅ done | - |' ]] || fail 'published stack md'
+expect_fail 'a published root refuses stop' 'is published' stop "$R" why
+expect_fail 'a published root refuses review' 'is published' review "$R" ready
+expect_fail 'a published root refuses resume' 'is published' resume "$R"
+expect_fail 'a published root refuses check' 'is published' check "$R"
+out=$(INCLUDE_PUBLISHED=1 run next "$C" --tree 2>&1) && fail "next --tree on a non-root exits 0: $out"
+[[ "$out" == *"pass the stack's root"* && "$out" != *blocked* ]] || fail "next --tree on a non-root: $out"
+pass 'next --tree fails on a non-root, ignoring an inherited INCLUDE_PUBLISHED'
+pass 'a published stack prints its tree'
+for p in "$R" "$C" "$S"; do set_status "$p" reviewed "$(git -C "$REPO" rev-parse HEAD)"; done
 write_plan "$G" planning feat/grand pr2
 
 # ── run stops ──
