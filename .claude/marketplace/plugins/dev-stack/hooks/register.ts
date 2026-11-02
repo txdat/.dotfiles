@@ -34,6 +34,10 @@ const absolute = (text: string, root: string) => {
 const isPlan = (text: string) => /\.spec\.md$/.test(text)
 const PLAN_THEN_REST = /^(.*?\.spec\.md)(?:\s+(.*))?$/s
 
+// The engine shows a plugin command's output after the plugin's name, so multi-line output starts
+// on the next line: a table's header and the first row or tree root then align with the rest.
+const ownLines = (text: string) => (text.includes('\n') ? '\n' + text : text)
+
 const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 const planOnly =
@@ -140,7 +144,7 @@ export const register: Register = on => {
         const ran = await $.process.run(['bash', home + STACK, ...argv])
         const out = ran.stdout.trimEnd()
         if (ran.exitCode === 0) {
-          return { text: short(out) || '(no output)', ...(c.write ? { context: [c.write.note(argv)] } : {}) }
+          return { text: ownLines(short(out) || '(no output)'), ...(c.write ? { context: [c.write.note(argv)] } : {}) }
         }
         if (ran.exitCode === 2) return { text: usage }
 
@@ -150,7 +154,7 @@ export const register: Register = on => {
         const hint = /Plan must be|main working-tree root|pass the stack's root/.test(err)
           ? "\nRun it from the plan's repository; next, list, and check take the root plan (lowest pr<N>)."
           : ''
-        return { text: short(err || `dev-stack.sh exited ${ran.exitCode}`) + hint }
+        return { text: ownLines(short(err || `dev-stack.sh exited ${ran.exitCode}`) + hint) }
       } catch (error) {
         return { text: 'dev-stack.sh failed: ' + String((error as Error)?.message ?? error) }
       }

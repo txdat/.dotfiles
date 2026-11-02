@@ -87,7 +87,7 @@ test('a failed write tells the model nothing', async ($, on) => {
 test("check's blocked report on stdout is shown", async ($, on) => {
   engine(on, { exitCode: 1, stdout: `PASS a\nBLOCK b\nreason\n`, stderr: '' })
   const out = await $.command.run(typed('dev-stack-check', PLAN))
-  expect(out.text).toBe('PASS a\nBLOCK b\nreason')
+  expect(out.text).toBe('\nPASS a\nBLOCK b\nreason')
 })
 
 test('a plan outside the repository gets a hint', async ($, on) => {
@@ -104,7 +104,7 @@ test('plan paths show without the plans root prefix', async ($, on) => {
     stderr: '',
   })
   const out = await $.command.run(typed('dev-stack-next', PLAN))
-  expect(out.text).toBe('repo/12_s/pr1.spec.md\tplanning\t-\treview-feature\t-\nrepo/12_s/pr2.spec.md')
+  expect(out.text).toBe('\nrepo/12_s/pr1.spec.md\tplanning\t-\treview-feature\t-\nrepo/12_s/pr2.spec.md')
 })
 
 test('AI_PLANS_ROOT moves the prefix, and the format hint keeps its own', async ($, on) => {
@@ -120,7 +120,7 @@ test('AI_PLANS_ROOT moves the prefix, and the format hint keeps its own', async 
     },
   }))
   const out = await $.command.run(typed('dev-stack-resume', PLAN))
-  expect(out.text?.split('\n').slice(0, 2)).toEqual([
+  expect(out.text?.split('\n').slice(1, 3)).toEqual([
     'Plan not found: repo/12_s/pr9.spec.md',
     'Plan must be ~/work/plans/<repo>/<issue>_<slug>/pr<N>.spec.md',
   ])
@@ -133,7 +133,7 @@ test('the format hint keeps its prefix when it names the repository', async ($, 
     stderr: 'Plan must be ~/work/plans/repo/<issue>_<slug>/pr<N>.spec.md: /home/u/work/plans/x/pr1.spec.md',
   })
   const out = await $.command.run(typed('dev-stack-next', PLAN))
-  expect(out.text?.split('\n')[0]).toBe(
+  expect(out.text?.split('\n')[1]).toBe(
     'Plan must be ~/work/plans/repo/<issue>_<slug>/pr<N>.spec.md: x/pr1.spec.md',
   )
 })
@@ -203,4 +203,22 @@ test('reads run mid-turn and writes wait for the turn', async ($, on) => {
     { name: 'dev-stack-stop', immediate: undefined },
     { name: 'dev-stack-resume', immediate: undefined },
   ])
+})
+
+test('multi-line output starts below the plugin name the engine labels it with', async ($, on) => {
+  engine(on, { exitCode: 0, stdout: 'pr1 🟢 reviewed\n└─ pr2 🔵 approved\n', stderr: '' })
+  for (const view of ['', ' --tab', ' --tree', ' --md']) {
+    const out = await $.command.run(typed('dev-stack-next', PLAN + view))
+    expect(out.text).toBe('\npr1 🟢 reviewed\n└─ pr2 🔵 approved')
+  }
+  const listed = await $.command.run(typed('dev-stack-list', PLAN))
+  expect(listed.text).toBe('\npr1 🟢 reviewed\n└─ pr2 🔵 approved')
+})
+
+test('one-line output stays on the label line', async ($, on) => {
+  engine(on, { exitCode: 0, stdout: 'Status: ready\n', stderr: '' })
+  const out = await $.command.run(typed('dev-stack-review', `${PLAN} ready`))
+  expect(out.text).toBe('Status: ready')
+  const usage = await $.command.run(typed('dev-stack-next', ''))
+  expect(usage.text?.startsWith('Usage: ')).toBe(true)
 })
