@@ -13,6 +13,7 @@ Paths below assume the dotfiles checkout is at `~/.dotfiles`.
 | Antigravity | `~/.gemini/config/GEMINI.md` | `~/.gemini/config/skills/<name>/SKILL.md`, or a path in `skills.json` |
 | Pi | `~/.pi/agent/AGENTS.md` | reuses `~/.claude/skills` |
 | dsh | `~/.dsh/AGENTS.md` | `~/.dsh/skills/<name>/SKILL.md` |
+| OpenCode | `~/.config/opencode/AGENTS.md` | reuses `~/.claude/skills`; agents under `~/.config/opencode/agents` |
 
 ## Claude Code
 
@@ -73,6 +74,16 @@ The extension gates recognized reads, not phase execution. It cannot distinguish
 Symlink `~/.dsh/AGENTS.md` → `~/.dotfiles/.ai-shared/AGENTS.md`.
 
 **skills** — create `~/.dsh/skills/<name>/SKILL.md` from the [dsh template](#dsh-template); the harness scans the user root `~/.dsh/skills`. Take name and description from [references](#references). The dsh frontmatter parser keeps `name`, `description`, `whenToUse`, `metadata`, `disable-model-invocation`, and `user-invocable`, and silently discards any other key.
+
+## OpenCode
+
+Symlink `~/.config/opencode/AGENTS.md` → `~/.dotfiles/.ai-shared/AGENTS.md`. OpenCode V2 recognizes `AGENTS.md` only and does not fall back to `CLAUDE.md`.
+
+**skills** — reuse the Claude skills. OpenCode discovers `~/.claude/skills` as a global compatibility source, so do not create native skill wrappers. Keep `~/.config/opencode/skills` absent; a native skill with the same ID would take precedence over the Claude wrapper. OpenCode ignores the Claude `model` and `effort` fields and uses the session's selected model.
+
+**agents** — create `~/.config/opencode/agents/<name>.md` from the [OpenCode agent template](#opencode-agent-template), taking name, description, and md file from [agents](#agents). OpenCode does not discover `~/.claude/agents`, so these must be native. The file name supplies the agent ID. The template sets `mode: subagent` so OpenCode exposes the agent only to the parent agent's `subagent` tool.
+
+**phase loading and gates** — OpenCode has no `gate-check.sh` hook here, so phase entry relies on the skill's own prerequisites under [skills/dev/plan.md](skills/dev/plan.md). Loading a phase skill grants no authority to execute it.
 
 ## Wrapper templates
 
@@ -162,6 +173,17 @@ Read <md file> and follow all instructions exactly.
 ---
 name: <name>
 description: "<description>"
+---
+
+Read <md file> and follow all instructions exactly.
+```
+
+#### OpenCode agent template
+
+```
+---
+description: "<description>"
+mode: subagent
 ---
 
 Read <md file> and follow all instructions exactly.

@@ -157,8 +157,9 @@ claude() {
         ENABLE_LSP_TOOL=1
         ENABLE_CLAUDEAI_MCP_SERVERS=false
     )
-    local -a args=()
-    args+=(--dangerously-skip-permissions)
+    local -a args=(
+        --dangerously-skip-permissions
+    )
     local arg
     for arg in "$@"; do
         case $arg in
@@ -185,7 +186,6 @@ claude() {
                     "ANTHROPIC_DEFAULT_HAIKU_MODEL=deepseek-v4.1-flash"
                 )
                 ;;
-            # -d) args+=(--dangerously-skip-permissions) ;;
             *)  args+=("$arg") ;;
         esac
     done
@@ -193,12 +193,12 @@ claude() {
 }
 
 agy() {
-    local -a args=()
-    args+=(--dangerously-skip-permissions)
+    local -a args=(
+        --dangerously-skip-permissions
+    )
     local arg
     for arg in "$@"; do
         case $arg in
-            # -d) args+=(--dangerously-skip-permissions) ;;
             *)  args+=("$arg") ;;
         esac
     done
@@ -206,17 +206,35 @@ agy() {
 }
 
 codex() {
-    local -a args=()
-    args+=(--yolo)
+    local -a args=(
+        --yolo
+    )
     local arg
     for arg in "$@"; do
         case $arg in
             -r|--resume) args+=(resume) ;;
-            # -d)          args+=(--yolo) ;;
             *)           args+=("$arg") ;;
         esac
     done
     command codex "${args[@]}"
+}
+
+oc() {
+    local -a env_vars=(
+        CLAUDE_API_KEY=
+        DEEPSEEK_API_KEY=
+        OPENCODE_API_KEY=$OC_API_KEY
+    )
+    local -a args=(
+        --auto
+    )
+    local arg
+    for arg in "$@"; do
+        case $arg in
+            *)  args+=("$arg") ;;
+        esac
+    done
+    env "${env_vars[@]}" command opencode "${args[@]}"
 }
 
 # clipboard: xc -f FILE | xc -o [FILE] | cmd | xc
