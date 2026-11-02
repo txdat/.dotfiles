@@ -83,7 +83,7 @@ Each skill wrapper names one skill and delegates to its markdown file. Keep the 
 ```
 ---
 name: <name>
-description: <description>
+description: "<description>"
 model: <Claude Code model>
 effort: <effort>
 ---
@@ -96,7 +96,7 @@ Read <md file> and follow all instructions exactly.
 ```
 ---
 name: <name>
-description: <description>
+description: "<description>"
 model: <Codex model>
 effort: <effort>
 ---
@@ -109,7 +109,7 @@ Read <md file> and follow all instructions exactly.
 ```
 ---
 name: <name>
-description: <description>
+description: "<description>"
 model: <Antigravity model>
 effort: <effort>
 ---
@@ -138,7 +138,7 @@ One agent serves skills with different models, so agents carry no model or effor
 ```
 ---
 name: <name>
-description: <description>
+description: "<description>"
 tools: <tools>
 ---
 
@@ -161,7 +161,7 @@ Read <md file> and follow all instructions exactly.
 ```
 ---
 name: <name>
-description: <description>
+description: "<description>"
 ---
 
 Read <md file> and follow all instructions exactly.
@@ -194,11 +194,12 @@ Where a row leaves effort or model blank, the wrapper installs without that fiel
 | dev-execute-feature | Implement an approved plan with test-first commits and verification at its branch tip. | skills/dev/execute-feature.md | high | haiku |
 | dev-explore | Read-only exploration of a codebase area to identify entry points, key files, data flow, established patterns, gotchas, and planning questions. | skills/dev/explore.md | medium | haiku |
 | dev-fix-bug | Diagnose a bug from evidence, propose fix options and follow-ups, and route a requested fix: plan-backed delivery when asked, otherwise a direct edit. | skills/dev/fix-bug.md | medium | opus |
-| dev-review-code | Independently review an implemented plan for TDD proof, test results, correctness, security, scope, and hygiene, then record the reviewed tip. | skills/dev/review-code.md | xhigh | haiku |
+| dev-review-code | Independently review an implemented plan for TDD proof, test results, correctness, security, scope, and hygiene, then record the reviewed tip. | skills/dev/review-code.md | high | haiku |
 | dev-review-feature | Independently review a planning-stage plan for missing obligations, untraced decisions, weak test cases, delivery order, and simpler designs before human approval. | skills/dev/review-feature.md | medium | opus |
 | dev-review-infra | Review an infra/devops runbook against live state with read-only commands: phase ordering, rollback safety, DNS/traffic cutover sequencing, IaC completeness, and CI/CD coverage. | skills/dev/review-infra.md | high | haiku |
 | dev-review-system | Review an architecture design for measurable outcomes, viable alternatives, boundary contracts, failure modes, migration and rollback safety, and dependency-ordered decomposition. | skills/dev/review-system.md | medium | opus |
 | dev-run-stack | Drive a stack of plans, or one plan, through the design loop (review-feature and revise until ready), the execute loop (execute-feature, review-code, and repair until reviewed), and create-pr in dependency order, then report the PRs and what needs the user. | skills/dev/run-stack.md | medium | haiku |
+| dev-split-pr-atomic | On explicit request only, split one open PR into a stack of atomic PRs that together carry exactly its diff, then close the original with a link to them. | skills/dev/split-pr-atomic.md | medium | opus |
 | dev-recap | Session lessons and workflow improvement proposals from a plan-based session. | skills/dev/recap.md | medium | haiku |
 
 #### sre

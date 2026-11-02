@@ -10,6 +10,7 @@
 | Implement an approved plan | [execute-feature](execute-feature.md) |
 | Review implemented work | [review-code](review-code.md) |
 | Publish reviewed PRs | [create-pr](create-pr.md) |
+| Split a PR into atomic PRs, on request only | [split-pr-atomic](split-pr-atomic.md) |
 | Drive a stack through its phases | [run-stack](run-stack.md) |
 | Diagnose a bug and route its fix | [fix-bug](fix-bug.md) |
 | Design/review system boundaries | [design-system](design-system.md), [review-system](review-system.md) |
