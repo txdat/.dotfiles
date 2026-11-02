@@ -25,6 +25,8 @@ path=(
     $HOME/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin # rust
     $CONDA_HOME/bin                                              # python
     $HOME/.local/bin
+    $HOME/.opencode/bin
+    $HOME/.dotfiles/.ai-shared/bin
     $path
 )
 
@@ -144,10 +146,6 @@ conda() {
     conda "$@"
 }
 
-# claude wrapper: model/telemetry defaults plus shorthands
-#   -d         skip permission prompts
-#   --ak=IDX   token from the CLAUDE_API_KEY json array (or object key)
-#   --ds       deepseek endpoint and models
 claude() {
     local -a env_vars=(
         CLAUDE_CODE_ENABLE_TELEMETRY=0
@@ -161,26 +159,20 @@ claude() {
     )
     local -a args=()
     args+=(--dangerously-skip-permissions)
-    local arg pro_model flash_model token
+    local arg
     for arg in "$@"; do
         case $arg in
-            --ak=*)
-                token=$(print -r -- "$CLAUDE_API_KEY" |
-                    jq -r -e --arg key "${arg#*=}" \
-                        'if type == "array" then .[$key | tonumber] else .[$key] end') ||
-                    { print -u2 "claude: no token '${arg#*=}' in CLAUDE_API_KEY"; return 1 }
-                env_vars+=("ANTHROPIC_AUTH_TOKEN=$token")
+            --ak)
+                env_vars+=("ANTHROPIC_AUTH_TOKEN=$CLAUDE_API_KEY")
                 ;;
             --ds)
-                pro_model="deepseek-v4-pro"
-                flash_model="deepseek-flash"
                 env_vars+=(
                     "ANTHROPIC_BASE_URL=https://api.deepseek.com/anthropic"
                     "ANTHROPIC_AUTH_TOKEN=$DEEPSEEK_API_KEY"
-                    "ANTHROPIC_DEFAULT_FABLE_MODEL=${pro_model}"
-                    "ANTHROPIC_DEFAULT_OPUS_MODEL=${pro_model}"
-                    "ANTHROPIC_DEFAULT_SONNET_MODEL=${flash_model}"
-                    "ANTHROPIC_DEFAULT_HAIKU_MODEL=${flash_model}"
+                    "ANTHROPIC_DEFAULT_FABLE_MODEL=deepseek-v4-pro"
+                    "ANTHROPIC_DEFAULT_OPUS_MODEL=deepseek-v4-pro"
+                    "ANTHROPIC_DEFAULT_SONNET_MODEL=deepseek-flash"
+                    "ANTHROPIC_DEFAULT_HAIKU_MODEL=deepseek-flash"
                 )
                 ;;
             --oc)
@@ -190,7 +182,7 @@ claude() {
                     "ANTHROPIC_DEFAULT_FABLE_MODEL=deepseek-v4-pro"
                     "ANTHROPIC_DEFAULT_OPUS_MODEL=deepseek-v4-pro"
                     "ANTHROPIC_DEFAULT_SONNET_MODEL=deepseek-v4.1-flash"
-                    "ANTHROPIC_DEFAULT_HAIKU_MODEL=mimo-v2.6-flash"
+                    "ANTHROPIC_DEFAULT_HAIKU_MODEL=deepseek-v4.1-flash"
                 )
                 ;;
             # -d) args+=(--dangerously-skip-permissions) ;;
