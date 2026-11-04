@@ -2,7 +2,7 @@
 
 Shared agent rules, workflow skills, and helper scripts for every harness on this machine. Platform-specific skill and agent wrappers are generated locally and point at the markdown files here.
 
-Reviews under [plan.md — Review](skills/dev/plan.md#review) run in the [dev-reviewer](#agents) agent and delegated implementation in the [dev-executor](#agents) agent, where installed; other delegation uses platform-provided subagents with the owning skill.
+Delegated design and feature-plan revision run in the [dev-planner](#agents) agent, reviews under [plan.md — Review](skills/dev/plan.md#review) in the [dev-reviewer](#agents) agent, and delegated implementation in the [dev-executor](#agents) agent, where installed; other delegation uses platform-provided subagents with the owning skill.
 
 Paths below assume the dotfiles checkout is at `~/.dotfiles`.
 
@@ -87,7 +87,7 @@ Symlink `~/.config/opencode/AGENTS.md` → `~/.dotfiles/.ai-shared/AGENTS.md`. O
 
 ## Wrapper templates
 
-Each skill wrapper names one skill and delegates to its markdown file. Keep the body to that single instruction.
+Each skill wrapper names one skill and delegates to its markdown file. Keep the body to that single instruction. Write the markdown file as an absolute path (no `~` or `$HOME`): file tools do not expand them.
 
 ### Claude template
 
@@ -99,7 +99,7 @@ model: <Claude Code model>
 effort: <effort>
 ---
 
-Read <md file> and follow all instructions exactly.
+Read <absolute-path-to-md-file> and follow all instructions exactly.
 ```
 
 ### Codex template
@@ -112,7 +112,7 @@ model: <Codex model>
 effort: <effort>
 ---
 
-Read <md file> and follow all instructions exactly.
+Read <absolute-path-to-md-file> and follow all instructions exactly.
 ```
 
 ### Antigravity template
@@ -125,7 +125,7 @@ model: <Antigravity model>
 effort: <effort>
 ---
 
-Read <md file> and follow all instructions exactly.
+Read <absolute-path-to-md-file> and follow all instructions exactly.
 ```
 
 ### dsh template
@@ -137,7 +137,7 @@ description: "<description>"
 user-invocable: true
 ---
 
-Read <md file> and follow all instructions exactly.
+Read <absolute-path-to-md-file> and follow all instructions exactly.
 ```
 
 ### Agent templates
@@ -153,7 +153,7 @@ description: "<description>"
 tools: <tools>
 ---
 
-Read <md file> and follow all instructions exactly.
+Read <absolute-path-to-md-file> and follow all instructions exactly.
 ```
 
 #### Codex agent template
@@ -163,7 +163,7 @@ name = "<name>"
 description = "<description>"
 
 developer_instructions = """
-Read <md file> and follow all instructions exactly.
+Read <absolute-path-to-md-file> and follow all instructions exactly.
 """
 ```
 
@@ -175,7 +175,7 @@ name: <name>
 description: "<description>"
 ---
 
-Read <md file> and follow all instructions exactly.
+Read <absolute-path-to-md-file> and follow all instructions exactly.
 ```
 
 #### OpenCode agent template
@@ -186,7 +186,7 @@ description: "<description>"
 mode: subagent
 ---
 
-Read <md file> and follow all instructions exactly.
+Read <absolute-path-to-md-file> and follow all instructions exactly.
 ```
 
 ## References
@@ -204,7 +204,7 @@ Read <md file> and follow all instructions exactly.
 
 Where a row leaves effort or model blank, the wrapper installs without that field and the harness default applies.
 
-#### swe
+#### SWE
 
 | skill | description | md file | effort | model |
 | ----- | ----------- | ------- | ------ | ----- |
@@ -224,13 +224,13 @@ Where a row leaves effort or model blank, the wrapper installs without that fiel
 | dev-split-pr-atomic | On explicit request only, split one open PR into a stack of atomic PRs that together carry exactly its diff, then close the original with a link to them. | skills/dev/split-pr-atomic.md | medium | opus |
 | dev-recap | Session lessons and workflow improvement proposals from a plan-based session. | skills/dev/recap.md | medium | haiku |
 
-#### sre
+#### SRE
 
 | skill | description | md file | effort | model |
 | ----- | ----------- | ------- | ------ | ----- |
 | gke-inspect-incident | Investigate GKE incidents with read-only collection and targeted diagnostic evidence. | skills/gke/inspect-incident.md | high | haiku |
 
-#### ielts
+#### IELTS
 
 | skill | description | md file | effort | model |
 | ----- | ----------- | ------- | ------ | ----- |
@@ -240,7 +240,7 @@ Where a row leaves effort or model blank, the wrapper installs without that fiel
 | ielts-speaking | Prepare IELTS speaking topics and review transcript language. Transcript-only feedback cannot establish pronunciation, full fluency, or an overall Speaking band. | skills/ielts/speaking.md | — | — |
 | ielts-writing | Plan IELTS Academic Task 1/2 responses with question breakdowns, required coverage, target-band guidance, and errors to avoid; review drafts or generate practice tasks. | skills/ielts/writing.md | — | — |
 
-#### misc
+#### Misc
 
 | skill | description | md file | effort | model |
 | ----- | ----------- | ------- | ------ | ----- |
@@ -250,5 +250,6 @@ Where a row leaves effort or model blank, the wrapper installs without that fiel
 
 | agent | description | md file | tools |
 | ----- | ----------- | ------- | ----- |
+| dev-planner | Design in a fresh context: run design-feature, design-system, or design-infra on one request, with the user's answers attributed to the user, or revise one plan from review findings, returning what needs the user, the artifacts, and check results. | agents/dev-planner.md | Read, Grep, Glob, Bash, Skill, Edit, Write |
 | dev-executor | Implement while the main agent works: run execute-feature on one approved plan, or one assigned chunk in its exclusive files, and return the changes and check results. | agents/dev-executor.md | Read, Grep, Glob, Bash, Skill, Edit, Write |
 | dev-reviewer | Review one artifact in a fresh context through review-feature, review-code, review-system, or review-infra, editing only where plan.md — Review allows, and return the verdict and findings. | agents/dev-reviewer.md | Read, Grep, Glob, Bash, Skill, Edit, Write |

@@ -12,6 +12,8 @@ Lead with the result or next action. Use clear, concise English unless the task 
 
 Use supplied answers and inspected evidence. Resolve routine implementation details from existing patterns. Ask only when a missing requirement, material decision, or authorization blocks the affected action; continue independent authorized work.
 
+Treat a delivered answer as settled. On later turns, address the current request; revisit an earlier answer only when the user asks about it or reports a problem with it.
+
 ## Work
 
 Fit planning to the task: clear local edits, including application code, proceed directly; state a short plan for substantial work. [plan.md — Scope](skills/dev/plan.md#scope) defines when the plan-backed workflow applies.
