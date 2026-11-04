@@ -4,17 +4,18 @@ The shared contract for application plans. Phase skills say how to do each phase
 
 ## Scope
 
-The workflow applies when the user invokes a phase: design-feature, review-feature, execute-feature, review-code, or create-pr, or [run-stack](run-stack.md), which runs review-feature through create-pr. It governs application code and developer tooling other than this dev flow, with their tests, including refactors. Docs, declarative config, and this dev flow — its skills and its [scripts](../../bin) with their tests — take the direct-edit path under [AGENTS.md — Work](../../AGENTS.md#work), even inside plan work; mixed changes follow the workflow for their governed part.
+The workflow applies when the user invokes a phase: design-feature, review-feature, execute-feature, review-code, or create-pr, or [run-stack](run-stack.md), which runs review-feature through create-pr, or [autopilot](autopilot.md), for the changes it routes plan-backed. It governs application code and developer tooling other than this dev flow, with their tests, including refactors. Docs, declarative config, and this dev flow — its skills and its [scripts](../../bin) with their tests — take the direct-edit path under [AGENTS.md — Work](../../AGENTS.md#work), even inside plan work; mixed changes follow the workflow for their governed part.
 
 ## Sequence
 
-**design-feature → review-feature → user sets `Status: approved` → execute-feature → review-code → create-pr**
+**design-feature → review-feature → user sets `Status: approved` (or run-stack `--auto-approve` sets `auto-approved`) → execute-feature → review-code → create-pr**
 
 | Status | Set by |
 |---|---|
 | `planning` | design-feature, or any revision |
 | `needs-changes`, `ready` | review-feature's verdict, recorded with `Spec:` |
 | `approved` | the user only, from `ready` |
+| `auto-approved` | `dev-stack.sh approve`, from `ready`, under run-stack `--auto-approve`, which only autopilot passes; gates treat it as `approved` |
 | `implemented` | execute-feature, or any change to a reviewed Branch |
 | `reviewed` | review-code, with `Tip:` set to the tip it passed |
 | `published` | create-pr's cleanup |
@@ -71,9 +72,9 @@ IDs are `AC`, `TC`, `ST`, `PC`, and `DD`, numbered from 1, never renumbered or r
 
 ## Changes
 
-After approval only `Status:` and `Tip:` change; everything else in the plan is frozen. To approve, the user changes `ready` to `approved` and leaves `Spec:` as it is. run-stack records its stops in the stack directory's `stops.log`. Execution decides only details that are not design choices, such as names and internal structure.
+After approval only `Status:` and `Tip:` change; everything else in the plan is frozen. To approve, the user changes `ready` to `approved` and leaves `Spec:` as it is; only autopilot, through run-stack `--auto-approve`, runs `dev-stack.sh approve`, which sets `auto-approved`. run-stack records its stops in the stack directory's `stops.log`. Execution decides only details that are not design choices, such as names and internal structure.
 
-Anything else stops the affected work: a failed PC, an unmeetable fixture or obligation, a step that cannot be followed, a different PR split, or new scope. Bring the user options, tradeoffs, and a recommendation. If the user chooses to revise: set `planning`, revise, re-review, and wait for approval again. The worktree stays.
+Anything else stops the affected work: a failed PC, an unmeetable fixture or obligation, a step that cannot be followed, a different PR split, or new scope. Bring the user options, tradeoffs, and a recommendation. If the user, or autopilot under [autopilot.md — Decisions](autopilot.md#decisions), chooses to revise: set `planning`, revise, re-review, and wait for approval again. The worktree stays.
 
 ## Stacks
 

@@ -1,6 +1,6 @@
-# /execute-feature — Implement an Approved Plan
+# /execute-feature — Implement an Approved or Auto-Approved Plan
 
-Implement an `approved` plan test-first under [plan.md](plan.md).
+Implement an `approved` or `auto-approved` plan test-first under [plan.md](plan.md).
 
 1. Without a worktree ([plan.md — Worktree](plan.md#worktree)), set one up: share the parent's when this plan is its only child, otherwise create one on the plan's Branch from its PR target. With one, resume in it on the plan's Branch: finish the RED then implementation commits and rerun the checks.
 2. Before each step, run its PC Checks; a failure stops that step and everything depending on it under [plan.md — Changes](plan.md#changes).

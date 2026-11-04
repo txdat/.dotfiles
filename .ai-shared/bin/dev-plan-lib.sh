@@ -287,7 +287,7 @@ root_plans() {
 # The rank of a status in the sequence; empty for an unknown status. A review
 # verdict is still planning.
 status_rank() {
-  case "$1" in planning|needs-changes|ready) echo 0 ;; approved) echo 1 ;; implemented) echo 2 ;; reviewed) echo 3 ;; published) echo 4 ;; esac
+  case "$1" in planning|needs-changes|ready) echo 0 ;; approved|auto-approved) echo 1 ;; implemented) echo 2 ;; reviewed) echo 3 ;; published) echo 4 ;; esac
 }
 
 # The branch plan $1's PR targets: its parent plan's Branch, or its Base for

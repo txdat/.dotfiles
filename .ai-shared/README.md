@@ -2,7 +2,7 @@
 
 Shared agent rules, workflow skills, and helper scripts for every harness on this machine. Platform-specific skill and agent wrappers are generated locally and point at the markdown files here.
 
-Delegated design and feature-plan revision run in the [dev-planner](#agents) agent, reviews under [plan.md — Review](skills/dev/plan.md#review) in the [dev-reviewer](#agents) agent, and delegated implementation in the [dev-executor](#agents) agent, where installed; other delegation uses platform-provided subagents with the owning skill.
+Bug diagnosis delegated by autopilot runs in the [dev-inspector](#agents) agent, delegated design and feature-plan revision in the [dev-planner](#agents) agent, reviews under [plan.md — Review](skills/dev/plan.md#review) in the [dev-reviewer](#agents) agent, and delegated implementation in the [dev-executor](#agents) agent, where installed; other delegation uses platform-provided subagents with the owning skill.
 
 Paths below assume the dotfiles checkout is at `~/.dotfiles`.
 
@@ -208,12 +208,13 @@ Where a row leaves effort or model blank, the wrapper installs without that fiel
 
 | skill | description | md file | effort | model |
 | ----- | ----------- | ------- | ------ | ----- |
+| dev-autopilot | Drive an issue or requirement through the whole dev flow with auto-approval: triage, fix-bug, create-issue, a direct edit or plan-backed stack, draft PRs, and one code-review round, stopping where a decision needs the user. | skills/dev/autopilot.md | medium | opus |
 | dev-create-issue | Create a GitHub issue with a specific problem, expected outcome, and requested metadata, standalone or for a plan to link. | skills/dev/create-issue.md | medium | haiku |
-| dev-create-pr | Publish a reviewed plan, with every plan stacked on it, as draft or ready pull requests, one per plan, mark the plans published, and clean up their worktrees and branches. | skills/dev/create-pr.md | medium | haiku |
+| dev-create-pr | Publish a reviewed plan, with every plan stacked on it, as draft or ready pull requests, one per plan, mark the plans published, and clean up their worktrees and branches, unless cleanup is deferred. | skills/dev/create-pr.md | medium | haiku |
 | dev-design-feature | Design a feature, fix, or refactor plan before implementation: decisions, acceptance criteria, concrete test cases, ordered steps, and a stack of plans when the work needs several PRs. | skills/dev/design-feature.md | medium | opus |
 | dev-design-infra | Design a runnable infrastructure operations plan from live-state evidence, verification gates, and rollback requirements. | skills/dev/design-infra.md | high | haiku |
 | dev-design-system | Design cross-cutting architecture changes such as new communication patterns, service boundaries, or integrations, with options, contracts, migration, rollback, and decomposition. | skills/dev/design-system.md | medium | opus |
-| dev-execute-feature | Implement an approved plan with test-first commits and verification at its branch tip. | skills/dev/execute-feature.md | high | haiku |
+| dev-execute-feature | Implement an approved or auto-approved plan with test-first commits and verification at its branch tip. | skills/dev/execute-feature.md | high | haiku |
 | dev-explore | Read-only exploration of a codebase area to identify entry points, key files, data flow, established patterns, gotchas, and planning questions. | skills/dev/explore.md | medium | haiku |
 | dev-fix-bug | Diagnose a bug from evidence, propose fix options and follow-ups, and route a requested fix: plan-backed delivery when asked, otherwise a direct edit. | skills/dev/fix-bug.md | medium | opus |
 | dev-review-code | Independently review an implemented plan for TDD proof, test results, correctness, security, scope, and hygiene, then record the reviewed tip. | skills/dev/review-code.md | high | haiku |
@@ -250,6 +251,7 @@ Where a row leaves effort or model blank, the wrapper installs without that fiel
 
 | agent | description | md file | tools |
 | ----- | ----------- | ------- | ----- |
-| dev-planner | Design in a fresh context: run design-feature, design-system, or design-infra on one request, with the user's answers attributed to the user, or revise one plan from review findings, returning what needs the user, the artifacts, and check results. | agents/dev-planner.md | Read, Grep, Glob, Bash, Skill, Edit, Write |
-| dev-executor | Implement while the main agent works: run execute-feature on one approved plan, or one assigned chunk in its exclusive files, and return the changes and check results. | agents/dev-executor.md | Read, Grep, Glob, Bash, Skill, Edit, Write |
-| dev-reviewer | Review one artifact in a fresh context through review-feature, review-code, review-system, or review-infra, editing only where plan.md — Review allows, and return the verdict and findings. | agents/dev-reviewer.md | Read, Grep, Glob, Bash, Skill, Edit, Write |
+| dev-planner | Design in a fresh context: run design-feature, design-system, or design-infra on one request, with the user's answers attributed to the user and dev-autopilot's to it, or revise one plan from review findings, returning what needs the user, the artifacts, and check results. | agents/dev-planner.md | Read, Grep, Glob, Bash, Skill, Edit, Write |
+| dev-executor | Implement while the main agent works: run execute-feature on one approved or auto-approved plan, or one assigned chunk in its exclusive files, and return the changes and check results. | agents/dev-executor.md | Read, Grep, Glob, Bash, Skill, Edit, Write |
+| dev-inspector | Diagnose one bug in a fresh context through fix-bug, changing nothing outside its scratch and /tmp, and return the reproduction, ranked fix options, regression-test patch, and route. | agents/dev-inspector.md | Read, Grep, Glob, Bash, Skill, Edit, Write |
+| dev-reviewer | Review one artifact in a fresh context through review-feature, review-code, review-system, or review-infra, editing only where plan.md — Review allows, or one PR through /code-review, and return the verdict and findings. | agents/dev-reviewer.md | Read, Grep, Glob, Bash, Skill, Edit, Write |

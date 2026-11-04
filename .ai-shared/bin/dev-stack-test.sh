@@ -176,6 +176,65 @@ run review "$C" ready >/dev/null
 set_status "$C" approved
 expect_next 'root execute-feature child wait-parent sib review-feature grand review-feature' 'an approved child waits for its parent to be reviewed'
 
+# ── approve: an agent's approval, as auto-approved ──
+expect_fail 'approve needs a ready verdict' 'approve needs a ready plan whose review still holds' approve "$S"
+run review "$S" ready >/dev/null
+sed -i '/^## Goal/a Edited after review.' "$S"
+expect_fail 'approve refuses a ready verdict the spec no longer matches' 'approve needs a ready plan whose review still holds' approve "$S"
+write_plan "$S" planning feat/sib pr1
+run review "$S" ready >/dev/null
+run stop "$S" 'Failed fixes: 3/3 — test' >/dev/null
+expect_fail 'approve refuses a stopped plan' 'is stopped' approve "$S"
+run resume "$S" >/dev/null
+spec=$(sed -n 's/^Spec: //p' "$S")
+out=$(run approve "$S")
+[[ "$out" == "Status: auto-approved recorded in $S" ]] || fail "approve: $out"
+grep -qx 'Status: auto-approved' "$S" && grep -qx "Spec: $spec" "$S" || fail "approve fields: $(sed -n 2,3p "$S")"
+pass 'approve sets Status: auto-approved and keeps the Spec hash'
+expect_fail 'approve records only from ready' 'approve needs a ready plan whose review still holds' approve "$S"
+[[ "$(jq -cn --arg a "$S" '{tool_input:{skill:"dev-review-feature",args:$a}}' | (cd "$REPO" && "$GATE"))" == *'already auto-approved'* ]] ||
+  fail 'review-feature ran on an auto-approved plan'
+pass 'review-feature refuses an auto-approved plan'
+expect_next 'root execute-feature child wait-parent sib wait-parent grand review-feature' 'an auto-approved child waits for its parent to be reviewed'
+set_status "$R" auto-approved; set_status "$C" ready
+run review "$G" ready >/dev/null
+expect_fail 'approve needs the parent approved' "$C must be approved or auto-approved first" approve "$G"
+set_status "$C" auto-approved
+expect_next 'root execute-feature child wait-parent sib wait-parent grand wait-user' 'an auto-approved plan runs execute-feature and opens its children to review'
+[[ -z "$(jq -cn --arg a "$G" '{tool_input:{skill:"dev-review-feature",args:$a}}' | (cd "$REPO" && "$GATE"))" ]] ||
+  fail 'the review-feature gate refused a child of an auto-approved parent'
+pass 'the review-feature gate accepts a child of an auto-approved parent'
+out=$(run next "$R" --md | sed -n 3p)
+[[ "$out" == '| pr1 | 🔷 auto-approved | - | ▶ execute-feature | - |' ]] || fail "md auto-approved row: $out"
+pass 'next marks auto-approved with its own dot'
+out=$(run check "$R") || fail "check under auto-approved plans: $out"
+[[ "$(sed -n 1p <<<"$out")" == "SKIP $R (auto-approved)" ]] || fail "check auto-approved: $out"
+pass 'check skips an auto-approved plan whose review holds'
+for pair in 'dev-review-code|not yet implemented' 'dev-create-pr|not yet executed'; do
+  [[ "$(jq -cn --arg s "${pair%%|*}" --arg a "$R" '{tool_input:{skill:$s,args:$a}}' | (cd "$REPO" && "$GATE"))" == *"${pair#*|}"* ]] ||
+    fail "${pair%%|*} ran on an auto-approved plan"
+done
+pass 'review-code and create-pr refuse an auto-approved plan'
+sed -i '/^## Goal/a Stale edit.' "$R"
+[[ "$(run next "$R" | awk -F'\t' 'NR==1 { print $4 }')" == blocked ]] || fail 'an auto-approved plan with a changed spec was not blocked'
+pass 'an auto-approved plan whose spec changed is blocked'
+sed -i '/^Stale edit\.$/d' "$R"
+expect_fail 'approve takes one plan' 'Usage' approve "$G" extra
+set_status "$G" published
+expect_fail 'approve refuses a published plan' 'is published; no phase resumes it' approve "$G"
+write_plan "$G" planning feat/grand pr2
+run review "$G" ready >/dev/null; set_status "$G" planning
+expect_fail 'approve refuses a plan returned to planning with a ready Spec' 'approve needs a ready plan whose review still holds' approve "$G"
+[[ "$(run next "$R" | awk -F'\t' -v g="$G" '$1 == g { print $4 }')" == review-feature ]] || fail 'a plan returned to planning with a ready Spec was not sent back to review'
+pass 'a plan returned to planning goes back to review-feature, not wait-user'
+run review "$G" needs-changes >/dev/null
+expect_fail 'approve refuses a needs-changes verdict' 'approve needs a ready plan whose review still holds' approve "$G"
+[[ -z "$(jq -cn --arg p "/dev-autopilot $R answers" '{hook_event_name:"UserPromptSubmit",prompt:$p}' | (cd "$REPO" && "$GATE"))" ]] ||
+  fail 'the gate checked a /dev-autopilot prompt'
+pass 'a /dev-autopilot prompt naming a plan is not gated'
+set_status "$R" approved; set_status "$C" approved
+write_plan "$S" planning feat/sib pr1; write_plan "$G" planning feat/grand pr2
+
 out=$(run next "$R" --md)
 [[ "$(sed -n 1,2p <<<"$out")" == $'| plan | status | parent | action | reason |\n|---|---|---|---|---|' ]] || fail "md header: $out"
 [[ "$(sed -n 3p <<<"$out")" == '| pr1 | 🔵 approved | - | ▶ execute-feature | - |' ]] || fail "md row: $out"

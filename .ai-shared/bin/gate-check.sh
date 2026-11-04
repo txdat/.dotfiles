@@ -12,7 +12,8 @@
 # RED/GREEN commit sequence.
 # The hook reads identifiers and fields, never prose: whether an AC is right
 # or a step satisfies its TC is the reviewer's judgment. It cannot tell who
-# set `Status: approved`; only the user does.
+# set `Status: approved`; only the user does. An agent's approval is
+# `auto-approved`, set by dev-stack.sh approve, and passes the same gates.
 #
 # Plans resolve by exact path only. A dormant plan never captures unrelated
 # work, and a gate fires only for its own plan, except that create-pr reads
@@ -449,7 +450,7 @@ require_stacked() {
 review_feature_gate() {
   case "$STATUS" in
     planning|needs-changes|ready) ;;
-    approved) block "Plan is already approved. Run execute-feature next." ;;
+    approved|auto-approved) block "Plan is already $STATUS. Run execute-feature next." ;;
     implemented|reviewed) block "Plan status is '$STATUS' — too late for review-feature. Continue forward." ;;
     *) block "Plan status is '$STATUS' — expected 'planning', 'needs-changes', or 'ready'. Run design-feature first." ;;
   esac
@@ -472,13 +473,13 @@ require_current_review() {
 
 execute_feature_gate() {
   case "$STATUS" in
-    approved) ;;
-    planning) block "Plan status is 'planning' — not approved. Run review-feature; only the user sets 'Status: approved'." ;;
+    approved|auto-approved) ;;
+    planning) block "Plan status is 'planning' — not approved. Run review-feature; then the user sets 'Status: approved', or dev-autopilot 'auto-approved'." ;;
     needs-changes) block "Plan status is 'needs-changes' — not approved. Revise it, then run review-feature again." ;;
-    ready) block "Plan status is 'ready' — awaiting the user's approval; only the user sets 'Status: approved'." ;;
+    ready) block "Plan status is 'ready' — awaiting approval: the user sets 'Status: approved', or dev-autopilot 'auto-approved'." ;;
     implemented) block "Plan is already implemented. Run review-code next." ;;
     reviewed) block "Plan is already reviewed. Run create-pr next." ;;
-    *) block "Plan status is '$STATUS' — expected 'approved'." ;;
+    *) block "Plan status is '$STATUS' — expected 'approved' or 'auto-approved'." ;;
   esac
   require_parent_rank 3 reviewed
   require_branch
@@ -492,7 +493,7 @@ review_code_gate() {
   local target branch count
   case "$STATUS" in
     implemented) ;;
-    planning|needs-changes|ready|approved) block "Plan status is '$STATUS' — not yet implemented. Run execute-feature first." ;;
+    planning|needs-changes|ready|approved|auto-approved) block "Plan status is '$STATUS' — not yet implemented. Run execute-feature first." ;;
     reviewed) block "Plan is already reviewed. Run create-pr next." ;;
     *) block "Plan status is '$STATUS' — expected 'implemented'." ;;
   esac
@@ -518,7 +519,7 @@ create_pr_gate() {
   case "$STATUS" in
     reviewed) ;;
     implemented) block "Plan status is 'implemented' — run review-code first." ;;
-    planning|needs-changes|ready|approved) block "Plan status is '$STATUS' — not yet executed. Continue the workflow." ;;
+    planning|needs-changes|ready|approved|auto-approved) block "Plan status is '$STATUS' — not yet executed. Continue the workflow." ;;
     *) block "Plan status is '$STATUS' — expected 'reviewed'." ;;
   esac
   require_worktree

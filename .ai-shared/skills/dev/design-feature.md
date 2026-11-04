@@ -61,4 +61,4 @@ Then, from the repository, run `~/.dotfiles/.ai-shared/bin/dev-stack.sh check <r
 
 ## 7. Revise after review
 
-On NEEDS CHANGES, correct each blocking finding within the recorded DDs and the user's answers, rerun the PC Checks the change touches and the stack check from step 6, and re-review under [plan.md — Review](plan.md#review). A finding that needs a new or changed decision goes to the user with options and a recommendation.
+On NEEDS CHANGES or a stop's findings, correct each blocking finding within the recorded DDs and the user's answers, rerun the PC Checks the change touches and the stack check from step 6, and re-review under [plan.md — Review](plan.md#review). A finding that needs a new or changed decision goes to the user with options and a recommendation.

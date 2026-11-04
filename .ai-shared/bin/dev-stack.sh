@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # The stack tree of plans (../skills/dev/plan.md#stacks), for
 # design-feature, create-pr, and run-stack. `review` sets a planning plan's
-# Status and Spec; `stop` and `resume` append to the stack's stops.log; the
-# rest only read.
+# Status and Spec; `approve` sets a ready one auto-approved; `stop` and
+# `resume` append to the stack's stops.log; the rest only read.
 set -euo pipefail
 
 SCRIPT_DIR=$(dirname -- "$(realpath -- "${BASH_SOURCE[0]}")")
@@ -12,6 +12,7 @@ usage() {
     'Usage: dev-stack.sh stack <root plan>' \
     '       dev-stack.sh next <root plan> [--tab|--tree|--md]' \
     '       dev-stack.sh review <plan> ready|needs-changes' \
+    '       dev-stack.sh approve <plan>' \
     '       dev-stack.sh stop <plan> <reason>' \
     '       dev-stack.sh resume <plan>' \
     '       dev-stack.sh check <root plan>' \
@@ -25,7 +26,9 @@ usage() {
     '--md as a Markdown table, both with a colored dot per status and a mark per' \
     'action.' \
     'review sets Status to the review-feature verdict, ready or needs-changes,' \
-    'and Spec to its hash of the current spec. stop records' \
+    'and Spec to its hash of the current spec. approve sets a ready plan, whose' \
+    'review holds and whose parent is approved, to auto-approved, the agent'"'"'s' \
+    'approval; only the user sets approved. stop records' \
     'in the stack'"'"'s stops.log why run-stack stopped a plan; it holds until the' \
     'plan changes or resume clears it, and one citing "Failed fixes: 3/3" or more' \
     'holds until resume. Only the user runs resume.' \
@@ -140,6 +143,24 @@ cmd_review() {
   printf 'Status: %s, Spec: %s recorded in %s\n' "$2" "$hash" "$1"
 }
 
+# Sets a ready plan auto-approved: the approval an agent records under
+# dev-autopilot (run-stack --auto-approve), kept apart from the user's approved. Spec stays,
+# so the gates still bind the approval to the reviewed spec.
+cmd_approve() {
+  local parent prank reason
+  [[ "$(status_of "$1")" == ready && "$(review_state "$1" || true)" == ready ]] ||
+    fail "$1 is '$(status_of "$1")'; approve needs a ready plan whose review still holds."
+  parent=$(stacks_on "$1") || fail "$1 has an unreadable 'Stacks On:' line."
+  if [[ -n "$parent" ]]; then
+    prank=$(status_rank "$(status_of "$parent")")
+    (( ${prank:-0} >= 1 )) || fail "$parent must be approved or auto-approved first."
+  fi
+  reason=$(stop_reason "$1")
+  [[ -z "$reason" ]] || fail "$1 is stopped: $reason"
+  set_header "$1" Status auto-approved || fail "Cannot write the header of $1."
+  printf 'Status: auto-approved recorded in %s\n' "$1"
+}
+
 # The gate's reason for running skill $1 on plan $2; empty when it passes.
 gate_reason() {
   local out
@@ -202,13 +223,13 @@ cmd_next() {
       stopped) action=stopped ;;
       stale) action=blocked; reason="its spec or a plan below it changed since its review; return it to planning and review it again (skills/dev/plan.md#stacks)" ;;
       planning|needs-changes|ready)
-        if (( ${prank:-0} < 1 )); then action=wait-parent; reason="$parent must be approved first"
-        elif [[ "$state" == ready ]]; then action=wait-user; reason='review-feature ready; the user approves it'
+        if (( ${prank:-0} < 1 )); then action=wait-parent; reason="$parent must be approved or auto-approved first"
+        elif [[ "$state" == ready && "$status" == ready ]]; then action=wait-user; reason='review-feature ready; the user approves it, or dev-autopilot auto-approves it'
         elif [[ "$state" == needs-changes ]]; then action=revise; reason='review-feature needs-changes; revise it (skills/dev/design-feature.md#7-revise-after-review), then review it again'
         else skill=review-feature; fi ;;
-      approved|implemented)
+      approved|auto-approved|implemented)
         if (( ${prank:-0} < 3 )); then action=wait-parent; reason="$parent must be reviewed first"
-        elif [[ "$status" == approved ]]; then skill=execute-feature
+        elif [[ "$status" != implemented ]]; then skill=execute-feature
         else skill=review-code; fi ;;
       reviewed)
         if (( ${prank:-0} < 3 )); then action=blocked; reason="$parent is '$pstatus'; once it is reviewed, merge it forward into this plan (skills/dev/plan.md#worktree), set Status: implemented, and review-code"
@@ -243,7 +264,7 @@ VIEW_AWK='
   function pairs(list, map,   a, i) { split(list, a, " "); for (i = 1; (i + 1) in a; i += 2) map[a[i]] = a[i + 1] }
   function marked(v, map) { return ((v in map) ? map[v] : "❔") " " v }
   BEGIN {
-    pairs("planning ⚪ needs-changes 🟠 ready 🟤 approved 🔵 implemented 🟡 reviewed 🟢 published 🟣", dot)
+    pairs("planning ⚪ needs-changes 🟠 ready 🟤 approved 🔵 auto-approved 🔷 implemented 🟡 reviewed 🟢 published 🟣", dot)
     pairs("review-feature ▶ execute-feature ▶ review-code ▶ create-pr ▶ revise ✏️ wait-user 👤 wait-parent ⏳ blocked ⛔ stopped 🛑 done ✅", mark)
   }'
 
@@ -291,6 +312,7 @@ case "$1" in
     require_plan "$2"
     if [[ "${3:---tab}" == --tab ]]; then cmd_next "$PLAN"; else rows=$(cmd_next "$PLAN"); "${3#--}_view" <<<"$rows"; fi ;;
   review) [[ $# -eq 3 ]] || { usage >&2; exit 2; }; require_live "$2"; cmd_review "$PLAN" "$3" ;;
+  approve) require_live "$2"; cmd_approve "$PLAN" ;;
   stop) [[ $# -eq 3 ]] || { usage >&2; exit 2; }; require_live "$2"; cmd_stop "$PLAN" "$3" ;;
   resume) require_live "$2"; cmd_resume "$PLAN" ;;
   check) require_live "$2"; cmd_check "$PLAN" ;;
