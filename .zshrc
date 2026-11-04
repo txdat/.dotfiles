@@ -159,33 +159,11 @@ claude() {
     )
     local -a args=(
         --dangerously-skip-permissions
+        --dangerously-load-development-channels server:dev-mcp
     )
     local arg
     for arg in "$@"; do
         case $arg in
-            --ak)
-                env_vars+=("ANTHROPIC_AUTH_TOKEN=$CLAUDE_API_KEY")
-                ;;
-            --ds)
-                env_vars+=(
-                    "ANTHROPIC_BASE_URL=https://api.deepseek.com/anthropic"
-                    "ANTHROPIC_AUTH_TOKEN=$DEEPSEEK_API_KEY"
-                    "ANTHROPIC_DEFAULT_FABLE_MODEL=deepseek-v4-pro"
-                    "ANTHROPIC_DEFAULT_OPUS_MODEL=deepseek-v4-pro"
-                    "ANTHROPIC_DEFAULT_SONNET_MODEL=deepseek-flash"
-                    "ANTHROPIC_DEFAULT_HAIKU_MODEL=deepseek-flash"
-                )
-                ;;
-            --oc)
-                env_vars+=(
-                    "ANTHROPIC_BASE_URL=https://opencode.ai/inference/go/anthropic"
-                    "ANTHROPIC_AUTH_TOKEN=$OPENCODE_API_KEY"
-                    "ANTHROPIC_DEFAULT_FABLE_MODEL=deepseek-v4-pro"
-                    "ANTHROPIC_DEFAULT_OPUS_MODEL=deepseek-v4-pro"
-                    "ANTHROPIC_DEFAULT_SONNET_MODEL=deepseek-v4.1-flash"
-                    "ANTHROPIC_DEFAULT_HAIKU_MODEL=deepseek-v4.1-flash"
-                )
-                ;;
             *)  args+=("$arg") ;;
         esac
     done

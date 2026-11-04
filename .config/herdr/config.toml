@@ -1,0 +1,97 @@
+# herdr — terminal workspace manager for AI coding agents
+# Source: ~/.dotfiles/.config/herdr/config.toml  (symlinked from ~/.config/herdr/config.toml)
+#
+# Keybindings follow ~/.dotfiles/.tmux.conf: prefix ctrl+x, and the same
+# action on the same letter. tmux session ≈ herdr workspace, tmux window ≈
+# herdr tab, tmux pane = herdr pane.
+
+onboarding = false
+
+[theme]
+name = "terminal"
+auto_switch = false
+
+[ui]
+status_indicators = "dots"
+
+# tmux draws its status line at the bottom of the terminal
+tab_bar_position = "bottom"
+
+# tmux frames splits from the inside only, with no frame around a lone pane
+pane_outer_borders = false
+
+# tmux panes share a single divider line and have no scrollbar column
+pane_gaps = false
+pane_scrollbars = false
+
+# tmux has no sidebar: workspaces are listed on demand (prefix+ctrl+f), and
+# prefix+b toggles the sidebar back
+sidebar_start_collapsed = true
+sidebar_collapsed_mode = "hidden"
+
+# what tmux sets with `set-titles on`, for the outer terminal's title
+window_title = "{workspace}: {tab}"
+
+[ui.sound]
+enabled = false
+
+[ui.toast]
+delivery = "off"
+
+# ─── keys ────────────────────────────────────────────────────────────────────
+# Bindings are prefix-relative, like tmux's. Apply with:
+#   herdr config check && herdr server reload-config
+
+[keys]
+prefix = "ctrl+x"
+
+# tmux: bind r source-file ~/.tmux.conf \; display ...
+reload_config = "prefix+r"
+help = "prefix+?"
+settings = "prefix+s"
+goto = "prefix+g"
+
+# tmux: bind C-n new-session
+new_workspace = "prefix+ctrl+n"
+# tmux: bind C-q kill-session
+close_workspace = "prefix+ctrl+q"
+# tmux: bind C-f command-prompt -p find-session 'switch-client -t %%'
+workspace_picker = "prefix+ctrl+f"
+
+# tmux: bind C-t new-window
+new_tab = "prefix+ctrl+t"
+# tmux: bind C-w kill-window
+close_tab = "prefix+ctrl+w"
+# tmux: bind -r C-[ previous-window / bind -r C-] next-window
+# (tmux order: C-x then [] ; ctrl+[ alone is Escape, so [] without ctrl)
+previous_tab = "prefix+["
+next_tab = "prefix+]"
+
+# tmux: bind C-d kill-pane
+close_pane = "prefix+ctrl+d"
+# tmux: bind - split-window -v (new pane below)
+split_horizontal = "prefix+minus"
+# tmux: bind \ split-window -h (new pane to the right)
+split_vertical = "prefix+\\"
+# tmux: bind -n C-l send-keys C-l \; clear-history
+clear_pane = "prefix+ctrl+l"
+
+# tmux: bind -r h/j/k/l select-pane -L/-D/-U/-R
+focus_pane_left = "prefix+h"
+focus_pane_down = "prefix+j"
+focus_pane_up = "prefix+k"
+focus_pane_right = "prefix+l"
+
+# tmux: bind -r H/J/K/L resize-pane -L/-D/-U/-R 2
+resize_pane_left = "prefix+shift+h"
+resize_pane_down = "prefix+shift+j"
+resize_pane_up = "prefix+shift+k"
+resize_pane_right = "prefix+shift+l"
+
+# tmux: bind -r [ swap-pane -U / bind -r ] swap-pane -D
+swap_pane_up = "prefix+shift+["
+swap_pane_down = "prefix+shift+]"
+
+# tmux defaults kept: prefix+z zoom, prefix+q detach, prefix+1..9 switch window
+zoom = "prefix+z"
+detach = "prefix+q"
