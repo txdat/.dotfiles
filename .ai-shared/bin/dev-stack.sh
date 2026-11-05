@@ -93,7 +93,7 @@ three_failed() {
 
 # Why plan $1 is stopped; empty when it is not. Three failed fixes recorded
 # since the last resume hold until the user grants more with resume
-# (../AGENTS.md#work); otherwise the last stop holds while its key does, and
+# (../CORE.md#work); otherwise the last stop holds while its key does, and
 # a change or a resume ends it.
 stop_reason() {
   local recs rec held=""

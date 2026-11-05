@@ -1,36 +1,83 @@
-# AI Rules
+# AGENTS.md
 
-## Authority
+This file provides guidance to Claude Code (claude.ai/code) and other AI agents when working with code in this repository.
 
-Platform instructions and the user's task and existing authorization take precedence over these local defaults. Project configuration owns style, structure, and project commands. Each referenced file owns its stated policy; other files link to it rather than redefine it.
+## What this directory is
 
-Shared rules live in `~/.dotfiles/.ai-shared/`. Resolve relative references from each source file's directory, following symlinks.
+`.ai-shared` holds the rules, skills, agents, and helper scripts shared by every agent harness on this machine. The Git root is `~/.dotfiles`, one level up. [CORE.md](CORE.md) is the global rules file: Claude Code, Codex, Antigravity, Pi, dsh, and OpenCode all load it through a symlink, so it is already in your context. Don't restate it here or in other files. [README.md](README.md) indexes the skills and agents; one file per harness — [claude.md](references/claude.md), [codex.md](references/codex.md), [antigravity.md](references/antigravity.md), [pi.md](references/pi.md), [dsh.md](references/dsh.md), [opencode.md](references/opencode.md) — wires it up.
 
-## Communication and judgment
+Edits to this directory are direct edits, not plan-backed work. See [plan.md — Scope](skills/dev/plan.md#scope).
 
-Lead with the result or next action. Use clear, concise English unless the task calls for another language. Explain tradeoffs and uncertainty that affect the decision; avoid praise, filler, and rigid response templates.
+## Writing rules
 
-Use supplied answers and inspected evidence. Resolve routine implementation details from existing patterns. Ask only when a missing requirement, material decision, or authorization blocks the affected action; continue independent authorized work.
+- **Each policy has one owner.** Each file owns the policy it states. Other files link to it as `[file — Section](path#anchor)` instead of paraphrasing it. A copied rule drifts from its source. Before adding a rule, find the file that already owns that topic and edit it there.
+- **Links resolve from the source file's directory, following symlinks.** `CORE.md` is read through harness symlinks such as `~/.claude/CLAUDE.md`, so its relative links must work from `.ai-shared/`.
+- **Headings and paths are load-bearing.** Before renaming a heading, a file, or a `bin/` script, grep all three places that refer to them:
+  - links in `.ai-shared` (agents cite anchors such as `CORE.md#work`)
+  - `gate-check.sh` block messages (they cite anchors such as `skills/dev/plan.md#schema`)
+  - external consumers that hard-code `bin/` paths: `../.pi/agent/extensions/*.ts` and `../.claude/marketplace/plugins/dev-stack/hooks/register.ts`
+- **Rules must be harness-neutral.** Six harnesses read these files. Phrase tool-specific steps the way existing files do: "where installed", "Without a Skill tool, read … with the file-read tool".
+- **Style:** terse, declarative, and imperative, without filler or rigid templates. Word choice follows [Wording](#wording).
+- **Skill files** start with `# /<name> — <summary>` and stay short. Load-time metadata (description, effort, model) lives in the README tables, not in the skill file.
 
-Treat a delivered answer as settled. On later turns, address the current request; revisit an earlier answer only when the user asks about it or reports a problem with it.
+## Wording
 
-## Work
+Pick words for what they commit the reader to. The existing rules use this vocabulary consistently; keep to it.
 
-Fit planning to the task: clear local edits, including application code, proceed directly; state a short plan for substantial work. [plan.md — Scope](skills/dev/plan.md#scope) defines when the plan-backed workflow applies.
+| Intent | Write | Example |
+|---|---|---|
+| Required action | A bare imperative | "Run the TC tests and affected tests yourself at the final tip." |
+| Fact the reader relies on, or a mechanism | Present tense | "A gate blocks each phase until its entry status holds." |
+| Required property of a result or artifact | `must` | "Assertions must tell the required result from a plausible wrong one." |
+| Prohibition | `never`, followed by the alternative or the consequence | "Never invent authors…; missing identity or auth blocks the operation." |
+| Who may act, or how far a rule reaches | `only`, with the actor named | "`approved` — the user only, from `ready`" |
+| Permission that is otherwise withheld | `may` | "The reviewer may read, run tests, and inspect Git." |
+| Consequence | A defined verb: `blocks`, `stops`, `never blocks`, `report` | "A failure stops that step and everything depending on it under …" |
+| Example | `such as` | "Execution decides only details that are not design choices, such as names and internal structure." |
 
-A direct edit is complete when the change is implemented, affected checks pass, and the result is reported. Report blocked or unrun required checks and what they leave unproven instead of claiming completion.
+- Avoid soft or hedged words: `should`, `consider`, `try to`, `ideally`, `as needed`, `appropriate`, `if relevant`. Each leaves the reader to guess whether the rule applies. State the condition instead: "when X, do Y". The rule prose uses none of these, and `always` appears only once.
+- Don't use emphasis to add force. The rules contain no `MUST`, `IMPORTANT`, or emphatic bold; bold marks list labels only. A rule that needs emphasis needs a clearer condition or consequence.
+- Name the actor whenever more than one could act: "the user", "the main agent", "the reviewer", "autopilot". The passive voice hides who owns a step.
+- Use one term per concept. Reuse the defined terms exactly: status names, `AC`/`TC`/`ST`/`PC`/`DD`, Base, Branch, PR target, worktree, scratch. Never use a synonym for variety; a reader takes a new word to mean a new thing.
+- Be concrete. Give limits as numbers ("after two re-reviews", "three failed fix-and-verify attempts"). Write fields, statuses, paths, and commands in backticks, exactly as a script or gate reads them.
+- Scope each rule by its trigger, not by an adjective. Write "before changing security, concurrency, … behavior", not "for important changes".
 
-Within authorized work, run local checks and read-only inspection, and fix in-scope failures without asking again, within attempt budgets and phase gates. Review-only requests stay read-only.
+## Changing rules
 
-Never wait on background work or CI. While something is pending, continue independent authorized work; when none remains, report what is pending and end the turn. Do not poll, loop on sleep, or hold the turn open; a bounded readiness probe for a service the current step needs is part of that step. After a push or PR, cite known CI results or mark CI unverified. Monitor, retry, or repair CI only when the user asks in the current task, or asked before a handoff; a push, PR, or CI notification is not a request.
+Write rules in English only, whatever language the request uses.
 
-When a fix fails in a way its assumed cause did not predict, or before a third fix on the same assumed cause, state that cause and run a check whose result would differ if it were false; base the next fix on the result. The check is not a fix attempt.
+1. **Tighten once.** After drafting, the main agent tightens the change once. It cuts hedges, filler, and restated policy without changing what the rule requires.
+2. **Review.** A fresh agent that has not seen the conversation reviews the tightened change against this file. It returns findings marked as blocking or as notes.
+3. **Fix and re-review.** The main agent fixes each blocking finding and does not tighten again. A fresh agent then re-reviews the fixes. Stop when no blocking finding remains or after the third review, counting the first, and report any blocking findings still open.
 
-After three failed fix-and-verify attempts at the same failure, stop and report what you tried, what happened, and the evidence or decision you need; stop sooner when attempts yield no new evidence. The count persists across hypotheses, delegation, and sessions until verification passes or the user grants three more; record it as `Failed fixes: <n>/3 — <failure>` in a [handoff](skills/handoff.md). Diagnosis that makes no lasting change and other authorized work may continue.
+## Adding or renaming a skill or agent
 
-## Load on demand
+Update every place below:
 
-- [CODING.md](CODING.md): every agent reads it before reading or writing code.
-- [skills/dev/plan.md](skills/dev/plan.md): for plan-backed development or a workflow gate failure.
+1. The row in [README — Skills](README.md#skills) or [README — Agents](README.md#agents): name, description, md file, effort, and model. Codex and Antigravity models come from [Model mapping](README.md#model-mapping).
+2. Each harness's wrapper, built from the templates in its harness file. Wrappers live outside this repo, such as `~/.claude/skills/<name>/SKILL.md`, and must use an absolute md path, with no `~` or `$HOME`. Agents carry no model or effort, and only the [Claude agent template](references/claude.md#claude-agent-template) takes `tools`.
+3. For dev skills, the table in [skills/dev/README.md](skills/dev/README.md).
+4. For a dev phase the gate must recognize, `DEV_SKILL_SLUG_RE` in `bin/gate-check.sh` and its cases in `bin/gate-check-test.sh`.
 
-Reuse loaded guidance while it remains current.
+## Plan schema and scripts
+
+The gate reads plan header fields and IDs, never prose. A change to the plan schema, statuses, or stack rules in [plan.md](skills/dev/plan.md) therefore needs matching changes to `bin/gate-check.sh`, `bin/dev-stack.sh`, `bin/dev-plan-lib.sh`, and their `-test.sh` files.
+
+Script conventions:
+
+- Start with `#!/bin/bash` and `set -euo pipefail`. `gate-check.sh` also sets `LC_ALL=C`, because a multibyte locale once crashed `awk` and the hook read the crash as a pass.
+- Begin with a header comment that links the owning md section.
+- Callers invoke scripts by full path, `~/.dotfiles/.ai-shared/bin/<script>`.
+- Tests live in `bin/<name>-test.sh`. They build scratch Git repos under `/tmp` and set `AI_PLANS_ROOT` and `AI_WORKTREES_ROOT` so they never touch `~/work/plans` or `~/work/wt`.
+
+## Commands
+
+The test files take no filter argument, so the smallest unit is one test file.
+
+```bash
+bash bin/gate-check-test.sh                              # one shell test file
+for t in bin/*-test.sh; do bash "$t" || echo "FAIL $t"; done   # all shell tests
+node --test skills/ielts/scripts/ielts-score.test.ts     # TS tests; need Node 22.18+
+node --test skills/gke/scripts/gke-collect-test.ts
+bash ~/.dotfiles/.pi/agent/extensions/typecheck.sh       # Pi extensions that call bin/ scripts
+```

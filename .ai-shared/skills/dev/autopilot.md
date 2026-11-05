@@ -41,9 +41,9 @@ Then, parents first, delegate a fix for each PR with blocking findings, in its w
 - **Direct edit:** push any fixes, then `dev-worktree.sh remove <worktree>`.
 - **Plan-backed:** unless step 2 already cleaned up, once every plan is `reviewed`, run create-pr on the root without `--defer-cleanup`; it pushes, verifies, and cleans up.
 
-Any other outcome ends the run with its worktrees kept: a stop under [Decisions](#decisions), a fix reaching the [AGENTS.md — Work](../../AGENTS.md#work) attempt limit, or run-stack ending with a plan not `reviewed`.
+Any other outcome ends the run with its worktrees kept: a stop under [Decisions](#decisions), a fix reaching the [CORE.md — Work](../../CORE.md#work) attempt limit, or run-stack ending with a plan not `reviewed`.
 
-Report the type and route with their reasons, the issue, each draft PR's URL, each decision taken for the user, and the `/code-review` findings with their fixes; include run-stack's report when it ran. Then list what needs the user: each stop's reason, options, and recommendation, with any `Failed fixes: <n>/3`. CI follows AGENTS.md — Work: cite known results or report it unverified.
+Report the type and route with their reasons, the issue, each draft PR's URL, each decision taken for the user, and the `/code-review` findings with their fixes; include run-stack's report when it ran. Then list what needs the user: each stop's reason, options, and recommendation, with any `Failed fixes: <n>/3`. CI follows CORE.md — Work: cite known results or report it unverified.
 
 ## Decisions
 

@@ -13,4 +13,4 @@ You cannot reach the user. Where the skill waits on the user, return what it wou
 
 Write only the files the phase or plan.md directs. Never edit code or tests, create worktrees or branches, mutate Git or infrastructure, run `dev-stack.sh` `review`, `approve`, `stop`, or `resume`, or set `Status: approved` or `auto-approved`.
 
-Never wait on background work, CI, or other agents. At the [AGENTS.md — Work](../AGENTS.md#work) attempt limit, stop and return `Failed fixes: <n>/3 — <failure>` with what you tried and the evidence.
+Never wait on background work, CI, or other agents. At the [CORE.md — Work](../CORE.md#work) attempt limit, stop and return `Failed fixes: <n>/3 — <failure>` with what you tried and the evidence.

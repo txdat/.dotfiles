@@ -1,197 +1,23 @@
 # ai-shared
 
-Shared agent rules, workflow skills, and helper scripts for every harness on this machine. Platform-specific skill and agent wrappers are generated locally and point at the markdown files here.
+Shared agent rules, workflow skills, and helper scripts for every harness on this machine. Platform-specific wrappers are generated locally and point at the markdown files here. Paths assume the checkout is at `~/.dotfiles`.
 
-Bug diagnosis delegated by autopilot runs in the [dev-inspector](#agents) agent, delegated design and feature-plan revision in the [dev-planner](#agents) agent, reviews under [plan.md — Review](skills/dev/plan.md#review) in the [dev-reviewer](#agents) agent, and delegated implementation in the [dev-executor](#agents) agent, where installed; other delegation uses platform-provided subagents with the owning skill.
+[CORE.md](CORE.md) is the global rules file, which every harness loads through its rules symlink. [AGENTS.md](AGENTS.md) guides edits to these files; one file per harness under [references](references) wires it up.
 
-Paths below assume the dotfiles checkout is at `~/.dotfiles`.
+Delegation runs in the four agents listed under [agents](#agents): dev-inspector for bug diagnosis, dev-planner for delegated design and plan revision, dev-reviewer for reviews under [plan.md — Review](skills/dev/plan.md#review), and dev-executor for delegated implementation, where installed; other delegation uses platform-provided subagents with the owning skill.
 
-| Harness | Rules file | Skills |
-| ------- | ---------- | ------ |
-| Claude Code | `~/.claude/CLAUDE.md` | `~/.claude/skills/<name>/SKILL.md` |
-| Codex | `~/.codex/CODEX.md` | `~/.codex/skills/<name>/SKILL.md` |
-| Antigravity | `~/.gemini/config/GEMINI.md` | `~/.gemini/config/skills/<name>/SKILL.md`, or a path in `skills.json` |
-| Pi | `~/.pi/agent/AGENTS.md` | reuses `~/.claude/skills` |
-| dsh | `~/.dsh/AGENTS.md` | `~/.dsh/skills/<name>/SKILL.md` |
-| OpenCode | `~/.config/opencode/AGENTS.md` | reuses `~/.claude/skills`; agents under `~/.config/opencode/agents` |
+| Harness | Rules symlink | Setup |
+| ------- | ------------- | ----- |
+| Claude Code | `~/.claude/CLAUDE.md` | [claude.md](references/claude.md) |
+| Codex | `~/.codex/CODEX.md` | [codex.md](references/codex.md) |
+| Antigravity | `~/.gemini/config/GEMINI.md`, `~/.gemini/GEMINI.md` | [antigravity.md](references/antigravity.md) |
+| Pi | `~/.pi/agent/AGENTS.md` | [pi.md](references/pi.md) |
+| dsh | `~/.dsh/AGENTS.md` | [dsh.md](references/dsh.md) |
+| OpenCode | `~/.config/opencode/AGENTS.md` | [opencode.md](references/opencode.md) |
 
-## Claude Code
+## Model mapping
 
-Symlink `~/.claude/CLAUDE.md` → `~/.dotfiles/.ai-shared/AGENTS.md`.
-
-**skills** — create `~/.claude/skills/<name>/SKILL.md` from the [Claude template](#claude-template), taking name, description, effort, and model from [references](#references).
-
-**agents** — create `~/.claude/agents/<name>.md` from the [Claude agent template](#claude-agent-template), taking name, description, tools, and md file from [agents](#agents).
-
-**hooks** — in `~/.claude/settings.json`, register `~/.dotfiles/.ai-shared/bin/gate-check.sh` for `PreToolUse` with matcher `Skill` (model-invoked skills) and for `UserPromptSubmit` (user-typed `/dev-*` commands, which bypass the Skill tool).
-
-**marketplace** — add the local marketplace at `~/.dotfiles/.claude/marketplace/` with `claude plugin marketplace add <path>`, then install plugins via `/plugin`.
-
-## Codex
-
-Symlink `~/.codex/CODEX.md` → `~/.dotfiles/.ai-shared/AGENTS.md`.
-
-`CODEX.md` is the only setup-managed symlink. Do not remove or modify other symlinks in `~/.codex`: Codex creates them for its runtime under `packages/` and `tmp/`.
-
-**skills** — create `~/.codex/skills/<name>/SKILL.md` from the [Codex template](#codex-template), taking name, description, and effort from [references](#references) and the model through [model mapping](#model-mapping).
-
-**agents** — create `~/.codex/agents/<name>.toml` from the [Codex agent template](#codex-agent-template), taking name, description, and md file from [agents](#agents).
-
-## Antigravity
-
-Symlink `~/.gemini/config/GEMINI.md` → `~/.dotfiles/.ai-shared/AGENTS.md`, and `~/.gemini/GEMINI.md` → the same file.
-
-**skills** — create `~/.gemini/config/skills/<name>/SKILL.md` from the [Antigravity template](#antigravity-template), or register its path in `~/.gemini/config/skills.json`, taking name, description, and effort from [references](#references) and the model through [model mapping](#model-mapping).
-
-**agents** — create `~/.gemini/config/agents/<name>/agent.md` from the [Antigravity agent template](#antigravity-agent-template), or register its path in `~/.gemini/config/agents.json`, taking name, description, and md file from [agents](#agents).
-
-**hooks** — register lifecycle hooks in `~/.gemini/config/hooks.json`, for example the `gate-check.sh` command as a `PreToolUse` hook.
-
-## Pi
-
-Symlink:
-
-- `~/.pi/agent/AGENTS.md` → `~/.dotfiles/.ai-shared/AGENTS.md`
-- `~/.pi/agent/extensions` → `~/.dotfiles/.pi/agent/extensions`
-- `~/.pi/agent/themes` → `~/.dotfiles/.pi/agent/themes`
-
-**skills** — Pi reuses the Claude skills; set `"skills": ["~/.claude/skills"]` in `settings.json`.
-
-**mcp** — Pi reuses Claude MCP servers; set `"imports": ["claude-code"]` in `mcp-adapter.json`.
-
-**phase loading and gates** — to enter a development phase, use Pi's `read` tool on the phase's Claude `SKILL.md` wrapper or on the shared `.ai-shared/skills/dev/<phase>.md` instructions.
-
-The [gate extension](../.pi/agent/extensions/gate-check.ts) checks that read against its phase arguments: the text of the assistant message that issued it when that text names a plan, and otherwise the latest user message. Where the phase requires it, those arguments must give the exact plan path.
-
-The extension gates recognized reads, not phase execution. It cannot distinguish an audit read from invocation, and shell reads or previously loaded instructions are outside its interception. Documentation-only inspection may therefore read source without invoking a phase, which grants no authority to execute it. It also permits reads on timeout, process failure, or invalid output. Treat it as a workflow aid rather than comprehensive enforcement: agents must still establish the phase prerequisites under [skills/dev/plan.md](skills/dev/plan.md). Stronger enforcement would require a separate phase-entry operation.
-
-**dev-stack** — the [extension](../.pi/agent/extensions/dev-stack.ts) ports the Claude `dev-stack` plugin's `/dev-stack-*` commands over the same `dev-stack.sh`. Pi runs a command even mid-turn, so a write (`review`, `stop`, `resume`) waits for the turn to end before it changes a plan or its stack's `stops.log`. Pi commands are user-initiated, so the Claude plugin's refusal of plugin-, SDK-, and agent-issued writes has no Pi equivalent.
-
-**types** — the extensions are TypeScript 7 under [tsconfig.json](../.pi/agent/extensions/tsconfig.json). `bash ~/.dotfiles/.pi/agent/extensions/typecheck.sh` checks them against the installed Pi release, whose API types they import.
-
-## dsh
-
-Symlink `~/.dsh/AGENTS.md` → `~/.dotfiles/.ai-shared/AGENTS.md`.
-
-**skills** — create `~/.dsh/skills/<name>/SKILL.md` from the [dsh template](#dsh-template); the harness scans the user root `~/.dsh/skills`. Take name and description from [references](#references). The dsh frontmatter parser keeps `name`, `description`, `whenToUse`, `metadata`, `disable-model-invocation`, and `user-invocable`, and silently discards any other key.
-
-## OpenCode
-
-Symlink `~/.config/opencode/AGENTS.md` → `~/.dotfiles/.ai-shared/AGENTS.md`. OpenCode V2 recognizes `AGENTS.md` only and does not fall back to `CLAUDE.md`.
-
-**skills** — reuse the Claude skills. OpenCode discovers `~/.claude/skills` as a global compatibility source, so do not create native skill wrappers. Keep `~/.config/opencode/skills` absent; a native skill with the same ID would take precedence over the Claude wrapper. OpenCode ignores the Claude `model` and `effort` fields and uses the session's selected model.
-
-**agents** — create `~/.config/opencode/agents/<name>.md` from the [OpenCode agent template](#opencode-agent-template), taking name, description, and md file from [agents](#agents). OpenCode does not discover `~/.claude/agents`, so these must be native. The file name supplies the agent ID. The template sets `mode: subagent` so OpenCode exposes the agent only to the parent agent's `subagent` tool.
-
-**phase loading and gates** — OpenCode has no `gate-check.sh` hook here, so phase entry relies on the skill's own prerequisites under [skills/dev/plan.md](skills/dev/plan.md). Loading a phase skill grants no authority to execute it.
-
-## Wrapper templates
-
-Each skill wrapper names one skill and delegates to its markdown file. Keep the body to that single instruction. Write the markdown file as an absolute path (no `~` or `$HOME`): file tools do not expand them.
-
-### Claude template
-
-```
----
-name: <name>
-description: "<description>"
-model: <Claude Code model>
-effort: <effort>
----
-
-Read <absolute-path-to-md-file> and follow all instructions exactly.
-```
-
-### Codex template
-
-```
----
-name: <name>
-description: "<description>"
-model: <Codex model>
-effort: <effort>
----
-
-Read <absolute-path-to-md-file> and follow all instructions exactly.
-```
-
-### Antigravity template
-
-```
----
-name: <name>
-description: "<description>"
-model: <Antigravity model>
-effort: <effort>
----
-
-Read <absolute-path-to-md-file> and follow all instructions exactly.
-```
-
-### dsh template
-
-```
----
-name: <name>
-description: "<description>"
-user-invocable: true
----
-
-Read <absolute-path-to-md-file> and follow all instructions exactly.
-```
-
-### Agent templates
-
-One agent serves skills with different models, so agents carry no model or effort; the caller passes the skill's. Only Claude Code takes `tools`; elsewhere the md file's rules restrict the agent.
-
-#### Claude agent template
-
-```
----
-name: <name>
-description: "<description>"
-tools: <tools>
----
-
-Read <absolute-path-to-md-file> and follow all instructions exactly.
-```
-
-#### Codex agent template
-
-```toml
-name = "<name>"
-description = "<description>"
-
-developer_instructions = """
-Read <absolute-path-to-md-file> and follow all instructions exactly.
-"""
-```
-
-#### Antigravity agent template
-
-```
----
-name: <name>
-description: "<description>"
----
-
-Read <absolute-path-to-md-file> and follow all instructions exactly.
-```
-
-#### OpenCode agent template
-
-```
----
-description: "<description>"
-mode: subagent
----
-
-Read <absolute-path-to-md-file> and follow all instructions exactly.
-```
-
-## References
-
-### Model mapping
+A skill row gives one Claude Code model; each other harness takes the model its column maps it to.
 
 | Claude Code | Codex | Antigravity |
 | ----------- | ----- | ----------- |
@@ -200,11 +26,11 @@ Read <absolute-path-to-md-file> and follow all instructions exactly.
 | opus | gpt-6.1-sol | pro |
 | fable | gpt-6-astra | pro |
 
-### Skills
+## Skills
 
 Where a row leaves effort or model blank, the wrapper installs without that field and the harness default applies.
 
-#### SWE
+### SWE
 
 | skill | description | md file | effort | model |
 | ----- | ----------- | ------- | ------ | ----- |
@@ -225,13 +51,13 @@ Where a row leaves effort or model blank, the wrapper installs without that fiel
 | dev-split-pr-atomic | On explicit request only, split one open PR into a stack of atomic PRs that together carry exactly its diff, then close the original with a link to them. | skills/dev/split-pr-atomic.md | medium | opus |
 | dev-recap | Session lessons and workflow improvement proposals from a plan-based session. | skills/dev/recap.md | medium | haiku |
 
-#### SRE
+### SRE
 
 | skill | description | md file | effort | model |
 | ----- | ----------- | ------- | ------ | ----- |
 | gke-inspect-incident | Investigate GKE incidents with read-only collection and targeted diagnostic evidence. | skills/gke/inspect-incident.md | high | haiku |
 
-#### IELTS
+### IELTS
 
 | skill | description | md file | effort | model |
 | ----- | ----------- | ------- | ------ | ----- |
@@ -241,13 +67,13 @@ Where a row leaves effort or model blank, the wrapper installs without that fiel
 | ielts-speaking | Prepare IELTS speaking topics and review transcript language. Transcript-only feedback cannot establish pronunciation, full fluency, or an overall Speaking band. | skills/ielts/speaking.md | — | — |
 | ielts-writing | Plan IELTS Academic Task 1/2 responses with question breakdowns, required coverage, target-band guidance, and errors to avoid; review drafts or generate practice tasks. | skills/ielts/writing.md | — | — |
 
-#### Misc
+### Misc
 
 | skill | description | md file | effort | model |
 | ----- | ----------- | ------- | ------ | ----- |
 | handoff | Write or read a session handoff snapshot (Goal, Current State, Current Plan, Blockers, Remaining Work) so a fresh session can continue without the old conversation. | skills/handoff.md | — | — |
 
-### Agents
+## Agents
 
 | agent | description | md file | tools |
 | ----- | ----------- | ------- | ----- |
