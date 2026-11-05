@@ -212,6 +212,123 @@ reject env PATH="$TEST_ROOT/bin:$PATH" bash "$UTILS" issue-create title "$TEST_R
 reject env PATH="$TEST_ROOT/bin:$PATH" bash "$UTILS" issue-create '' "$body"
 printf 'PASS: issue-create arguments and refusals (stubbed)\n'
 
+# recent-issues and recent-prs: a list stand-in applies the script's own --jq
+# filter to a fixture, so the request and the layout are both checked; no
+# GitHub requests are made.
+mkdir -p "$TEST_ROOT/gh-list"
+cat > "$TEST_ROOT/gh-list/gh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+case "${1-} ${2-}" in 'issue list'|'pr list') ;; *) printf 'unsupported: %s\n' "$*" >&2; exit 2 ;; esac
+shift 2
+filter=.
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --assignee|--author|--search|--limit) printf '%s=%s\n' "${1#--}" "$2" >> "$GH_ARGS"; shift 2 ;;
+    --json) printf 'json=%s\n' "$2" >> "$GH_ARGS"; shift 2 ;;
+    --jq) filter="$2"; shift 2 ;;
+    *) printf 'unsupported: %s\n' "$1" >&2; exit 2 ;;
+  esac
+done
+jq -r "$filter" "$GH_FIXTURE"
+EOF
+chmod +x "$TEST_ROOT/gh-list/gh"
+cat > "$TEST_ROOT/issues.json" <<'EOF'
+[{"number":7,"title":"Older, unlabeled","state":"OPEN","createdAt":"2025-11-02T10:00:00Z","labels":[]},
+ {"number":12,"title":"Fix the flaky gate","state":"CLOSED","createdAt":"2025-11-01T09:00:00Z","labels":[{"name":"bug"},{"name":"p1"}]}]
+EOF
+printf '[]\n' > "$TEST_ROOT/no-issues.json"
+recent() { GH_ARGS="$TEST_ROOT/gh-args" GH_FIXTURE="${FIXTURE-$TEST_ROOT/issues.json}" \
+  PATH="$TEST_ROOT/gh-list:$PATH" bash "$UTILS" recent-issues "$@"; }
+
+: > "$TEST_ROOT/gh-args"
+listed=$(recent 3)
+since=$(date -I -d '3 days ago')
+grep -qx 'assignee=@me' "$TEST_ROOT/gh-args" || fail 'recent-issues did not ask for @me'
+grep -qx "search=created:>=$since sort:created-desc" "$TEST_ROOT/gh-args" || fail "recent-issues did not bound creation at $since, newest first"
+grep -qx 'limit=101' "$TEST_ROOT/gh-args" || fail 'recent-issues did not ask for one row past the cap'
+grep -qx "Issues assigned to @me, created since $since:" <<< "$listed" || fail 'recent-issues header line'
+grep -qxE 'NUMBER +CREATED +STATE +LABELS +TITLE' <<< "$listed" || fail 'recent-issues column header'
+grep -qxE '#7 +2025-11-02 +OPEN +Older, unlabeled$' <<< "$listed" || fail 'recent-issues row without labels'
+grep -qxE '#12 +2025-11-01 +CLOSED +bug, p1 +Fix the flaky gate$' <<< "$listed" || fail 'recent-issues row with labels'
+row7=$(grep -n '^#7 ' <<< "$listed" | cut -d: -f1)
+row12=$(grep -n '^#12 ' <<< "$listed" | cut -d: -f1)
+[[ -n "$row7" && -n "$row12" && "$row7" -lt "$row12" ]] || fail 'recent-issues did not keep the order gh returned'
+: > "$TEST_ROOT/gh-args"
+recent > /dev/null
+grep -qx "search=created:>=$(date -I -d '7 days ago') sort:created-desc" "$TEST_ROOT/gh-args" || fail 'recent-issues defaulted to something other than 7 days'
+equal "$(FIXTURE="$TEST_ROOT/no-issues.json" recent 2)" \
+  "No issues assigned to @me, created since $(date -I -d '2 days ago')." 'recent-issues with no matches'
+reject recent week
+reject recent 3 4
+printf 'PASS: recent-issues request and layout (stubbed)\n'
+
+cat > "$TEST_ROOT/prs.json" <<'EOF'
+[{"number":4,"title":"Rewrite the gate","state":"OPEN","createdAt":"2025-11-04T09:00:00Z","isDraft":false,"reviewDecision":"CHANGES_REQUESTED","statusCheckRollup":[{"__typename":"CheckRun","status":"COMPLETED","conclusion":"FAILURE","name":"test"},{"__typename":"CheckRun","status":"IN_PROGRESS","conclusion":null,"name":"lint"}]},
+ {"number":5,"title":"Add recent-prs","state":"OPEN","createdAt":"2025-11-03T08:00:00Z","isDraft":true,"reviewDecision":"","statusCheckRollup":[{"__typename":"StatusContext","state":"PENDING","context":"ci"}]},
+ {"number":3,"title":"Fix the flaky gate","state":"OPEN","createdAt":"2025-11-01T08:00:00Z","isDraft":false,"reviewDecision":"APPROVED","statusCheckRollup":[{"__typename":"CheckRun","status":"COMPLETED","conclusion":"SUCCESS","name":"test"},{"__typename":"StatusContext","state":"SUCCESS","context":"ci"}]},
+ {"number":1,"title":"No checks, needs review","state":"OPEN","createdAt":"2025-10-30T08:00:00Z","isDraft":false,"reviewDecision":"REVIEW_REQUIRED","statusCheckRollup":[]},
+ {"number":6,"title":"Skipped and neutral","state":"OPEN","createdAt":"2025-10-29T08:00:00Z","isDraft":false,"reviewDecision":"DISMISSED","statusCheckRollup":[{"__typename":"CheckRun","status":"COMPLETED","conclusion":"SKIPPED","name":"a"},{"__typename":"CheckRun","status":"COMPLETED","conclusion":"NEUTRAL","name":"b"}]},
+ {"number":2,"title":"Cancelled and errored","state":"OPEN","createdAt":"2025-10-28T08:00:00Z","isDraft":false,"reviewDecision":null,"statusCheckRollup":[{"__typename":"CheckRun","status":"COMPLETED","conclusion":"CANCELLED","name":"a"},{"__typename":"StatusContext","state":"ERROR","context":"ci"}]}]
+EOF
+recent_prs() { GH_ARGS="$TEST_ROOT/gh-args" GH_FIXTURE="${FIXTURE-$TEST_ROOT/prs.json}" \
+  PATH="$TEST_ROOT/gh-list:$PATH" bash "$UTILS" recent-prs "$@"; }
+
+: > "$TEST_ROOT/gh-args"
+opened=$(recent_prs 3)
+since=$(date -I -d '3 days ago')
+grep -qx 'author=@me' "$TEST_ROOT/gh-args" || fail 'recent-prs did not ask for my own pull requests'
+grep -qx 'assignee=@me' "$TEST_ROOT/gh-args" && fail 'recent-prs filtered by assignee'
+grep -qx "search=created:>=$since sort:created-desc" "$TEST_ROOT/gh-args" || fail "recent-prs did not bound creation at $since, newest first"
+grep -qx 'json=number,title,state,createdAt,isDraft,reviewDecision,statusCheckRollup' "$TEST_ROOT/gh-args" || fail 'recent-prs requested other fields'
+grep -qx "Pull requests you opened, created since $since:" <<< "$opened" || fail 'recent-prs header line'
+grep -qxE 'NUMBER +CREATED +STATE +REVIEW +CHECKS +TITLE' <<< "$opened" || fail 'recent-prs column header'
+grep -qxE '#4 +2025-11-04 +OPEN +changes +fail +Rewrite the gate$' <<< "$opened" || fail 'recent-prs row: a failing check outranks a pending one'
+grep -qxE '#5 +2025-11-03 +DRAFT +- +pending +Add recent-prs$' <<< "$opened" || fail 'recent-prs row: draft, no review, pending checks'
+grep -qxE '#3 +2025-11-01 +OPEN +approved +pass +Fix the flaky gate$' <<< "$opened" || fail 'recent-prs row: approved and passing'
+grep -qxE '#1 +2025-10-30 +OPEN +required +none +No checks, needs review$' <<< "$opened" || fail 'recent-prs row: no checks, review required'
+grep -qxE '#6 +2025-10-29 +OPEN +dismissed +pass +Skipped and neutral$' <<< "$opened" || fail 'recent-prs row: skipped and neutral checks count as passing'
+grep -qxE '#2 +2025-10-28 +OPEN +- +fail +Cancelled and errored$' <<< "$opened" || fail 'recent-prs row: a cancelled check and an errored status fail'
+rows_listed=$(grep -cE '^#[0-9]+ ' <<< "$opened" || true)
+equal "$rows_listed" '6' 'recent-prs rendered one row per pull request'
+: > "$TEST_ROOT/gh-args"
+recent_prs > /dev/null
+grep -qx "search=created:>=$(date -I -d '7 days ago') sort:created-desc" "$TEST_ROOT/gh-args" || fail 'recent-prs defaulted to something other than 7 days'
+equal "$(FIXTURE="$TEST_ROOT/no-issues.json" recent_prs 2)" \
+  "No pull requests you opened, created since $(date -I -d '2 days ago')." 'recent-prs with no matches'
+reject recent_prs week
+reject recent_prs 3 4
+reject recent_prs ''
+
+# A failing gh surfaces its own error plus the command's, and no success.
+mkdir -p "$TEST_ROOT/gh-broken"
+printf '%s\n' '#!/usr/bin/env bash' 'printf "boom\n" >&2' 'exit 4' > "$TEST_ROOT/gh-broken/gh"
+chmod +x "$TEST_ROOT/gh-broken/gh"
+broken=$(GH_ARGS="$TEST_ROOT/gh-args" GH_FIXTURE="$TEST_ROOT/prs.json" \
+  PATH="$TEST_ROOT/gh-broken:$PATH" bash "$UTILS" recent-prs 3 2>&1) && fail 'recent-prs reported success when gh failed'
+[[ "$broken" == *boom* ]] || fail 'recent-prs hid the gh error'
+[[ "$broken" == *'Cannot list your pull requests.'* ]] || fail "recent-prs did not report its own failure: $broken"
+
+# A host with date but no column refuses before spending an API request.
+mkdir -p "$TEST_ROOT/no-column"
+ln -s "$(command -v date)" "$TEST_ROOT/no-column/date"
+no_column=$(env PATH="$TEST_ROOT/no-column" "$(command -v bash)" "$UTILS" recent-prs 3 2>&1) && fail 'recent-prs ran without column'
+[[ "$no_column" == *'needs column'* ]] || fail "recent-prs without column said: $no_column"
+
+# A listing is trimmed to the cap, and the trim is announced only when it hid a
+# match: exactly 100 rows is a complete window, 101 is not.
+bulk() { jq -n --argjson n "$1" '[range(0;$n) | {number:(.+1), title:"bulk", state:"OPEN", createdAt:"2025-11-01T00:00:00Z", isDraft:false, reviewDecision:"", statusCheckRollup:[]}]' \
+  > "$TEST_ROOT/$2.json"; }
+bulk 100 exactly-cap
+bulk 101 over-cap
+equal "$(FIXTURE="$TEST_ROOT/exactly-cap.json" recent_prs 3 2>&1 >/dev/null)" '' \
+  'recent-prs announced a cap it never reached'
+cap=$(FIXTURE="$TEST_ROOT/over-cap.json" recent_prs 3 2>&1 >/dev/null)
+[[ "$cap" == *'Only the newest 100'* ]] || fail "recent-prs hid its cap: $cap"
+capped=$(FIXTURE="$TEST_ROOT/over-cap.json" recent_prs 3 2>/dev/null)
+equal "$(grep -cE '^#[0-9]+ ' <<< "$capped" || true)" '100' 'recent-prs listed past the cap'
+printf 'PASS: recent-prs request and layout (stubbed)\n'
+
 cd "$repo"
 # scratch: a detached throwaway under the scratch root, made at a ref behind HEAD
 # so a scratch made at HEAD fails, that never reaches a plan's worktree, the
