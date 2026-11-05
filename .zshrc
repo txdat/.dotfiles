@@ -245,9 +245,17 @@ md2pdf() {
             --template=eisvogel \
             -V mainfont='NotoSans-Regular' \
             -V monofont='NotoSansMono-Regular' \
-            -V fontsize=9pt \
+            -V fontsize=8pt \
             -V header-includes='
-\directlua{luaotfload.add_fallback("fb", {"[NotoSans-Regular.ttf]", "[NotoSansMono-Regular.ttf]"})}
+% Noto-only fallback chain for CJK + emoji. The system ships Noto Sans
+% CJK only as a CFF2 variable collection (NotoSansCJK-VF.ttc), which the
+% luaotfload node loader rejects, so the fallbacks are loaded with
+% mode=harf (HarfBuzz). No Lua comments inside \directlua: its chunk is
+% one space-joined token list, so "--" would eat the rest of the chunk.
+\directlua{luaotfload.add_fallback("fb", {
+  "Noto Sans CJK SC:mode=harf",
+  "Noto Emoji:mode=harf"
+})}
 \AtBeginDocument{%
   \setmainfont[RawFeature={fallback=fb}]{NotoSans-Regular}%
   \setmonofont[RawFeature={fallback=fb}]{NotoSansMono-Regular}%
