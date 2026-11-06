@@ -4,6 +4,7 @@
 
 [core]
     pager = delta
+    excludesFile = ~/.dotfiles/.gitignore_global
 	gitproxy = 
 	autocrlf = false
 

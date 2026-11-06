@@ -2,19 +2,26 @@ import type { On } from 'claude-code'
 import { expect, test } from 'claude-code/testing'
 
 const SH = '/home/u/.dotfiles/.ai-shared/bin/dev-stack.sh'
-// A plans root with a space; the plan's own name allows none.
-const PLAN = '/tmp/my plans/repo/12_s/pr1.spec.md'
+const UTILS = '/home/u/.dotfiles/.ai-shared/bin/dev-utils.sh'
+// The session's repository, as dev-utils.sh main-root prints it; plans live in its docs/plans.
+const MAIN = '/home/u/repo'
+// A repository path with a space; the plan's own name allows none.
+const PLAN = '/tmp/my repo/docs/plans/12_s/pr1.spec.md'
 
 type Ran = { exitCode: number; stdout: string; stderr: string }
 
-// Records each dev-stack.sh argv and answers it with `ran`; nothing sits beneath, so these hooks
-// stand for the engine.
-function engine(on: On, ran: Ran = { exitCode: 0, stdout: 'ok\n', stderr: '' }) {
+// Records each dev-stack.sh argv and answers it with `ran`, and answers dev-utils.sh main-root
+// with `main` (unrecorded); nothing sits beneath, so these hooks stand for the engine.
+function engine(
+  on: On,
+  ran: Ran = { exitCode: 0, stdout: 'ok\n', stderr: '' },
+  main: Ran = { exitCode: 0, stdout: MAIN + '\n', stderr: '' },
+) {
   const calls: string[][] = []
   on('env.get', (_, e) => ({ value: e.name === 'HOME' ? '/home/u' : undefined }))
   on('process.run', (_, e) => {
-    calls.push([...e.argv])
-    return { value: { ...ran, isStdoutTruncated: false, isStderrTruncated: false } }
+    const answer = e.argv[1] === UTILS ? main : (calls.push([...e.argv]), ran)
+    return { value: { ...answer, isStdoutTruncated: false, isStderrTruncated: false } }
   })
   return calls
 }
@@ -93,57 +100,49 @@ test("check's blocked report on stdout is shown", async ($, on) => {
 })
 
 test('a plan outside the repository gets a hint', async ($, on) => {
-  engine(on, { exitCode: 1, stdout: '', stderr: 'Plan must be ~/work/plans/...' })
+  engine(on, { exitCode: 1, stdout: '', stderr: 'Plan must be ~/repo/docs/plans/...' })
   const out = await $.command.run(typed('dev-stack-next', PLAN))
   expect(out.text).toContain("Run it from the plan's repository")
 })
 
-test('plan paths show without the plans root prefix', async ($, on) => {
+test("plan paths show without the repository's docs/plans prefix", async ($, on) => {
   engine(on, {
     exitCode: 0,
     stdout:
-      '/home/u/work/plans/repo/12_s/pr1.spec.md\tplanning\t-\treview-feature\t-\n~/work/plans/repo/12_s/pr2.spec.md\n',
+      '/home/u/repo/docs/plans/12_s/pr1.spec.md\tplanning\t-\treview-feature\t-\n~/repo/docs/plans/12_s/pr2.spec.md\n',
     stderr: '',
   })
   const out = await $.command.run(typed('dev-stack-next', PLAN))
-  expect(out.text).toBe('\nrepo/12_s/pr1.spec.md\tplanning\t-\treview-feature\t-\nrepo/12_s/pr2.spec.md')
+  expect(out.text).toBe('\n12_s/pr1.spec.md\tplanning\t-\treview-feature\t-\n12_s/pr2.spec.md')
 })
 
-test('AI_PLANS_ROOT moves the prefix, and the format hint keeps its own', async ($, on) => {
-  on('env.get', (_, e) => ({ value: { HOME: '/home/u', AI_PLANS_ROOT: '/tmp/p.x/' }[e.name] }))
-  on('process.run', () => ({
-    value: {
-      exitCode: 1,
-      stdout: '',
-      stderr:
-        'Plan not found: /tmp/p.x/repo/12_s/pr9.spec.md\nPlan must be ~/work/plans/<repo>/<issue>_<slug>/pr<N>.spec.md',
-      isStdoutTruncated: false,
-      isStderrTruncated: false,
-    },
-  }))
-  const out = await $.command.run(typed('dev-stack-resume', PLAN))
-  expect(out.text?.split('\n').slice(1, 3)).toEqual([
-    'Plan not found: repo/12_s/pr9.spec.md',
-    'Plan must be ~/work/plans/<repo>/<issue>_<slug>/pr<N>.spec.md',
-  ])
+test('outside a repository a plan path passes through as typed and nothing is shortened', async ($, on) => {
+  const calls = engine(
+    on,
+    { exitCode: 1, stdout: '', stderr: 'Plan not found: /home/u/repo/docs/plans/12_s/pr9.spec.md' },
+    { exitCode: 1, stdout: '', stderr: 'Cannot resolve the main working-tree root.' },
+  )
+  const out = await $.command.run(typed('dev-stack-resume', '12_s/pr9.spec.md'))
+  expect(calls.pop()).toEqual(['bash', SH, 'resume', '12_s/pr9.spec.md'])
+  expect(out.text).toContain('Plan not found: /home/u/repo/docs/plans/12_s/pr9.spec.md')
 })
 
-test('the format hint keeps its prefix when it names the repository', async ($, on) => {
+test('the format hint keeps its prefix', async ($, on) => {
   engine(on, {
     exitCode: 1,
     stdout: '',
-    stderr: 'Plan must be ~/work/plans/repo/<issue>_<slug>/pr<N>.spec.md: /home/u/work/plans/x/pr1.spec.md',
+    stderr: 'Plan must be ~/repo/docs/plans/<issue>_<slug>/pr<N>.spec.md: /home/u/repo/docs/plans/x/pr1.spec.md',
   })
   const out = await $.command.run(typed('dev-stack-next', PLAN))
   expect(out.text?.split('\n')[1]).toBe(
-    'Plan must be ~/work/plans/repo/<issue>_<slug>/pr<N>.spec.md: x/pr1.spec.md',
+    'Plan must be ~/repo/docs/plans/<issue>_<slug>/pr<N>.spec.md: x/pr1.spec.md',
   )
 })
 
 test('a leading @ file mention is not part of the plan path', async ($, on) => {
   const calls = engine(on)
-  await $.command.run(typed('dev-stack-next', '@repo/12_s/pr1.spec.md'))
-  expect(calls.pop()).toEqual(['bash', SH, 'next', '/home/u/work/plans/repo/12_s/pr1.spec.md'])
+  await $.command.run(typed('dev-stack-next', '@12_s/pr1.spec.md'))
+  expect(calls.pop()).toEqual(['bash', SH, 'next', '/home/u/repo/docs/plans/12_s/pr1.spec.md'])
 })
 
 test('a write runs only from the user, at the terminal or through Remote Control', async ($, on) => {
@@ -177,11 +176,11 @@ test('a write runs only from the user, at the terminal or through Remote Control
   expect(calls.length).toBe(others.length + 2)
 })
 
-test('a plan path as shown, relative to the plans root, is read back from it', async ($, on) => {
+test("a plan path as shown, relative to the repository's docs/plans, is read back from it", async ($, on) => {
   const calls = engine(on)
-  const out = await $.command.run(typed('dev-stack-resume', 'repo/12_s/pr1.spec.md'))
-  expect(calls.pop()).toEqual(['bash', SH, 'resume', '/home/u/work/plans/repo/12_s/pr1.spec.md'])
-  expect(out.context?.[0]).toContain('/home/u/work/plans/repo/12_s/pr1.spec.md')
+  const out = await $.command.run(typed('dev-stack-resume', '12_s/pr1.spec.md'))
+  expect(calls.pop()).toEqual(['bash', SH, 'resume', '/home/u/repo/docs/plans/12_s/pr1.spec.md'])
+  expect(out.context?.[0]).toContain('/home/u/repo/docs/plans/12_s/pr1.spec.md')
 })
 
 test('a usage error from dev-stack.sh shows the usage line', async ($, on) => {

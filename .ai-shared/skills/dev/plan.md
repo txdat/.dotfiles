@@ -24,7 +24,7 @@ A gate blocks each phase until its entry status holds, and blocks every gated ph
 
 ## Artifact
 
-One plan delivers one PR. Plans live outside the repository, at `~/work/plans/<repo>/<issue>_<slug>/pr<N>.spec.md`: `<repo>` is the main working tree's directory name ([dev-utils.sh](../../bin/dev-utils.sh) `main-root`), `<issue>` the issue number or `0`, and `<slug>` lowercase words joined by hyphens. One directory holds one stack; a parent's number is below its children's. Plans are never committed: the code, its tests, and the PR carry what ships. Every phase takes exactly one plan path; never pick a plan by slug or recency.
+One plan delivers one PR. Plans live in the main working tree ([dev-utils.sh](../../bin/dev-utils.sh) `main-root`), never a linked worktree, at `docs/plans/<issue>_<slug>/pr<N>.spec.md`: `<issue>` is the issue number or `0`, and `<slug>` lowercase words joined by hyphens. One directory holds one stack; a parent's number is below its children's. Plans are never committed: the code, its tests, and the PR carry what ships. Git must ignore `docs/plans/` through the global excludes file or `.git/info/exclude`, never a committed `.gitignore`; the gates and `dev-stack.sh check` block when Git does not ignore it. Never run `git clean -x`; it deletes plans. Every phase takes exactly one plan path; never pick a plan by slug or recency.
 
 Write plan, PR, and review prose in the linked issue's primary language, or English without one. Keep headings, field names, statuses, IDs, code, and paths as written below.
 

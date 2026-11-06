@@ -1,6 +1,7 @@
 import type { Register } from 'claude-code'
 
 const STACK = '/.dotfiles/.ai-shared/bin/dev-stack.sh'
+const UTILS = '/.dotfiles/.ai-shared/bin/dev-utils.sh'
 
 type Sub = 'next' | 'stack' | 'check' | 'review' | 'stop' | 'resume' | 'reopen'
 
@@ -22,8 +23,8 @@ type Command = {
 // since run-stack lets only the user resume or reopen a plan.
 const USER_ORIGINS = new Set(['composer', 'bridge'])
 
-// The plugin shows plan paths relative to the plans root (`short` below), so one without a leading
-// / or ~ is read back from there. A leading @ is the prompt's file mention, not part of the path.
+// The plugin shows plan paths relative to the repository's docs/plans (`short` below), so one
+// without a leading / or ~ is read back from there. A leading @ is the prompt's file mention, not part of the path.
 const absolute = (text: string, root: string) => {
   const path = text.replace(/^@/, '')
   return /^[/~]/.test(path) ? path : `${root}/${path}`
@@ -143,15 +144,26 @@ export const register: Register = on => {
 
       const home = await $.env.get('HOME')
       if (!home) return { text: `${c.name}: HOME is not set.` }
-      // Plan paths show relative to the plans root, as dev-plan-lib.sh resolves it. The format
-      // hint in "Plan must be ~/work/plans/<repo>/<issue>_..." keeps its prefix: it names the
-      // repository or <repo>, never a plan, so a path followed by <issue> is left whole.
-      const root = ((await $.env.get('AI_PLANS_ROOT')) || home + '/work/plans').replace(/\/+$/, '')
-      const prefix = new RegExp(`(?:${escapeRegExp(root)}|~/work/plans)/(?![^\\s]*<issue>)`, 'g')
+      // Plan paths show relative to the main root's docs/plans, as dev-plan-lib.sh resolves it,
+      // written absolute or under ~. The format hint in "Plan must be <root>/<issue>_..." keeps
+      // its prefix: it names the repository's plans, never a plan, so a path followed by <issue>
+      // is left whole. Outside a repository nothing is shortened, and dev-stack.sh says why.
+      let root = ''
+      try {
+        const main = await $.process.run(['bash', home + UTILS, 'main-root'])
+        if (main.exitCode === 0 && main.stdout.trim()) root = main.stdout.trim() + '/docs/plans'
+      } catch {
+        // Outside a repository: plan paths pass through as typed.
+      }
+      const forms = [root, root.startsWith(home + '/') ? '~' + root.slice(home.length) : '']
+      const prefix = new RegExp(
+        `(?:${forms.filter(Boolean).map(escapeRegExp).join('|') || '(?!)'})/(?![^\\s]*<issue>)`,
+        'g',
+      )
       const short = (text: string) => text.replace(prefix, '')
       try {
         const [sub, plan, ...rest] = parsed.argv
-        const argv = [sub, absolute(plan, root), ...rest]
+        const argv = [sub, root ? absolute(plan, root) : plan, ...rest]
         const ran = await $.process.run(['bash', home + STACK, ...argv])
         const out = ran.stdout.trimEnd()
         if (ran.exitCode === 0) {

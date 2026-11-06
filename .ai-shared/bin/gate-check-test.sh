@@ -5,7 +5,9 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 GATE="$ROOT/bin/gate-check.sh"
 TMP_ROOT=$(mktemp -d /tmp/gate-check-test.XXXXXX)
-export AI_PLANS_ROOT="$TMP_ROOT/plans" AI_WORKTREES_ROOT="$TMP_ROOT/worktrees"
+export AI_WORKTREES_ROOT="$TMP_ROOT/worktrees"
+# Plans are ignored by each repository's own exclude, never the user's global one.
+export GIT_CONFIG_GLOBAL=/dev/null XDG_CONFIG_HOME="$TMP_ROOT/xdg"
 
 new_repo() {
   local repo
@@ -16,6 +18,7 @@ new_repo() {
   printf 'seed\n' > "$repo/README.md"
   git -C "$repo" add README.md
   git -C "$repo" commit -qm seed
+  printf '/docs/plans/\n' >> "$repo/.git/info/exclude"
   printf '%s\n' "$repo"
 }
 
@@ -23,7 +26,7 @@ new_repo() {
 # $P alone in its stack, and $BE with $FE stacked on it.
 use_repo() {
   repo=$(new_repo)
-  PD="$AI_PLANS_ROOT/$(basename "$repo")"
+  PD="$repo/docs/plans"
   P="$PD/12_gate/pr1.spec.md"
   BE="$PD/12_orders/pr1.spec.md"
   FE="$PD/12_orders/pr2.spec.md"
@@ -118,7 +121,7 @@ run_gate() {
   local main f
   if [[ "${STALE_OK-}" != 1 ]] && main=$(git -C "$1" rev-parse --path-format=absolute --git-common-dir 2>/dev/null); then
     main=${main%/.git}
-    for f in "$AI_PLANS_ROOT/$(basename "$main")"/*/pr*.spec.md; do
+    for f in "$main/docs/plans"/*/pr*.spec.md; do
       [[ -f "$f" && ! -L "$f" && "$(grep -m1 '^Status:' "$f")" != 'Status: planning'* ]] && ready "$f" || true
     done
   fi
@@ -163,13 +166,16 @@ write_plan "$P" approved
 assert_block "$(run_gate "$repo" dev-execute-feature '')" 'none was named' 'a lone plan is not adopted without a path'
 assert_block "$(run_gate "$repo" dev-execute-feature 'gate')" 'none was named' 'a slug does not resolve'
 assert_pass "$(run_gate "$repo" dev-execute-feature "$P")" 'an exact path resolves'
+: > "$repo/.git/info/exclude"
+assert_block "$(run_gate "$repo" dev-execute-feature "$P")" 'does not ignore docs/plans' 'a plan Git does not ignore blocks'
+printf '/docs/plans/\n' > "$repo/.git/info/exclude"
 assert_pass "$(run_gate "$repo" dev-execute-feature "@$P, please")" 'surrounding punctuation is not part of the path'
-assert_pass "$(HOME="$TMP_ROOT" run_gate "$repo" dev-execute-feature "~/plans/$(basename "$repo")/12_gate/pr1.spec.md")" 'a path starting with ~ resolves'
+assert_pass "$(HOME="$TMP_ROOT" run_gate "$repo" dev-execute-feature "~/$(basename "$repo")/docs/plans/12_gate/pr1.spec.md")" 'a path starting with ~ resolves'
 assert_block "$(run_gate "$repo" dev-execute-feature "12_gate/pr1.spec.md")" 'not found' 'a relative path does not resolve'
-assert_block "$(run_gate "$repo" dev-execute-feature "/other/repo/12_gate/pr1.spec.md")" 'not found' 'a path outside the plans root does not resolve'
-write_plan "$AI_PLANS_ROOT/other/12_gate/pr1.spec.md" approved
-assert_block "$(run_gate "$repo" dev-execute-feature "$AI_PLANS_ROOT/other/12_gate/pr1.spec.md")" 'not found' "another repository's plan does not resolve"
-assert_block "$(run_gate "$repo" dev-execute-feature "$PD/../other/12_gate/pr1.spec.md")" 'not found' 'traversal out of the repository plans does not resolve'
+assert_block "$(run_gate "$repo" dev-execute-feature "/other/repo/12_gate/pr1.spec.md")" 'not found' "a path outside the repository's docs/plans does not resolve"
+write_plan "$TMP_ROOT/other/docs/plans/12_gate/pr1.spec.md" approved
+assert_block "$(run_gate "$repo" dev-execute-feature "$TMP_ROOT/other/docs/plans/12_gate/pr1.spec.md")" 'not found' "another repository's plan does not resolve"
+assert_block "$(run_gate "$repo" dev-execute-feature "$PD/../../../other/docs/plans/12_gate/pr1.spec.md")" 'not found' 'traversal out of the repository plans does not resolve'
 write_plan "$PD/12_gate/nested/pr1.spec.md" approved
 assert_block "$(run_gate "$repo" dev-execute-feature "$PD/12_gate/nested/pr1.spec.md")" 'not found' 'a nested path does not resolve'
 assert_block "$(run_gate "$repo" dev-execute-feature "$PD/12_gate/pr9.spec.md")" "not found: $PD/12_gate/pr9.spec.md" 'a mistyped path blocks'
@@ -842,7 +848,8 @@ assert_pass "$(bash_guard "grep review $LOG > /tmp/out; tail -3 $LOG >> /tmp/out
 assert_pass "$(bash_guard "cp x.go ~/work/wt/repo-12_slug-pr1/log/handler.go && echo x > ~/work/wt/repo-12_slug-pr1/log/a.go")" "a worktree's log/ directory is not the stack log"
 assert_block "$(bash_guard "cd $(dirname "$(dirname "$P")") && printf x >> 12_gate/log")" 'written only by dev-stack.sh' 'a relative write to the stack log is caught'
 assert_block "$(bash_guard "cp /tmp/x $LOG")" 'written only by dev-stack.sh' 'a copy over the stack log is caught'
-assert_block "$(bash_guard "cd $AI_PLANS_ROOT && cp /tmp/a $(basename "$(dirname "$(dirname "$P")")")/12_gate/log")" 'written only by dev-stack.sh' 'a write relative to the plans root is caught'
+assert_block "$(bash_guard "cd $repo && cp /tmp/a docs/plans/12_gate/log")" 'written only by dev-stack.sh' 'a write relative to the repository root is caught'
+assert_block "$(bash_guard "cd $repo/docs && cp /tmp/a plans/12_gate/log")" 'written only by dev-stack.sh' 'a write relative to docs/ is caught'
 assert_block "$(bash_guard "sed --in-place 's/x/y/' $LOG")" 'written only by dev-stack.sh' 'sed --in-place on the stack log is caught'
 assert_block "$(bash_guard "echo x >& $LOG")" 'written only by dev-stack.sh' 'a >& redirection into the stack log is caught'
 assert_block "$(bash_guard "cd $(dirname "$P") && echo x >> ../12_gate/log")" 'written only by dev-stack.sh' 'a ../ path to the stack log is caught'
@@ -946,11 +953,11 @@ rm -f "$D/pr2.spec.md" "$TMP_ROOT/hard" "$TMP_ROOT/soft"
 mkdir -m 000 "$PD/99_locked"
 assert_block "$(shell_run "sed -i 's/^Status: approved/Status: planning/' $P")" 'never returns below approved' 'an unreadable entry leaves the guard on'
 chmod 700 "$PD/99_locked"; rmdir "$PD/99_locked"
-other="$AI_PLANS_ROOT/other-repo/5_x/pr1.spec.md"
+other="$TMP_ROOT/other-repo/docs/plans/5_x/pr1.spec.md"
 mkdir -p "${other%/*}"; printf '# O\nStatus: ready\nSpec: -\n' > "$other"
 assert_pass "$(shell_run "sed -i 's/^Status: ready/Status: approved/' $other")" "another repository's plans are out of the call's scope"
 grep -qx 'Status: approved' "$other" || { printf "FAIL: another repository's approval reverted\n" >&2; exit 1; }
-rm -rf "$AI_PLANS_ROOT/other-repo"
+rm -rf "$TMP_ROOT/other-repo"
 jq -cn '{hook_event_name:"PreToolUse",tool_name:"Bash",session_id:"s1",tool_input:{command:"true"}}' | (cd "$repo" && "$GATE") >/dev/null
 [[ ! -e "${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}/dev-gate-check-$(id -u)/s1" ]] || { printf 'FAIL: snapshot keyed by session\n' >&2; exit 1; }
 printf 'PASS: no snapshot without a tool_use_id\n'
@@ -967,6 +974,6 @@ assert_pass "$(jq -cn '{hook_event_name:"PostToolUse",tool_name:"Bash",tool_use_
 write_plan "$P" approved
 write_plan "$P" published
 assert_block "$(guard Edit "$(jq -cn --arg f "$P" '{file_path:$f,old_string:"Status: published",new_string:"Status: reviewed"}')")" 'is published' 'a published plan takes no edit'
-assert_pass "$(guard Edit "$(jq -cn --arg f "$repo/README.md" '{file_path:$f,old_string:"seed",new_string:"x"}')")" 'files outside the plans root pass'
+assert_pass "$(guard Edit "$(jq -cn --arg f "$repo/README.md" '{file_path:$f,old_string:"seed",new_string:"x"}')")" "files outside docs/plans pass"
 
 printf 'All gate-check.sh tests passed. Temporary fixtures: %s\n' "$TMP_ROOT"

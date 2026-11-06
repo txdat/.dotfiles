@@ -1,8 +1,9 @@
 # Plan reading shared by gate-check.sh, dev-stack.sh, and dev-publish.sh: plan
 # paths, header fields, and the Stacks On tree (../skills/dev/plan.md).
-# Source it with REPO_ROOT set to the main working-tree root. Plans live
-# outside the repository, under $PLANS_ROOT/<repo>/<issue>_<slug>/pr<N>.spec.md;
-# functions take and print canonical absolute plan paths. Functions only print
+# Source it with REPO_ROOT set to the main working-tree root. Plans live in
+# the main root, untracked and ignored (plans_ignored), under
+# docs/plans/<issue>_<slug>/pr<N>.spec.md; functions take and print canonical
+# absolute plan paths. Functions only print
 # and return status; callers decide how to fail.
 
 # Byte-wise text handling: plan IDs and paths are ASCII, and a multibyte
@@ -12,11 +13,10 @@ export LC_ALL=C
 # canonical_plan needs realpath -m; macOS ships a realpath without it.
 realpath -m -- / >/dev/null 2>&1 || { printf 'dev-plan-lib.sh requires realpath with -m support (GNU coreutils).\n' >&2; return 1; }
 
-# AI_PLANS_ROOT and AI_WORKTREES_ROOT override the roots, so tests never
-# touch real plans or worktrees.
-PLANS_ROOT=$(realpath -m -- "${AI_PLANS_ROOT:-$HOME/work/plans}")
+# AI_WORKTREES_ROOT overrides the worktrees root, so tests never touch real
+# worktrees.
 WORKTREES_ROOT=$(realpath -m -- "${AI_WORKTREES_ROOT:-$HOME/work/wt}")
-REPO_PLANS="$PLANS_ROOT/$(basename -- "$REPO_ROOT")"
+REPO_PLANS=$(realpath -m -- "$REPO_ROOT/docs/plans")
 # A plan path relative to REPO_PLANS.
 PLAN_REL_RE='^[0-9]+_[a-z0-9-]+/pr[1-9][0-9]*\.spec\.md$'
 PLAN_FORMAT="$REPO_PLANS/<issue>_<slug>/pr<N>.spec.md"
@@ -48,6 +48,12 @@ canonical_plan() {
   real="$real/$(basename -- "$path")"
   [[ "$real" == "$REPO_PLANS/"* && "${real#"$REPO_PLANS"/}" =~ $PLAN_REL_RE ]] || return 1
   printf '%s\n' "$real"
+}
+
+# Whether Git ignores docs/plans in the main root, so no plan is ever
+# committed: a global or repository-local exclude (git check-ignore).
+plans_ignored() {
+  git -C "$REPO_ROOT" check-ignore -q --no-index -- docs/plans/0_x/pr1.spec.md 2>/dev/null
 }
 
 # A plan path as shown to people: relative to this repository's plans.

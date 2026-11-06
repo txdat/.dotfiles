@@ -68,7 +68,7 @@ Script conventions:
 - Start with `#!/bin/bash` and `set -euo pipefail`. `gate-check.sh` also sets `LC_ALL=C`, because a multibyte locale once crashed `awk` and the hook read the crash as a pass.
 - Begin with a header comment that links the owning md section.
 - Callers invoke scripts by full path, `~/.dotfiles/.ai-shared/bin/<script>`.
-- Tests live in `bin/<name>-test.sh`. They build scratch Git repos under `/tmp` and set `AI_PLANS_ROOT` and `AI_WORKTREES_ROOT` so they never touch `~/work/plans` or `~/work/wt`.
+- Tests live in `bin/<name>-test.sh`. They build scratch Git repos under `/tmp`, whose `docs/plans` hold their plans, ignore those through each repo's `.git/info/exclude` with `GIT_CONFIG_GLOBAL=/dev/null`, and set `AI_WORKTREES_ROOT` so they never touch `~/work/wt`.
 
 ## Commands
 

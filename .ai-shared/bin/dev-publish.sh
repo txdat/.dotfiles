@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Publication checks for create-pr (../skills/dev/create-pr.md): reviewed-tip
 # checks, PR verification, and cleanup. A plan is one PR; the PR carries code
-# only, and the plan stays outside the repository as a published record.
+# only, and the plan stays in docs/plans, untracked, as a published record.
 #
 # The main agent alone runs it. The create-pr gate (gate-check.sh) owns entry:
 # reviewed status and an active worktree. The agent pushes and opens the PRs
@@ -18,7 +18,7 @@ usage() {
     'Usage: dev-publish.sh check <plan>' \
     '       dev-publish.sh verify <plan>' \
     '       dev-publish.sh cleanup <plan> [--ignored-checked]' \
-    '<plan> is ~/work/plans/<repo>/<issue>_<slug>/pr<N>.spec.md, run from the repository.' \
+    '<plan> is <main root>/docs/plans/<issue>_<slug>/pr<N>.spec.md, run from the repository.' \
     'cleanup sets Status: published and keeps the plan as a record.' \
     'Exit: 0 ok, 1 failure, 2 usage, 4 confirmation needed (cleanup).'
 }

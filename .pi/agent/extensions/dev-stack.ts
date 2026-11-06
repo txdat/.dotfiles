@@ -17,6 +17,7 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-c
 
 const HOME = os.homedir();
 const STACK = path.join(HOME, ".dotfiles", ".ai-shared", "bin", "dev-stack.sh");
+const UTILS = path.join(HOME, ".dotfiles", ".ai-shared", "bin", "dev-utils.sh");
 
 type Sub = "next" | "stack" | "check" | "review" | "stop" | "resume" | "reopen";
 
@@ -39,10 +40,18 @@ const PLAN_THEN_REST = /^(.*?\.spec\.md)(?:\s+(.*))?$/s;
 
 const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-const plansRoot = () =>
-  (process.env["AI_PLANS_ROOT"] || path.join(HOME, "work", "plans")).replace(/\/+$/, "");
+// The main root's docs/plans, where dev-plan-lib.sh resolves plans; "" outside a repository.
+async function plansRoot(pi: ExtensionAPI, cwd: string): Promise<string> {
+  try {
+    const ran = await pi.exec("bash", [UTILS, "main-root"], { cwd });
+    const main = ran.stdout.trim();
+    return ran.code === 0 && main ? `${main}/docs/plans` : "";
+  } catch {
+    return "";
+  }
+}
 
-// The output shows plan paths relative to the plans root, so one typed as shown
+// The output shows plan paths relative to the repository's docs/plans, so one typed as shown
 // is read back from there. A leading @ is the prompt's file mention, not part of the path.
 const absolute = (text: string, root: string) => {
   const file = text.replace(/^@/, "");
@@ -130,13 +139,17 @@ const COMMANDS: Command[] = [
 ];
 
 /**
- * Plan paths show relative to the plans root, as dev-plan-lib.sh resolves it.
- * The format hint in "Plan must be ~/work/plans/<repo>/<issue>_..." keeps its
- * prefix: it names the repository or <repo>, never a plan, so a path followed
- * by <issue> is left whole.
+ * Plan paths show relative to the main root's docs/plans, as dev-plan-lib.sh
+ * resolves it, written absolute or under ~. The format hint in "Plan must be
+ * <root>/<issue>_..." keeps its prefix: it names the repository's plans, never
+ * a plan, so a path followed by <issue> is left whole. Outside a repository
+ * nothing is shortened.
  */
 function shorten(text: string, root: string): string {
-  const prefix = new RegExp(`(?:${escapeRegExp(root)}|~/work/plans)/(?![^\\s]*<issue>)`, "g");
+  if (!root) return text;
+  const forms = [root];
+  if (root.startsWith(HOME + "/")) forms.push("~" + root.slice(HOME.length));
+  const prefix = new RegExp(`(?:${forms.map(escapeRegExp).join("|")})/(?![^\\s]*<issue>)`, "g");
   return text.replace(prefix, "");
 }
 
@@ -151,14 +164,14 @@ async function run(
   const usage = `Usage: /${command.name} ${command.argumentHint}`;
   const parsed = command.parse(args);
   if ("usage" in parsed) return { text: usage };
-  const root = plansRoot();
+  const root = await plansRoot(pi, ctx.cwd);
 
   // A write records the user's decision; the running turn must finish first.
   if (command.write) await ctx.waitForIdle();
 
-  // A plan typed as the output shows it is read back from the plans root.
+  // A plan typed as the output shows it is read back from the repository's docs/plans.
   const [sub, plan, ...rest] = parsed.argv;
-  const argv = [sub, absolute(plan, root), ...rest];
+  const argv = [sub, root ? absolute(plan, root) : plan, ...rest];
 
   try {
     // dev-stack.sh runs in the session's directory, which must be in the plan's repository.

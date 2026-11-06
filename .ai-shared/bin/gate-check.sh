@@ -24,8 +24,8 @@
 # Plans resolve by exact path only. A dormant plan never captures unrelated
 # work, and a gate fires only for its own plan, except that create-pr reads
 # every plan's Stacks On line in its directory so a stack publishes together.
-# Plans live outside the repository (dev-plan-lib.sh); Git checks run in the
-# main root, and proof checks in the plan's worktree.
+# Plans live in the main root's docs/plans, untracked (dev-plan-lib.sh); Git
+# checks run in the main root, and proof checks in the plan's worktree.
 
 set -euo pipefail
 # Byte-wise text handling: plan IDs and paths are ASCII, and a multibyte
@@ -74,23 +74,21 @@ block() {
 # are judged after it runs, against a snapshot. Anything it cannot read
 # passes: it never gates a phase.
 record_guard() {
-  local tool="$1" cmd probe path plans_root real dir repo old_status new_status old_rank new_rank
-  plans_root=$(realpath -m -- "${AI_PLANS_ROOT:-$HOME/work/plans}")
+  local tool="$1" cmd probe path real dir old_status new_status old_rank new_rank
   if [[ "$tool" == Bash ]]; then
     cmd=$(jq -r '.tool_input.command? // ""' <<<"$HOOK_INPUT" 2>/dev/null) || return 0
     # dev-stack.sh resume or reopen in command position: at the start, after a
     # separator or newline, or after a runner such as bash or env. A mention
     # inside an argument, such as a grep pattern or a message, passes.
     local user_re="(^|[;&|(]|"$'\n'")[[:space:]]*((bash|sh|exec|env|command|sudo|time|nohup)[[:space:]]+|[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*['\"]?[^[:space:];&|'\"]*dev-stack(\\.sh)?['\"]?[[:space:]]+(resume|reopen)([^A-Za-z0-9_-]|\$)"
-    # A stack log path under the plans root, named by the root's own name
-    # (a worktree's log/ directory is not one), and a write to it: a
-    # redirection into it, or a writing tool anywhere in the command.
-    local root_name log_path log_re redir_re write_re
-    root_name=$(sed 's/[][\.*^$+?(){}|/]/\\&/g' <<<"${plans_root##*/}")
-    # Either under the root, or relative from a word's start (cd'd into the
-    # plans root or a repository's plans); never followed by "/", as a log/
-    # directory is.
-    log_path="$root_name/[^/[:space:]'\"]+/[0-9]+_[a-z0-9-]+/log"
+    # A stack log path under a repository's docs/plans (a worktree's log/
+    # directory is not one), and a write to it: a redirection into it, or a
+    # writing tool anywhere in the command.
+    local log_path log_re redir_re write_re
+    # Either under plans/, or relative from a word's start (cd'd into
+    # docs/plans or a stack directory's parent); never followed by "/", as a
+    # log/ directory is.
+    log_path="plans/[0-9]+_[a-z0-9-]+/log"
     local rel_path="((\\.\\./)*|\\./)?([^/[:space:]'\"]+/)?[0-9]+_[a-z0-9-]+/log" end="([^A-Za-z0-9_./-]|\$)"
     log_re="$log_path$end|(^|[[:space:]'\"=<>])$rel_path$end"
     redir_re="[0-9]*(>>?\|?|>&|&>>?)[[:space:]]*['\"]?([^[:space:]'\"]*$log_path|$rel_path)$end"
@@ -107,24 +105,22 @@ record_guard() {
     fi
     # Plan writes by a shell command are judged after it runs, against this
     # snapshot (bash_post_check): exactly, with no parsing of the command.
-    snapshot_plans "$plans_root"
+    snapshot_plans
     return 0
   fi
   path=$(jq -r '.tool_input.file_path? // ""' <<<"$HOOK_INPUT" 2>/dev/null) || return 0
   [[ -n "$path" ]] || return 0
   real=$(realpath -m -- "$path" 2>/dev/null) || return 0
-  [[ "$real" == "$plans_root"/* ]] || return 0
-  dir=${real%/*}
-  [[ "${dir#"$plans_root"/}" =~ ^[^/]+/[0-9]+_[a-z0-9-]+$ ]] || return 0
+  [[ "$real" =~ ^(/.*)/docs/plans/[0-9]+_[a-z0-9-]+/[^/]+$ ]] || return 0
+  dir=${BASH_REMATCH[1]}
   case "${real##*/}" in
     log) block "The stack log is written only by dev-stack.sh (review, code-review, approve, stop, and autopilot's auto-reopen; resume and reopen are the user's). Read it, never write it (skills/dev/plan.md#changes)." ;;
     pr[1-9]*.spec.md) ;;
     *) return 0 ;;
   esac
-  # The plan library resolves plans under REPO_ROOT's name; any path with the
-  # plan's <repo> as its last part serves, since no Git call follows.
-  repo=${dir#"$plans_root"/}; repo=${repo%%/*}
-  REPO_ROOT="/$repo"
+  # The plan library resolves plans under REPO_ROOT/docs/plans; the plan's own
+  # repository root serves, since no Git call follows.
+  REPO_ROOT=$dir
   . "$GATE_DIR/dev-plan-lib.sh" || return 0
   # The plan's text after the call: Write's content, or Edit's and
   # MultiEdit's replacements applied as literal strings to the current file.
@@ -186,15 +182,14 @@ snap_dir() {
   printf '%s/%s\n' "$base" "$id"
 }
 
-# The plans of the repository the hook input's cwd belongs to, as a path
-# under the plans root (its main root's name, as dev-plan-lib.sh names it),
-# or "." for the whole root when cwd resolves to no repository.
+# The main root of the repository the hook input's cwd belongs to; fails when
+# cwd resolves to no repository. A command that changes another repository's
+# plans goes unchecked.
 snap_scope() {
-  local cwd main
+  local cwd
   cwd=$(jq -r '.cwd? // ""' <<<"$HOOK_INPUT" 2>/dev/null) || cwd=""
   [[ -d "$cwd" ]] || cwd=$PWD
-  main=$(cd -- "$cwd" && bash "$GATE_DIR/dev-utils.sh" main-root 2>/dev/null) || { echo .; return; }
-  printf '%s\n' "${main##*/}"
+  (cd -- "$cwd" && bash "$GATE_DIR/dev-utils.sh" main-root 2>/dev/null)
 }
 
 # Plan specs and stack logs under directory $1, relative to it, one per line.
@@ -203,21 +198,21 @@ plan_files() {
   (cd -- "$1" 2>/dev/null && find -L . -mindepth "$2" -maxdepth "$2" -type f \( -name 'pr[1-9]*.spec.md' -o -name log \) 2>/dev/null) | sed 's#^\./##'
 }
 
-# Before a Bash call: copies every plan spec and stack log of the cwd's
-# repository (snap_scope) under plans root $1. A file it cannot read is
-# skipped, and the check after treats it as new. Snapshots older than a day,
-# left by calls that never finished, go.
+# Before a Bash call: copies every plan spec and stack log in the docs/plans
+# of the cwd's repository (snap_scope). A file it cannot read is skipped, and
+# the check after treats it as new. Snapshots older than a day, left by calls
+# that never finished, go.
 snapshot_plans() {
-  local root=$1 snap scope depth
-  [[ -d "$root" ]] || return 0
+  local snap scope base
+  scope=$(snap_scope) || return 0
+  base="$scope/docs/plans"
   snap=$(snap_dir) || return 0
   find "${snap%/*}" -mindepth 1 -maxdepth 1 -mmin +1440 -exec rm -rf -- {} + 2>/dev/null || true
   rm -rf -- "$snap"; mkdir -m 700 -- "$snap" 2>/dev/null || return 0
-  scope=$(snap_scope); depth=2; [[ "$scope" != . ]] || depth=3
   printf '%s\n' "$scope" > "$snap/.scope"
   mkdir -p -- "$snap/files"
-  [[ ! -d "$root/$scope" ]] || plan_files "$root/$scope" "$depth" | tr '\n' '\0' |
-    (cd -- "$root/$scope" && xargs -0 -r cp -L --parents -p -t "$snap/files" 2>/dev/null) || true
+  [[ ! -d "$base" ]] || plan_files "$base" 2 | tr '\n' '\0' |
+    (cd -- "$base" && xargs -0 -r cp -L --parents -p -t "$snap/files" 2>/dev/null) || true
   : > "$snap/.complete"
 }
 
@@ -245,13 +240,15 @@ restore_file() {
 # tell from dev-stack.sh's, and a change the user makes during the call to
 # the same repository's plans is restored as the agent's.
 bash_post_check() {
-  local root=$1 snap scope base depth rel old new os ns or nr ob frozen why msgs=() logs=() f lib=""
+  local snap scope base depth=2 rel old new os ns or nr ob frozen why msgs=() logs=() f
   snap=$(snap_dir) || return 0
   [[ -f "$snap/.complete" ]] || return 0
   GUARD_TMP=$snap
   trap 'rm -rf -- "$GUARD_TMP"' EXIT
-  scope=$(<"$snap/.scope"); depth=2; [[ "$scope" != . ]] || depth=3
-  base="$root/$scope"
+  scope=$(<"$snap/.scope")
+  base="$scope/docs/plans"
+  REPO_ROOT=$scope
+  . "$GATE_DIR/dev-plan-lib.sh" || return 0
   # Stack logs first: a lost stop or review line acts as the user's resume,
   # and a resume or reopen line is the user's alone (refused before the call).
   while IFS= read -r rel; do
@@ -275,12 +272,6 @@ bash_post_check() {
   while IFS= read -r rel; do
     old="$snap/files/$rel"; new="$base/$rel"
     [[ ! -f "$old" || ! -f "$new" ]] || ! cmp -s -- "$old" "$new" || continue
-    # The plan library resolves plans under REPO_ROOT's name.
-    f=$scope; [[ "$f" != . ]] || f=${rel%%/*}
-    if [[ "$lib" != "$f" ]]; then
-      REPO_ROOT="/$f"; lib=$f
-      . "$GATE_DIR/dev-plan-lib.sh" || return 0
-    fi
     os="" ns="" or="" nr="" ob="" frozen="" why=""
     # load_plans reads only files that exist: awk stops at a missing one.
     [[ ! -f "$old" ]] || load_plans "$old"
@@ -330,7 +321,7 @@ bash_post_check() {
     else msgs+=("$new: $why. Could not set it to planning; tell the user."); fi
   done < <({ plan_files "$snap/files" "$depth"; plan_files "$base" "$depth"; } | grep -E '(^|/)pr[1-9][0-9]*\.spec\.md$' | sort -u)
   # A symlink or hard link to a plan file or stack directory lets an edit
-  # tool change a plan through a path outside the plans root: each gets its
+  # tool change a plan through a path outside docs/plans: each gets its
   # own copy again.
   while IFS= read -r f; do
     [[ -L "$base/$f" || ( -f "$base/$f" && "$(stat -c %h -- "$base/$f")" -gt 1 ) ]] || continue
@@ -344,7 +335,7 @@ bash_post_check() {
 TOOL_NAME=$(jq -r '.tool_name? // ""' <<<"$HOOK_INPUT" 2>/dev/null || true)
 if [[ "$TOOL_NAME" == Bash && "$(jq -r '.hook_event_name? // ""' <<<"$HOOK_INPUT" 2>/dev/null)" == PostToolUse* ]]; then
   GATE_DIR=$(dirname -- "$(realpath -- "${BASH_SOURCE[0]}")")
-  bash_post_check "$(realpath -m -- "${AI_PLANS_ROOT:-$HOME/work/plans}")"
+  bash_post_check
   exit 0
 fi
 case "$TOOL_NAME" in
@@ -885,6 +876,7 @@ create_pr_gate() {
 }
 
 resolve_plan
+plans_ignored || block "Git does not ignore docs/plans in $REPO_ROOT, so a plan could be committed. Add /docs/plans/ to the global excludes file (git config core.excludesFile) or to .git/info/exclude (skills/dev/plan.md#artifact)."
 index_stack "$PLAN"
 load_plan
 require_one_root

@@ -5,6 +5,8 @@ set -euo pipefail
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 PUBLISH="$SCRIPT_DIR/dev-publish.sh"
 TEST_ROOT=$(mktemp -d /tmp/dev-publish-test.XXXXXX)
+# Plans are ignored by each repository's own exclude, never the user's global one.
+export GIT_CONFIG_GLOBAL=/dev/null XDG_CONFIG_HOME="$TEST_ROOT/xdg"
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 pass() { printf 'PASS: %s\n' "$*"; }
 
@@ -44,7 +46,7 @@ EOF
 chmod +x "$TEST_ROOT/bin/gh"
 export PATH="$TEST_ROOT/bin:$PATH"
 
-# A main tree with a bare origin and its own plans root; Base main ignores
+# A main tree with a bare origin, its plans in docs/plans; Base main ignores
 # build/.
 new_repo() {
   local dir="$TEST_ROOT/$1"
@@ -57,11 +59,12 @@ new_repo() {
   printf 'seed\n' > "$dir/main/README.md"
   git -C "$dir/main" add . && git -C "$dir/main" commit -qm seed
   git -C "$dir/main" push -q origin main
+  printf '/docs/plans/\n' >> "$dir/main/.git/info/exclude"
   export GH_STORE="$dir/prs.json"
   printf '[]\n' > "$GH_STORE"
-  export AI_PLANS_ROOT="$dir/plans" AI_WORKTREES_ROOT="$dir/wt"
+  export AI_WORKTREES_ROOT="$dir/wt"
   REPO="$dir/main"
-  D="$AI_PLANS_ROOT/main/7_demo"
+  D="$REPO/docs/plans/7_demo"
   mkdir -p "$D"
 }
 
@@ -211,7 +214,7 @@ pass 'a cleanup rerun after the worktree is gone deletes the branch and publishe
 # ── plan paths ──
 expect_fail 'a file outside the plans layout is refused' 'Plan must be' check "$REPO/README.md"
 expect_fail 'a name outside pr<N>.spec.md is refused' 'Plan must be' check "$D/demo.md"
-expect_fail "another repository's plans are refused" 'Plan must be' check "$AI_PLANS_ROOT/other/7_demo/pr1.spec.md"
+expect_fail "another repository's plans are refused" 'Plan must be' check "$TEST_ROOT/other/docs/plans/7_demo/pr1.spec.md"
 
 # ── a stack tree publishing at once: root -> child -> grandchild, root -> sibling ──
 # The root has two children, so each creates its own worktree; the grandchild

@@ -56,7 +56,7 @@ usage() {
     'in the stack still in planning, printing PASS or BLOCK and the reason, and' \
     'SKIP for a plan approved or later whose review still holds (BLOCK when it' \
     'does not); it exits 1 on a block.' \
-    '<plan> is ~/work/plans/<repo>/<issue>_<slug>/pr<N>.spec.md, run from the repository.' \
+    '<plan> is <main root>/docs/plans/<issue>_<slug>/pr<N>.spec.md, run from the repository.' \
     'Exit: 0 ok, 1 failure, 2 usage.'
 }
 
@@ -535,6 +535,9 @@ case "$1" in
   auto-reopen) require_live "$2"; cmd_auto_reopen "$PLAN" ;;
   renumber) require_live "$2"; shift 2; cmd_renumber "$PLAN" "$@" ;;
   drop) require_live "$2"; cmd_drop "$PLAN" ;;
-  check) require_live "$2"; cmd_check "$PLAN" ;;
+  check)
+    require_live "$2"
+    plans_ignored || fail "Git does not ignore docs/plans in $REPO_ROOT, so a plan could be committed. Add /docs/plans/ to the global excludes file (git config core.excludesFile) or to .git/info/exclude."
+    cmd_check "$PLAN" ;;
   *) usage >&2; exit 2 ;;
 esac

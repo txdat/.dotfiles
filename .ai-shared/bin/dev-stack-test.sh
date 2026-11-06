@@ -6,7 +6,9 @@ SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 STACK="$SCRIPT_DIR/dev-stack.sh"
 GATE="$SCRIPT_DIR/gate-check.sh"
 TEST_ROOT=$(mktemp -d /tmp/dev-stack-test.XXXXXX)
-export AI_PLANS_ROOT="$TEST_ROOT/plans" AI_WORKTREES_ROOT="$TEST_ROOT/worktrees"
+export AI_WORKTREES_ROOT="$TEST_ROOT/worktrees"
+# Plans are ignored by each repository's own exclude, never the user's global one.
+export GIT_CONFIG_GLOBAL=/dev/null XDG_CONFIG_HOME="$TEST_ROOT/xdg"
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 pass() { printf 'PASS: %s\n' "$*"; }
 
@@ -16,7 +18,8 @@ git -C "$REPO" config user.email dev-stack@example.test
 git -C "$REPO" config user.name dev-stack-test.sh
 printf 'seed\n' > "$REPO/README.md"
 git -C "$REPO" add README.md && git -C "$REPO" commit -qm seed
-DIR="$AI_PLANS_ROOT/repo/12_stack"
+printf '/docs/plans/\n' >> "$REPO/.git/info/exclude"
+DIR="$REPO/docs/plans/12_stack"
 mkdir -p "$DIR"
 
 R="$DIR/pr1.spec.md"
@@ -71,7 +74,7 @@ write_plan "$G" planning feat/grand pr2
 out=$(run stack "$R")
 [[ "$out" == "$R"$'\n'"$C"$'\n'"$S"$'\n'"$G" ]] || fail "stack: $out"
 pass 'stack lists the root, then every stacked plan, parents first'
-out=$(HOME="$TEST_ROOT" run stack '~/plans/repo/12_stack/pr1.spec.md')
+out=$(HOME="$TEST_ROOT" run stack '~/repo/docs/plans/12_stack/pr1.spec.md')
 [[ "$out" == "$R"$'\n'* ]] || fail "stack with ~: $out"
 pass 'a plan path may start with ~'
 WT="$AI_WORKTREES_ROOT/repo-12_stack-pr1"  # the root's own worktree
@@ -80,7 +83,7 @@ out=$(cd "$REPO" && git worktree add -q "$WT" -b feat/root main && cd "$WT" && b
 pass 'stack reads the main root from inside a worktree'
 expect_fail 'stack needs the root' "stacks on $R; pass the stack's root" stack "$C"
 expect_fail 'a plan outside the layout is refused' 'Plan must be' stack "$REPO/README.md"
-expect_fail "another repository's plan is refused" 'Plan must be' stack "$AI_PLANS_ROOT/other/12_stack/pr1.spec.md"
+expect_fail "another repository's plan is refused" 'Plan must be' stack "$TEST_ROOT/other/docs/plans/12_stack/pr1.spec.md"
 sed -i 's#^Stacks On: .*#- Stacks On: pr2#' "$G"
 expect_fail 'stack fails on an unreadable Stacks On line' "Unreadable 'Stacks On:' lines in: $G" stack "$R"
 write_plan "$G" planning feat/grand pr4
@@ -93,6 +96,10 @@ write_plan "$G" planning feat/grand pr2
 out=$(run check "$R") || fail "check: $out"
 [[ "$out" == "PASS $R"$'\n'"PASS $C"$'\n'"PASS $S"$'\n'"PASS $G" ]] || fail "check: $out"
 pass 'check passes every plan in the stack before any parent is approved'
+cp "$REPO/.git/info/exclude" "$TEST_ROOT/exclude"; : > "$REPO/.git/info/exclude"
+expect_fail 'check refuses plans Git does not ignore' 'does not ignore docs/plans' check "$R"
+cp "$TEST_ROOT/exclude" "$REPO/.git/info/exclude"
+pass 'check refuses plans Git does not ignore'
 sed -i 's/^  Proves: AC-1$/  Proves: AC-9/' "$S"
 out=$(run check "$R" 2>&1) && fail "check passed a broken plan: $out"
 [[ "$out" == *"BLOCK $S"$'\n'*"AC-9"* && "$out" == *"PASS $G"* ]] || fail "check block: $out"
@@ -385,7 +392,7 @@ pass 'review writes nothing when the hash fails'
 expect_fail 'next fails on a stack it cannot read' 'Unreadable' next "$R"
 
 # ── views of a second stack: multi-line reasons and number order ──
-E="$AI_PLANS_ROOT/repo/12_extra"
+E="$REPO/docs/plans/12_extra"
 mkdir -p "$E"; write_plan "$E/pr1.spec.md" planning feat/e1
 write_plan "$E/pr2.spec.md" planning feat/e2 pr1
 write_plan "$E/pr10.spec.md" planning feat/e10 pr1
@@ -410,7 +417,7 @@ printf 'Note: added later\n' >> "$H"
 pass 'the review hash ignores only the Status, Spec, and Tip values'
 
 # ── the stack log: review rounds, approvals, and code-review rounds ──
-L="$AI_PLANS_ROOT/repo/12_log"; mkdir -p "$L"
+L="$REPO/docs/plans/12_log"; mkdir -p "$L"
 L1="$L/pr1.spec.md"; write_plan "$L1" planning feat/l1
 row_of() { run next "$1" | awk -F'\t' 'NR == 1 { print $4 "|" $5 }'; }
 out=$(run review "$L1" needs-changes)
@@ -451,7 +458,7 @@ pass 'code-review counts rounds per review phase and stops at its limit'
 
 
 # ── reopen ──
-Q="$AI_PLANS_ROOT/repo/12_reopen"; mkdir -p "$Q"
+Q="$REPO/docs/plans/12_reopen"; mkdir -p "$Q"
 Q1="$Q/pr1.spec.md"; Q2="$Q/pr2.spec.md"; Q3="$Q/pr3.spec.md"
 write_plan "$Q1" planning feat/q1; write_plan "$Q2" planning feat/q2 pr1; write_plan "$Q3" planning feat/q3 pr1
 run review "$Q1" ready >/dev/null; run approve "$Q1" >/dev/null
@@ -468,7 +475,7 @@ sed -i '/^## Goal/a Reopened change.' "$Q1"
 pass 'reopen returns a plan and every approved plan above it to planning, lifts the freeze and its stops, and restarts the round count'
 
 # ── auto-reopen ──
-A="$AI_PLANS_ROOT/repo/12_auto"; mkdir -p "$A"
+A="$REPO/docs/plans/12_auto"; mkdir -p "$A"
 A1="$A/pr1.spec.md"; A2="$A/pr2.spec.md"; A3="$A/pr3.spec.md"
 write_plan "$A1" planning feat/a1; write_plan "$A2" planning feat/a2 pr1; write_plan "$A3" planning feat/a3 pr2
 run review "$A1" ready >/dev/null; run approve "$A1" >/dev/null
@@ -493,7 +500,7 @@ expect_fail 'auto-reopen runs once per plan' 'was auto-reopened once' auto-reope
 run reopen "$A1" >/dev/null
 grep -qx 'Status: planning' "$A1" || fail "the user's reopen after an auto-reopen"
 expect_fail 'an auto-reopened plan is never dropped' 'was auto-reopened' drop "$A1"
-U="$AI_PLANS_ROOT/repo/12_auto-user"; mkdir -p "$U"; U1="$U/pr1.spec.md"
+U="$REPO/docs/plans/12_auto-user"; mkdir -p "$U"; U1="$U/pr1.spec.md"
 write_plan "$U1" planning feat/u1; run review "$U1" ready >/dev/null; run approve "$U1" >/dev/null
 set_status "$U1" approved; run next "$U1" >/dev/null
 expect_fail "auto-reopen never takes the user's approval over its own" "carries the user's approval" auto-reopen "$U1"
@@ -502,7 +509,7 @@ expect_fail "the user's approval over its own outlives execution" "carries the u
 pass "auto-reopen reopens only autopilot's own approvals, once per plan, never past a held stop"
 
 # ── renumber and drop ──
-K="$AI_PLANS_ROOT/repo/12_shape"; mkdir -p "$K"
+K="$REPO/docs/plans/12_shape"; mkdir -p "$K"
 write_plan "$K/pr1.spec.md" planning feat/k1; write_plan "$K/pr2.spec.md" planning feat/k2 pr1; write_plan "$K/pr3.spec.md" planning feat/k3 pr2
 run review "$K/pr1.spec.md" ready >/dev/null; run approve "$K/pr1.spec.md" >/dev/null
 run review "$K/pr2.spec.md" needs-changes >/dev/null
@@ -527,7 +534,7 @@ out=$(run drop "$K/pr3.spec.md")
 grep -q '^dropped pr3: review' "$K/log" && ! grep -q '^pr3:' "$K/log" || fail "drop log: $(cat "$K/log")"
 pass 'drop deletes a plan, restacks its children on its parent, and retires its log lines'
 expect_fail 'drop refuses an approved plan' 'only an unapproved plan' drop "$K/pr1.spec.md"
-D="$AI_PLANS_ROOT/repo/12_droproot"; mkdir -p "$D"
+D="$REPO/docs/plans/12_droproot"; mkdir -p "$D"
 write_plan "$D/pr1.spec.md" planning feat/d1; write_plan "$D/pr2.spec.md" planning feat/d2 pr1; write_plan "$D/pr3.spec.md" planning feat/d3 pr1
 out=$(run drop "$D/pr1.spec.md")
 [[ "$out" == *"; $D/pr2.spec.md is the root" ]] && ! grep -q '^Stacks On:' "$D/pr2.spec.md" && grep -qx 'Stacks On: pr2' "$D/pr3.spec.md" || fail "drop root: $out"
