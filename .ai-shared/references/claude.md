@@ -6,7 +6,7 @@ Rules symlink: `~/.claude/CLAUDE.md` → `~/.dotfiles/.ai-shared/CORE.md`.
 
 **agents** — create `~/.claude/agents/<name>.md` from the [Claude agent template](#claude-agent-template), taking name, description, tools, and md file from [agents](../README.md#agents).
 
-**hooks** — in `~/.claude/settings.json`, register `~/.dotfiles/.ai-shared/bin/gate-check.sh` for `PreToolUse` with matcher `Skill` (model-invoked skills) and for `UserPromptSubmit` (user-typed `/dev-*` commands, which bypass the Skill tool).
+**hooks** — in `~/.claude/settings.json`, register `~/.dotfiles/.ai-shared/bin/gate-check.sh` for `PreToolUse` with matcher `Skill|Bash|Edit|Write|MultiEdit`, for `PostToolUse` and `PostToolUseFailure` with matcher `Bash`, and for `UserPromptSubmit` (user-typed `/dev-*` commands, which bypass the Skill tool). On `Skill` it gates the phase; on the others it enforces the agent refusals in [plan.md — Changes](../skills/dev/plan.md#changes): before a Bash call it snapshots the plans of the current repository, and after it restores any plan or stack log the call changed against them.
 
 **marketplace** — add the local marketplace at `~/.dotfiles/.claude/marketplace/` with `claude plugin marketplace add <path>`, then install plugins via `/plugin`.
 

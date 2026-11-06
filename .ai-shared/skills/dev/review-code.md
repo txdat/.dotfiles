@@ -4,9 +4,11 @@ Review an `implemented` plan's code independently under [plan.md — Review](pla
 
 ## Behavior
 
+A re-review covers only what [plan.md — Review](plan.md#review) lists for a delta review.
+
 - Derive the required outcome from the Goal and contracts before treating the tests as the oracle. Run the TC tests and affected tests yourself at the final tip.
 - Trace each AC to assertions at the production boundary. A helper-level test cannot prove authorization, routing, or transaction behavior.
-- Compare each test with its approved TC: fixture, distinguishing conditions, action, and expected result, which you check against the contract yourself. Apply the assertion rules in [plan.md — Verification](plan.md#verification), and check each RED commit with `dev-check.sh proof`; every TC has its test there.
+- Compare each test with its approved TC: fixture, distinguishing conditions, action, and expected result, which you check against the contract yourself. Apply the assertion rules in [plan.md — Verification](plan.md#verification), and check each RED commit with `dev-check.sh proof`; every TC has its test there, except under plan.md — Verification's `Type: config` rule.
 - Passing tests do not override a violated obligation. Code that departs from an AC, TC, step, or DD blocks; a needed spec change follows [plan.md — Changes](plan.md#changes).
 - Try to break the behavior, not only confirm it. Prove each runtime-behavior finding, including an AC violation, with a run: in the round's scratch under [plan.md — Review](plan.md#review), or, for a review-only request, an existing command with crafted inputs that changes no file or shared state. Give the command, its output, the output the contract requires, and the repro. Label each finding `ran`, `traced` (failure walked through cited code), `located` (cited `file:line`), or `asserted`; an `asserted` finding names the run that would settle it and never blocks. A step, DD, or TC departure visible in the plan or diff is `located`.
 
@@ -19,5 +21,7 @@ Review an `implemented` plan's code independently under [plan.md — Review](pla
 Report your conclusion on each AC and the Goal, the decisive evidence, and findings with their label, location, and proof, split into blocking and notes. The review passes when nothing blocks.
 
 ## Finalize
+
+Unless the request is review-only, the main agent records each round's verdict with `~/.dotfiles/.ai-shared/bin/dev-stack.sh code-review <plan> pass|needs-changes` before repairing or finalizing; [plan.md — Review](plan.md#review) owns the round limit.
 
 On a passing review, the main agent runs the local checks and tests at the Branch tip, leaves the worktree on the Branch, sets `Status: reviewed` and `Tip: <tip SHA>`, and hands off to [create-pr.md](create-pr.md). A later change to the Branch returns the plan to `implemented` for another review.

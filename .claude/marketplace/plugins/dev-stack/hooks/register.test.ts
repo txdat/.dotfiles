@@ -43,6 +43,7 @@ test('each command runs its dev-stack.sh subcommand, a plan path with spaces kep
       ['stop', PLAN, 'Failed fixes: 3/3 — flaky test'],
     ],
     ['dev-stack-resume', PLAN, ['resume', PLAN]],
+    ['dev-stack-reopen', PLAN, ['reopen', PLAN]],
   ]
   for (const [command, args, argv] of cases) {
     await $.command.run(typed(command, args))
@@ -59,6 +60,7 @@ test('a missing argument shows usage and runs nothing', async ($, on) => {
     ['dev-stack-review', 'notaplan ready'],
     ['dev-stack-stop', PLAN],
     ['dev-stack-resume', '  '],
+    ['dev-stack-reopen', `${PLAN} extra`],
     ['dev-stack-next', `${PLAN} --json`],
     ['dev-stack-check', `${PLAN} extra`],
   ]
@@ -157,6 +159,7 @@ test('a write runs only from the user, at the terminal or through Remote Control
     ['dev-stack-review', `${PLAN} ready`],
     ['dev-stack-stop', `${PLAN} reason`],
     ['dev-stack-resume', PLAN],
+    ['dev-stack-reopen', PLAN],
   ]
   for (const origin of others) {
     for (const [command, args] of writes) {
@@ -202,6 +205,7 @@ test('reads run mid-turn and writes wait for the turn', async ($, on) => {
     { name: 'dev-stack-review', immediate: undefined },
     { name: 'dev-stack-stop', immediate: undefined },
     { name: 'dev-stack-resume', immediate: undefined },
+    { name: 'dev-stack-reopen', immediate: undefined },
   ])
 })
 

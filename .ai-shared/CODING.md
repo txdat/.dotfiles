@@ -8,7 +8,7 @@ Duplication is cheaper than the wrong abstraction: extract an established shared
 
 Verify changed calls, fields, imports, and assumptions against actual definitions or runtime evidence. Design failure paths deliberately and preserve error causes. Comment only non-obvious reasons or invariants. UI work follows [frontend-design.md](skills/dev/frontend-design.md).
 
-Tests assert required observable behavior; never special-case test inputs or replace behavior with canned results. Start with affected tests and callers plus required project checks; broaden to the full suite when requested, required, cheap, or needed to cover the impact. Plan-backed work adds [test-first proof](skills/dev/plan.md#verification).
+Tests assert required observable behavior; never special-case test inputs or replace behavior with canned results. Start with affected tests and callers plus required project checks; broaden to the full suite when requested, required, cheap, or needed to cover the impact. Run tests serially in the test runner's own process, including a project's test script, by passing the runner's serial flag when it has one, such as Jest `--runInBand`, pytest-xdist `-n 0`, Mocha `--no-parallel`, or Node `--test-isolation=none`; when a runner cannot run in-process, limit it to one worker, such as Vitest `--no-file-parallelism` or `go test -p 1 -parallel 1`. Plan-backed work adds [test-first proof](skills/dev/plan.md#verification).
 
 Report inspected facts, inference, and unrun checks distinctly, with decisive file locations or command results and no secrets.
 

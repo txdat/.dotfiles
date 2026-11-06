@@ -3,12 +3,12 @@
  * (.claude/marketplace/plugins/dev-stack): /dev-stack-* commands over
  * .ai-shared/bin/dev-stack.sh for a stack of plans (skills/dev/plan.md).
  *
- * `next`, `stack`, and `check` only read. `review`, `stop`, and `resume` record
- * a decision of the user's, so each waits for the turn to end before it runs: a
- * running turn reads the plan and the stack's stops.log. Pi treats a submitted
- * command as the user's own, so the Claude plugin's origin check has no
- * equivalent here; only an extension that dispatches these commands itself
- * (sendUserMessage with expandPromptTemplates) can bypass that intent.
+ * `next`, `stack`, and `check` only read. `review`, `stop`, `resume`, and
+ * `reopen` record a decision of the user's, so each waits for the turn to end
+ * before it runs: a running turn reads the plan and the stack's log. Pi treats
+ * a submitted command as the user's own, so the Claude plugin's origin check
+ * has no equivalent here; only an extension that dispatches these commands
+ * itself (sendUserMessage with expandPromptTemplates) can bypass that intent.
  */
 
 import * as os from "node:os";
@@ -18,7 +18,7 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-c
 const HOME = os.homedir();
 const STACK = path.join(HOME, ".dotfiles", ".ai-shared", "bin", "dev-stack.sh");
 
-type Sub = "next" | "stack" | "check" | "review" | "stop" | "resume";
+type Sub = "next" | "stack" | "check" | "review" | "stop" | "resume" | "reopen";
 
 type Parsed = { argv: [sub: Sub, plan: string, ...rest: string[]] } | { usage: true };
 
@@ -96,7 +96,7 @@ const COMMANDS: Command[] = [
   },
   {
     name: "dev-stack-stop",
-    description: "Record why a plan stopped in its stack's stops.log (dev-stack.sh stop)",
+    description: "Record why a plan stopped in its stack's log (dev-stack.sh stop)",
     argumentHint: "<spec file> <reason>",
     parse: (text) => {
       const [, plan, reason] = text.match(PLAN_THEN_REST) ?? [];
@@ -113,7 +113,18 @@ const COMMANDS: Command[] = [
     parse: planOnly("resume"),
     write: {
       note: ([, plan]) =>
-        `The user cleared the stop on ${plan} with dev-stack.sh resume; for a "Failed fixes: 3/3" stop this grants three more attempts.`,
+        `The user cleared the stop on ${plan} with dev-stack.sh resume; for a "Failed fixes: 3/3" stop this grants three more attempts, and for a review round limit three more rounds.`,
+    },
+  },
+  {
+    name: "dev-stack-reopen",
+    description:
+      "Return an approved plan, and every plan above it that is approved or later, to planning (dev-stack.sh reopen; only the user runs it)",
+    argumentHint: "<spec file>",
+    parse: planOnly("reopen"),
+    write: {
+      note: ([, plan]) =>
+        `The user reopened ${plan} with dev-stack.sh reopen: it and every plan above it that was approved or later are back in planning, to revise and review again.`,
     },
   },
 ];

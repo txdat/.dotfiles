@@ -261,7 +261,7 @@ assert_block "$(run_gate "$repo" dev-review-feature "$P")" "write 'Issue: #<n>' 
 write_plan "$P" planning "$(valid_graph)" fix
 assert_pass "$(run_gate "$repo" dev-review-feature "$P")" 'the type lives in the header only'
 write_plan "$P" planning "$(valid_graph)" chore
-assert_block "$(run_gate "$repo" dev-review-feature "$P")" "write feature, fix, or refactor" 'an unknown type blocks'
+assert_block "$(run_gate "$repo" dev-review-feature "$P")" "write feature, fix, refactor, or config" 'an unknown type blocks'
 write_plan "$P" planning
 sed -i 's/^Base: main$/Base:/' "$P"
 assert_block "$(run_gate "$repo" dev-review-feature "$P")" 'no Base branch' 'review requires a Base'
@@ -722,6 +722,9 @@ stack_on "$C2" reviewed pr1 feat/c2
 stack_on "$C3" reviewed pr1 feat/c3
 stack_on "$C4" reviewed pr2 feat/c4
 assert_pass "$(run_gate "$repo" dev-create-pr "$P")" 'children re-reviewed on the repaired root publish'
+printf 'pr3: stop review-code round limit (3/3) at %s\n' "$(printf '0%.0s' {1..40})" >> "$PD/12_gate/log"
+assert_block "$(run_gate "$repo" dev-create-pr "$P")" "Plan $C3 stacks above this plan and is stopped" 'a stopped plan above the root blocks publication'
+rm "$PD/12_gate/log"
 printf '\n```\nStacks On: pr3\n```\n' >> "$C4"
 assert_pass "$(run_gate "$repo" dev-create-pr "$P")" 'a Stacks On line in a fenced block is not the header'
 stack_on "$C4" reviewed ./pr2 feat/c4
@@ -774,5 +777,196 @@ assert_block "$(STALE_OK=1 run_gate "$repo" dev-execute-feature "$FE")" "$NO_REV
 use_repo
 plan_with_worktree implemented
 assert_block "$(STALE_OK=1 run_gate "$repo" dev-review-code "$P")" "$NO_REVIEW" 'code review needs a current review'
+
+
+# ── stops and the approval ratchet ──
+STACK_SH="$ROOT/bin/dev-stack.sh"
+use_repo
+write_plan "$P" planning
+(cd "$repo" && bash "$STACK_SH" stop "$P" 'needs a decision' >/dev/null)
+assert_block "$(run_gate "$repo" dev-review-feature "$P")" 'is stopped: needs a decision' 'a stopped plan is blocked at its gate'
+assert_block "$(prompt_gate "$repo" "/dev-review-feature $P")" 'is stopped' "the user's typed phase is blocked too until resume"
+assert_pass "$(cd "$repo" && bash "$GATE" --design "$P" </dev/null)" "design-feature's stack check ignores a stop"
+(cd "$repo" && bash "$STACK_SH" resume "$P" >/dev/null)
+assert_pass "$(run_gate "$repo" dev-review-feature "$P")" 'resume reopens the gate'
+use_repo
+write_plan "$P" planning
+(cd "$repo" && bash "$STACK_SH" review "$P" ready >/dev/null && bash "$STACK_SH" approve "$P" >/dev/null)
+assert_pass "$(STALE_OK=1 run_gate "$repo" dev-execute-feature "$P")" 'an auto-approved plan executes'
+sed -i 's/^Gate the phases\./Gate every phase./' "$P"
+assert_block "$(STALE_OK=1 run_gate "$repo" dev-execute-feature "$P")" 'is frozen: its spec, or a spec below it, changed since its approval' 'an approved plan whose spec changed is frozen'
+sed -i 's/^Gate every phase\./Gate the phases./; s/^Status: .*/Status: planning/' "$P"
+assert_block "$(STALE_OK=1 run_gate "$repo" dev-review-feature "$P")" 'never returns to planning' 'an approved plan returned to planning is frozen'
+assert_block "$(cd "$repo" && bash "$GATE" --design "$P" </dev/null)" 'never returns to planning' "design-feature's stack check refuses it too"
+(cd "$repo" && bash "$STACK_SH" reopen "$P" >/dev/null)
+assert_pass "$(STALE_OK=1 run_gate "$repo" dev-review-feature "$P")" "the user's reopen lifts the freeze"
+
+# ── PC checks ──
+pc_graph() { valid_graph; printf '%s\n' "$@"; }
+review_graph 'a PC without a Check blocks' "$(pc_graph '  PC-1 — the gate exists')" 'PC-1 has no "— Check: <command>"'
+review_graph 'a PC Check that counts with grep -c blocks' "$(pc_graph '  PC-1 — three callers — Check: test "$(grep -rc gate src)" = 3')" 'PC-1 counts matches'
+review_graph 'a PC Check that counts with wc -l blocks' "$(pc_graph '  PC-1 — three callers — Check: grep -r gate src | wc -l | grep -qx 3')" 'PC-1 counts matches'
+review_graph 'a PC Check that counts with rg -c blocks' "$(pc_graph '  PC-1 — three callers — Check: rg -c gate src')" 'PC-1 counts matches'
+review_graph 'a count inside a command substitution with its own quotes blocks' "$(pc_graph '  PC-1 — one gate — Check: test "$(grep "def gate" -c src/x.py)" = 1')" 'PC-1 counts matches'
+review_graph 'wc -l closing a command substitution blocks' "$(pc_graph '  PC-1 — three callers — Check: test "$(grep -r "gate(" src | wc -l)" -eq 3')" 'PC-1 counts matches'
+review_graph 'rg --count closing a command substitution blocks' "$(pc_graph '  PC-1 — three callers — Check: [ "$(rg gate src --count)" = 3 ]')" 'PC-1 counts matches'
+review_graph 'a structural PC Check passes' "$(pc_graph '  PC-1 — gate() exists — Check: grep -q "def gate" src/gate.py' '  PC-2 — no caller of old() — Check: ! grep -rq "old(" src')" ''
+
+# ── Type: config ──
+use_repo
+plan_with_worktree implemented "$(valid_graph)" config
+wt=$(wt_of "$P")
+assert_block "$(run_gate "$repo" dev-review-code "$P")" 'Found no implementation commit between' 'a config plan needs a commit of its own'
+wt_commit "$wt" 'chore(i18n): add strings' locales/en.json
+assert_pass "$(run_gate "$repo" dev-review-code "$P")" 'a config plan enters review-code without a proof commit'
+write_plan "$P" "reviewed $(git -C "$repo" rev-parse feat/gate)" "$(valid_graph)" config
+assert_pass "$(run_gate "$repo" dev-create-pr "$P")" 'a reviewed config plan publishes without a proof commit'
+write_plan "$P" "reviewed $(git -C "$repo" rev-parse main)" "$(valid_graph)" config
+assert_block "$(run_gate "$repo" dev-create-pr "$P")" "has no implementation commit after" 'a config plan reviewed without a commit of its own blocks publication'
+
+# ── record guard: Bash, Edit, and Write calls ──
+use_repo
+guard() { jq -cn --arg t "$1" --argjson i "$2" '{hook_event_name:"PreToolUse",tool_name:$t,tool_input:$i}' | (cd "$repo" && "$GATE"); }
+bash_guard() { guard Bash "$(jq -cn --arg c "$1" '{command:$c}')"; }
+LOG="$(dirname "$P")/log"
+assert_block "$(bash_guard "~/.dotfiles/.ai-shared/bin/dev-stack.sh resume $P")" "dev-stack.sh resume is the user's alone" 'an agent cannot run resume'
+assert_block "$(bash_guard "bash dev-stack.sh reopen '$P'")" "dev-stack.sh reopen is the user's alone" 'an agent cannot run reopen'
+assert_block "$(bash_guard "cd /tmp && env FOO=1 \"\$HOME/.dotfiles/.ai-shared/bin/dev-stack.sh\" resume $P")" "dev-stack.sh resume is the user's alone" 'resume after a separator and a quoted path is caught'
+assert_block "$(bash_guard $'true\ndev-stack.sh resume '"$P")" "dev-stack.sh resume is the user's alone" 'resume on a later line is caught'
+assert_pass "$(bash_guard "grep -n 'dev-stack.sh resume' README.md; echo 'ask the user to run dev-stack.sh reopen'")" 'a mention of resume or reopen in an argument passes'
+assert_pass "$(bash_guard "~/.dotfiles/.ai-shared/bin/dev-stack.sh next $P")" 'an agent runs next'
+assert_pass "$(bash_guard "git log --oneline -5 && grep resume README.md")" 'an unrelated command passes'
+assert_block "$(bash_guard "echo 'pr1: cleared' >> $LOG")" 'written only by dev-stack.sh' 'an agent cannot append to the stack log'
+assert_pass "$(bash_guard "cat $LOG 2>/dev/null; tail -3 $LOG")" 'an agent reads the stack log'
+assert_pass "$(bash_guard "grep review $LOG > /tmp/out; tail -3 $LOG >> /tmp/out")" 'reading the log into another file passes'
+assert_pass "$(bash_guard "cp x.go ~/work/wt/repo-12_slug-pr1/log/handler.go && echo x > ~/work/wt/repo-12_slug-pr1/log/a.go")" "a worktree's log/ directory is not the stack log"
+assert_block "$(bash_guard "cd $(dirname "$(dirname "$P")") && printf x >> 12_gate/log")" 'written only by dev-stack.sh' 'a relative write to the stack log is caught'
+assert_block "$(bash_guard "cp /tmp/x $LOG")" 'written only by dev-stack.sh' 'a copy over the stack log is caught'
+assert_block "$(bash_guard "cd $AI_PLANS_ROOT && cp /tmp/a $(basename "$(dirname "$(dirname "$P")")")/12_gate/log")" 'written only by dev-stack.sh' 'a write relative to the plans root is caught'
+assert_block "$(bash_guard "sed --in-place 's/x/y/' $LOG")" 'written only by dev-stack.sh' 'sed --in-place on the stack log is caught'
+assert_block "$(bash_guard "echo x >& $LOG")" 'written only by dev-stack.sh' 'a >& redirection into the stack log is caught'
+assert_block "$(bash_guard "cd $(dirname "$P") && echo x >> ../12_gate/log")" 'written only by dev-stack.sh' 'a ../ path to the stack log is caught'
+assert_block "$(guard Write "$(jq -cn --arg f "$LOG" '{file_path:$f,content:"x"}')")" 'written only by dev-stack.sh' 'Write cannot touch the stack log'
+write_plan "$P" ready
+assert_block "$(guard Edit "$(jq -cn --arg f "$P" '{file_path:$f,old_string:"Status: ready",new_string:"Status: approved"}')")" "Only the user sets 'Status: approved'" 'an agent cannot approve'
+assert_block "$(guard Edit "$(jq -cn --arg f "$P" '{file_path:$f,old_string:"Status: ready",new_string:"Status: auto-approved"}')")" 'Only dev-stack.sh approve' 'an agent cannot auto-approve by hand'
+assert_pass "$(guard Edit "$(jq -cn --arg f "$P" '{file_path:$f,old_string:"Gate the phases.",new_string:"Gate every phase."}')")" 'a plan before approval is edited freely'
+write_plan "$P" approved
+assert_pass "$(guard Edit "$(jq -cn --arg f "$P" '{file_path:$f,old_string:"Status: approved",new_string:"Status: implemented"}')")" "an approved plan's Status moves forward"
+assert_block "$(guard Edit "$(jq -cn --arg f "$P" '{file_path:$f,old_string:"Status: approved",new_string:"Status: planning"}')")" 'never returns to planning' "an approved plan's Status never returns to planning"
+assert_block "$(guard Edit "$(jq -cn --arg f "$P" '{file_path:$f,old_string:"Status: approved",new_string:"Status: aproved"}')")" 'or to an unknown value' "an approved plan's Status never becomes an unknown value"
+assert_block "$(guard Edit "$(jq -cn --arg f "$P" '{file_path:$f,old_string:"Gate the phases.",new_string:"Gate every phase."}')")" 'frozen: after approval only its Status and Tip' "an approved plan's spec is frozen"
+assert_block "$(guard MultiEdit "$(jq -cn --arg f "$P" '{file_path:$f,edits:[{old_string:"Status: approved",new_string:"Status: implemented"},{old_string:"Gate the phases.",new_string:"Gate all."}]}')")" 'frozen' 'MultiEdit is checked edit by edit'
+assert_block "$(guard Write "$(jq -cn --arg f "$P" --arg c "$(sed 's/Gate the phases\./Gate all./' "$P")" '{file_path:$f,content:$c}')")" 'frozen' 'Write is checked against the frozen spec'
+assert_pass "$(guard Edit "$(jq -cn --arg f "$P" '{file_path:$f,old_string:"no such text",new_string:"x"}')")" 'an edit that matches nothing is left to fail on its own'
+# A shell command runs between its PreToolUse snapshot and its PostToolUse check.
+shell_run() {
+  local id="t$RANDOM$RANDOM"
+  jq -cn --arg c "$1" --arg id "$id" '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_use_id:$id,tool_input:{command:$c}}' | (cd "$repo" && "$GATE") >/dev/null
+  (cd "$repo" && bash -c "$1") >/dev/null 2>&1 || true
+  jq -cn --arg c "$1" --arg id "$id" '{hook_event_name:"PostToolUse",tool_name:"Bash",tool_use_id:$id,tool_input:{command:$c}}' | (cd "$repo" && "$GATE")
+}
+D=$(dirname "$P"); n=$(basename "$P" .spec.md)
+cp "$P" "$TMP_ROOT/approved.md"
+assert_block "$(shell_run "sed -i 's/^Status: approved/Status: planning/' $P")" 'never returns below approved' 'a shell rollback of an approved plan is undone'
+cmp -s "$P" "$TMP_ROOT/approved.md" || { printf "FAIL: rollback not restored\n" >&2; exit 1; }
+assert_block "$(shell_run "python3 -c 'import sys; p=sys.argv[1]; open(p,\"a\").write(\"x\\n\")' $P")" 'its spec changed' 'any shell write to an approved spec is undone, python included'
+cmp -s "$P" "$TMP_ROOT/approved.md" || { printf 'FAIL: spec not restored\n' >&2; exit 1; }
+assert_block "$(shell_run "rm -f $P")" 'moved or deleted' 'deleting an approved plan is undone'
+[[ -f "$P" ]] || { printf 'FAIL: deleted plan not restored\n' >&2; exit 1; }
+assert_pass "$(shell_run "sed -i 's/^Status: approved/Status: implemented/' $P; cat $P > /dev/null; cp $P /tmp/copy")" "an approved plan's Status moves forward by shell, and reads pass"
+grep -qx 'Status: implemented' "$P" || { printf 'FAIL: forward Status reverted\n' >&2; exit 1; }
+# dev-stack.sh's own flows pass the check, and a plan removed with rm while
+# the log holds its lines comes back.
+SD="$PD/13_flow"; mkdir -p "$SD"
+write_plan "$SD/pr1.spec.md" planning; write_plan "$SD/pr2.spec.md" planning "$(valid_graph)" feature '#13' 'Stacks On: pr1' feat/f2
+assert_pass "$(shell_run "'$ROOT/bin/dev-stack.sh' review $SD/pr2.spec.md needs-changes && '$ROOT/bin/dev-stack.sh' stop $SD/pr2.spec.md 'x' && '$ROOT/bin/dev-stack.sh' next $SD/pr1.spec.md")" 'review, stop, and next pass the check'
+assert_block "$(shell_run "rm $SD/pr2.spec.md")" 'still holds its lines' 'a plan removed with rm while the log holds its lines comes back'
+[[ -f "$SD/pr2.spec.md" ]] || { printf 'FAIL: removed plan not restored\n' >&2; exit 1; }
+(cd "$repo" && "$ROOT/bin/dev-stack.sh" resume "$SD/pr2.spec.md" >/dev/null)
+assert_pass "$(shell_run "'$ROOT/bin/dev-stack.sh' renumber $SD/pr1.spec.md 2=3")" 'renumber passes the check'
+assert_pass "$(shell_run "'$ROOT/bin/dev-stack.sh' drop $SD/pr3.spec.md")" 'drop passes the check'
+[[ ! -e "$SD/pr3.spec.md" && ! -e "$SD/pr2.spec.md" ]] || { printf 'FAIL: renumber or drop undone\n' >&2; exit 1; }
+rm -rf "$SD"
+# dev-stack.sh auto-reopen passes the check; a second auto-reopen, or one
+# over the user's approval, forged by a shell command, is undone.
+SD="$PD/14_auto"; mkdir -p "$SD"; SP="$SD/pr1.spec.md"
+write_plan "$SP" planning "$(valid_graph)" feature '#14'
+(cd "$repo" && "$ROOT/bin/dev-stack.sh" review "$SP" ready >/dev/null && "$ROOT/bin/dev-stack.sh" approve "$SP" >/dev/null)
+assert_block "$(shell_run "sed -i 's/^Status: auto-approved/Status: planning/' $SP")" 'never returns below approved' 'a shell rollback of an auto-approved plan is undone'
+grep -qx 'Status: auto-approved' "$SP" || { printf 'FAIL: auto-approved rollback not undone\n' >&2; exit 1; }
+assert_pass "$(shell_run "'$ROOT/bin/dev-stack.sh' auto-reopen $SP")" 'auto-reopen passes the check'
+grep -qx 'Status: planning' "$SP" || { printf 'FAIL: auto-reopen undone\n' >&2; exit 1; }
+(cd "$repo" && "$ROOT/bin/dev-stack.sh" review "$SP" ready >/dev/null && "$ROOT/bin/dev-stack.sh" approve "$SP" >/dev/null)
+assert_block "$(shell_run "sed -i 's/^Status: auto-approved/Status: planning/' $SP && echo 'pr1: auto-reopened' >> $SD/lo''g")" 'never returns below approved' 'a second auto-reopen line never lifts the freeze'
+grep -qx 'Status: auto-approved' "$SP" || { printf 'FAIL: second auto-reopen not undone\n' >&2; exit 1; }
+assert_block "$(shell_run "sed -i '/auto-reopened/d' $SD/lo''g")" 'lost a line only dev-stack.sh writes' 'a shell command cannot drop an auto-reopen line'
+rm -rf "$SD"; mkdir -p "$SD"
+write_plan "$SP" planning "$(valid_graph)" feature '#14'
+(cd "$repo" && "$ROOT/bin/dev-stack.sh" review "$SP" ready >/dev/null && "$ROOT/bin/dev-stack.sh" approve "$SP" >/dev/null)
+sed -i 's/^Status: auto-approved/Status: approved/' "$SP"
+assert_block "$(shell_run "sed -i 's/^Status: approved/Status: planning/' $SP && echo 'pr1: auto-reopened' >> $SD/lo''g")" 'never returns below approved' "an auto-reopen line never lifts the user's approval over autopilot's"
+grep -qx 'Status: approved' "$SP" || { printf 'FAIL: forged auto-reopen over the user approval not undone\n' >&2; exit 1; }
+rm -rf "$SD"
+write_plan "$P" approved
+assert_block "$(shell_run "sed -i 's/^Status: approved/Status: planning/' $P && echo '$n: auto-reopened' >> $D/lo''g")" 'never returns below approved' "an auto-reopen line never lifts the user's approval"
+grep -qx 'Status: approved' "$P" || { printf 'FAIL: forged auto-reopen not undone\n' >&2; exit 1; }
+rm -f "$D/log"
+# A command that writes the log through a path the text check cannot see
+# (here lo''g) is still judged after it runs.
+write_plan "$P" approved
+assert_block "$(shell_run "sed -i 's/^Status: approved/Status: planning/' $P && echo '$n: reopened' >> $D/lo''g")" 'never returns below approved' "a reopen line a shell command writes never lifts the freeze"
+grep -qx 'Status: approved' "$P" || { printf 'FAIL: forged reopen not undone\n' >&2; exit 1; }
+[[ ! -e "$D/log" ]] || { printf 'FAIL: forged reopen line kept\n' >&2; exit 1; }
+printf '%s: stop review-code round limit (3/3) at %040d\n' "$n" 0 > "$D/log"
+assert_block "$(shell_run ": > $D/lo''g")" 'lost a line only dev-stack.sh writes' 'a shell command cannot drop a stop line'
+grep -q ': stop ' "$D/log" || { printf 'FAIL: stop line not restored\n' >&2; exit 1; }
+rm -f "$D/log"
+write_plan "$P" published
+assert_block "$(shell_run "sed -i 's/^Status: published/Status: reviewed/' $P")" 'is published and changed' 'a shell edit to a published plan is undone'
+assert_block "$(shell_run "sed -i 's/^Status: published/Status: planning/' $P && echo '$n: reopened' >> $D/lo''g")" 'is published and changed' 'a reopen line never unfreezes a published plan'
+rm -f "$D/log"
+write_plan "$P" ready
+assert_pass "$(shell_run "sed -i 's/Gate the phases\./Gate all./' $P")" 'a shell edit before approval passes'
+assert_block "$(shell_run "sed -i 's/^Status: ready/Status: approved/' $P")" 'which only the user sets' 'a shell command cannot approve'
+grep -qx 'Status: ready' "$P" || { printf 'FAIL: approval not undone\n' >&2; exit 1; }
+assert_block "$(shell_run "sed -i 's/^Status: ready/Status: implemented/' $P")" 'skipping approval' 'a shell command cannot skip approval'
+grep -qx 'Status: ready' "$P" || { printf 'FAIL: skipped approval not undone\n' >&2; exit 1; }
+assert_block "$(guard Edit "$(jq -cn --arg f "$P" '{file_path:$f,old_string:"Status: ready",new_string:"Status: implemented"}')")" 'only through approval' 'an edit cannot skip approval'
+assert_block "$(shell_run "sed -i 's/^Status: ready/Status: auto-approved/' $P")" 'only dev-stack.sh approve sets' 'a shell command cannot auto-approve by hand'
+assert_block "$(shell_run "sed -i 's/^Status: ready/Status: auto-approved/' $P && echo '$n: approve auto-approved at abc' >> $D/lo''g")" 'only dev-stack.sh approve sets' "a forged approve line at the wrong hash does not pass"
+rm -f "$D/log"
+assert_pass "$(shell_run "'$ROOT/bin/dev-stack.sh' review $P ready && '$ROOT/bin/dev-stack.sh' approve $P")" 'dev-stack.sh review and approve pass the check'
+grep -qx 'Status: auto-approved' "$P" || { printf 'FAIL: dev-stack.sh approve undone\n' >&2; exit 1; }
+rm -f "$D/log"; write_plan "$P" approved
+assert_pass "$(guard Edit "$(jq -cn --arg f "$P" '{file_path:$f,old_string:"Status: approved",new_string:"Status: reviewed"}')")" 'reviewed before its Tip ranks as reviewed'
+assert_pass "$(shell_run "ln $P $TMP_ROOT/hard; sed 's/^Status: approved/Status: planning/' $P > $TMP_ROOT/soft; ln -sf $TMP_ROOT/soft $D/pr2.spec.md")" 'links pass'
+[[ "$(stat -c %h "$P")" == 1 && ! -L "$D/pr2.spec.md" ]] || { printf 'FAIL: plan links not replaced with copies\n' >&2; exit 1; }
+rm -f "$D/pr2.spec.md" "$TMP_ROOT/hard" "$TMP_ROOT/soft"
+mkdir -m 000 "$PD/99_locked"
+assert_block "$(shell_run "sed -i 's/^Status: approved/Status: planning/' $P")" 'never returns below approved' 'an unreadable entry leaves the guard on'
+chmod 700 "$PD/99_locked"; rmdir "$PD/99_locked"
+other="$AI_PLANS_ROOT/other-repo/5_x/pr1.spec.md"
+mkdir -p "${other%/*}"; printf '# O\nStatus: ready\nSpec: -\n' > "$other"
+assert_pass "$(shell_run "sed -i 's/^Status: ready/Status: approved/' $other")" "another repository's plans are out of the call's scope"
+grep -qx 'Status: approved' "$other" || { printf "FAIL: another repository's approval reverted\n" >&2; exit 1; }
+rm -rf "$AI_PLANS_ROOT/other-repo"
+jq -cn '{hook_event_name:"PreToolUse",tool_name:"Bash",session_id:"s1",tool_input:{command:"true"}}' | (cd "$repo" && "$GATE") >/dev/null
+[[ ! -e "${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}/dev-gate-check-$(id -u)/s1" ]] || { printf 'FAIL: snapshot keyed by session\n' >&2; exit 1; }
+printf 'PASS: no snapshot without a tool_use_id\n'
+rm -f "$D/log"; write_plan "$P" ready
+assert_block "$(shell_run "printf '# New\nStatus: approved\n' > $D/pr7.spec.md")" 'which only the user sets' 'a new plan cannot be written approved'
+grep -qx 'Status: planning' "$D/pr7.spec.md" || { printf 'FAIL: new approved plan not set to planning\n' >&2; exit 1; }
+rm -f "$D/pr7.spec.md"
+assert_pass "$(shell_run "sed -i 's/Gate/Skip/' $P && grep 'Status: approved' $P; echo 'wait for Status: approved'")" 'a mention of approved in another command passes'
+id=failed$RANDOM
+jq -cn --arg id "$id" '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_use_id:$id,tool_input:{command:"x"}}' | (cd "$repo" && "$GATE") >/dev/null
+sed -i 's/^Status: ready/Status: approved/' "$P"
+assert_block "$(jq -cn --arg id "$id" '{hook_event_name:"PostToolUseFailure",tool_name:"Bash",tool_use_id:$id,tool_input:{command:"x"}}' | (cd "$repo" && "$GATE"))" 'which only the user sets' 'a failed command is checked too'
+assert_pass "$(jq -cn '{hook_event_name:"PostToolUse",tool_name:"Bash",tool_use_id:"never-snapshotted",tool_input:{command:"true"}}' | (cd "$repo" && "$GATE"))" 'a post check without its snapshot passes'
+write_plan "$P" approved
+write_plan "$P" published
+assert_block "$(guard Edit "$(jq -cn --arg f "$P" '{file_path:$f,old_string:"Status: published",new_string:"Status: reviewed"}')")" 'is published' 'a published plan takes no edit'
+assert_pass "$(guard Edit "$(jq -cn --arg f "$repo/README.md" '{file_path:$f,old_string:"seed",new_string:"x"}')")" 'files outside the plans root pass'
 
 printf 'All gate-check.sh tests passed. Temporary fixtures: %s\n' "$TMP_ROOT"

@@ -3,7 +3,7 @@ set -euo pipefail
 
 pass() { printf 'PASS %s\n' "$*"; }
 block() { printf 'BLOCK %s\n' "$*" >&2; exit 1; }
-usage() { block "usage: dev-check.sh proof <commit> [--test path] [--stub path] | artifacts <base> [head]"; }
+usage() { block "usage: dev-check.sh proof <commit> [--test path] [--stub path] | artifacts <base> [head] | pcs <plan> [--cwd dir] [PC-<n> ...]"; }
 
 case "${1:-}" in
   proof)
@@ -81,6 +81,59 @@ case "${1:-}" in
     pass "artifact scan $range"
     findings=$(rg -n 'System\.out|console\.log|// DEBUG|\bprint\(' <<<"$added" || true)
     [[ -z "$findings" ]] || printf 'REVIEW debug-like lines; remove leftovers, keep intended output:\n%s\n' "$findings"
+    ;;
+  pcs)
+    # Runs each PC's Check in a plan (../skills/dev/design-feature.md#6-finish)
+    # in one batch, in --cwd (default here), or only the PCs named.
+    [[ $# -ge 2 ]] || usage
+    plan="$2"; shift 2
+    cwd=.; only=" "
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --cwd) [[ $# -ge 2 ]] || usage; cwd="$2"; shift 2 ;;
+        PC-[1-9]*) only+="$1 "; shift ;;
+        *) usage ;;
+      esac
+    done
+    [[ -f "$plan" && -r "$plan" ]] || block "plan not found: $plan"
+    [[ -d "$cwd" ]] || block "no directory: $cwd"
+    # "<id> TAB <command>" per PC declared under ## Implementation Steps,
+    # outside fences; the command is the text after "Check:", unwrapped from
+    # one pair of backticks.
+    pcs=$(LC_ALL=C awk '
+      /^[[:space:]]*(```|~~~)/ { fenced = !fenced; next }
+      fenced { next }
+      /^## / { sec = substr($0, 4); sub(/[[:space:]]+$/, "", sec); next }
+      sec != "Implementation Steps" { next }
+      {
+        lead = $0; sub(/^[[:space:]]*([-*][[:space:]]*)?/, "", lead)
+        if (!match(lead, /^PC-[1-9][0-9]*/) || substr(lead, RLENGTH + 1, 1) ~ /[A-Za-z0-9_]/) next
+        id = substr(lead, 1, RLENGTH)
+        at = index(lead, "Check:"); cmd = at ? substr(lead, at + 6) : ""
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", cmd)
+        if (cmd ~ /^`[^`]*`/) { cmd = substr(cmd, 2); cmd = substr(cmd, 1, index(cmd, "`") - 1) }
+        printf "%s\t%s\n", id, cmd
+      }' "$plan")
+    if [[ -z "$pcs" && "$only" == " " ]]; then printf 'PASS no PCs\n'; exit 0; fi
+    failed=0; ran=0
+    while IFS=$'\t' read -r id cmd; do
+      [[ "$only" == " " || "$only" == *" $id "* ]] || continue
+      ran=1
+      if [[ -z "$cmd" ]]; then printf 'FAIL %s: no Check command\n' "$id"; failed=1; continue; fi
+      code=0
+      out=$(cd "$cwd" && timeout 120 bash -c "$cmd" </dev/null 2>&1) || code=$?
+      if (( code == 0 )); then printf 'PASS %s: %s\n' "$id" "$cmd"
+      else
+        failed=1
+        printf 'FAIL %s (exit %s): %s\n' "$id" "$code" "$cmd"
+        [[ -z "$out" ]] || tail -n 5 <<<"$out" | sed 's/^/  /'
+      fi
+    done <<<"$pcs"
+    (( ran )) || block "none of the named PCs is in $plan"
+    for id in $only; do
+      grep -q "^$id"$'\t' <<<"$pcs" || { printf 'FAIL %s: not in %s\n' "$id" "$plan"; failed=1; }
+    done
+    (( ! failed )) || exit 1
     ;;
   *) usage ;;
 esac

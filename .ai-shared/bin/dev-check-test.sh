@@ -125,4 +125,45 @@ msg=$(cd "$TMP" && "$CHECK" artifacts HEAD~1 HEAD)
 [[ "$msg" == *'a\cb'* ]] || { printf 'FAIL finding printed verbatim\n'; exit 1; }
 printf 'PASS finding printed verbatim\n'
 
+# pcs: every PC's Check in one batch.
+PLAN="$TMP/pr1.spec.md"
+printf 'def gate():\n  pass\n' > "$TMP/src/gate.py"
+cat > "$PLAN" <<'PLAN'
+# PCs
+Status: planning
+## Implementation Steps
+ST-1 — change — satisfies TC-1
+  PC-1 — gate() exists — Check: `grep -q "def gate" src/gate.py` (the definition)
+  PC-2 — no caller of old() — Check: ! grep -rq "old(" src
+```
+  PC-9 — fenced — Check: false
+```
+## Test Cases
+PC-8 — elsewhere — Check: false
+PLAN
+out=$(cd "$TMP" && "$CHECK" pcs "$PLAN")
+[[ "$out" == $'PASS PC-1: grep -q "def gate" src/gate.py\nPASS PC-2: ! grep -rq "old(" src' ]] || { printf 'FAIL pcs: %s\n' "$out"; exit 1; }
+printf 'PASS pcs runs each PC Check under Implementation Steps, unwrapping the first backtick span\n'
+sed -i '/^## Test Cases/,$d' "$PLAN"
+printf '  PC-3 — a missing file — Check: test -f src/missing.py\n  PC-4 — no check\n' >> "$PLAN"
+code=0; out=$(cd "$TMP" && "$CHECK" pcs "$PLAN") || code=$?
+[[ "$code" == 1 && "$out" == *'FAIL PC-3 (exit 1): test -f src/missing.py'* && "$out" == *'FAIL PC-4: no Check command'* ]] || { printf 'FAIL pcs failures: %s %s\n' "$code" "$out"; exit 1; }
+printf 'PASS pcs reports each failing or missing Check and exits 1\n'
+out=$(cd / && "$CHECK" pcs "$PLAN" --cwd "$TMP" PC-1)
+[[ "$out" == 'PASS PC-1: grep -q "def gate" src/gate.py' ]] || { printf 'FAIL pcs --cwd and filter: %s\n' "$out"; exit 1; }
+printf 'PASS pcs runs in --cwd and only the PCs named\n'
+bad pcs "$PLAN" PC-7
+code=0; out=$(cd "$TMP" && "$CHECK" pcs "$PLAN" PC-1 PC-7) || code=$?
+[[ "$code" == 1 && "$out" == *'FAIL PC-7: not in'* ]] || { printf 'FAIL pcs unknown ID: %s %s\n' "$code" "$out"; exit 1; }
+printf 'PASS pcs fails a named PC that is not in the plan\n'
+STDIN_PLAN="$TMP/pr2.spec.md"
+printf '# S\nStatus: planning\n## Implementation Steps\n  PC-1 — reads input — Check: `cat >/dev/null`\n  PC-2 — fails — Check: false\n' > "$STDIN_PLAN"
+code=0; out=$(cd "$TMP" && "$CHECK" pcs "$STDIN_PLAN") || code=$?
+[[ "$code" == 1 && "$out" == *'FAIL PC-2'* ]] || { printf 'FAIL pcs stdin: %s %s\n' "$code" "$out"; exit 1; }
+printf 'PASS a Check that reads its input does not swallow later PCs\n'
+[[ "$("$CHECK" pcs "$TMP/README.md")" == "PASS no PCs" ]] || { printf 'FAIL pcs without PCs\n'; exit 1; }
+printf 'PASS pcs passes a plan without PCs\n'
+bad pcs "$TMP/README.md" PC-1
+bad pcs "$PLAN" --cwd "$TMP/nowhere"
+
 printf 'All dev-check.sh tests passed.\n'

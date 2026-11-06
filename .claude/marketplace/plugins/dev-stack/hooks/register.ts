@@ -2,7 +2,7 @@ import type { Register } from 'claude-code'
 
 const STACK = '/.dotfiles/.ai-shared/bin/dev-stack.sh'
 
-type Sub = 'next' | 'stack' | 'check' | 'review' | 'stop' | 'resume'
+type Sub = 'next' | 'stack' | 'check' | 'review' | 'stop' | 'resume' | 'reopen'
 
 type Parsed = { argv: [sub: Sub, plan: string, ...rest: string[]] } | { usage: true }
 
@@ -11,7 +11,7 @@ type Command = {
   description: string
   argumentHint: string
   parse: (text: string) => Parsed
-  // A write changes the plan or the stack's stops.log. It runs only from the user's own input, and
+  // A write changes the plan or the stack's log. It runs only from the user's own input, and
   // tells the model with `note`, so a later run-stack turn knows of it. It waits for the turn to end,
   // since a running turn reads those files; a read runs mid-turn, to show progress while run-stack
   // works.
@@ -19,7 +19,7 @@ type Command = {
 }
 
 // The person at the terminal or through Remote Control; plugins, the SDK, and agents are refused,
-// since run-stack lets only the user resume a plan.
+// since run-stack lets only the user resume or reopen a plan.
 const USER_ORIGINS = new Set(['composer', 'bridge'])
 
 // The plugin shows plan paths relative to the plans root (`short` below), so one without a leading
@@ -87,7 +87,7 @@ const COMMANDS: Command[] = [
   },
   {
     name: 'dev-stack-stop',
-    description: "Record why a plan stopped in its stack's stops.log (dev-stack.sh stop)",
+    description: "Record why a plan stopped in its stack's log (dev-stack.sh stop)",
     argumentHint: '<spec file> <reason>',
     parse: text => {
       const [, plan, reason] = text.match(PLAN_THEN_REST) ?? []
@@ -102,7 +102,18 @@ const COMMANDS: Command[] = [
     parse: planOnly('resume'),
     write: {
       note: ([, plan]) =>
-        `The user cleared the stop on ${plan} with dev-stack.sh resume; for a "Failed fixes: 3/3" stop this grants three more attempts.`,
+        `The user cleared the stop on ${plan} with dev-stack.sh resume; for a "Failed fixes: 3/3" stop this grants three more attempts, and for a review round limit three more rounds.`,
+    },
+  },
+  {
+    name: 'dev-stack-reopen',
+    description:
+      'Return an approved plan, and every plan above it that is approved or later, to planning (dev-stack.sh reopen; only the user runs it)',
+    argumentHint: '<spec file>',
+    parse: planOnly('reopen'),
+    write: {
+      note: ([, plan]) =>
+        `The user reopened ${plan} with dev-stack.sh reopen: it and every plan above it that was approved or later are back in planning, to revise and review again.`,
     },
   },
 ]

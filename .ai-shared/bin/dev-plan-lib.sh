@@ -351,3 +351,124 @@ review_state() {
   elif [[ "$rec" == "$(verdict_hash "$hash" needs-changes)" ]]; then printf 'needs-changes\n'
   else printf 'stale\n'; fi
 }
+
+# ── stack log ─────────────────────────────────────────────────────────
+
+# The stack's log (../skills/dev/plan.md#changes), one event per line, which
+# only dev-stack.sh writes:
+#   pr<N>: review <verdict> (<k>/<limit>) at <spec hash>
+#   pr<N>: code-review <verdict> (<k>/<limit>) at <tip>
+#   pr<N>: approve <status> at <spec hash>
+#   pr<N>: stop <reason> at <stop key>
+#   pr<N>: cleared     the user's resume
+#   pr<N>: reopened    the user's reopen
+#   pr<N>: auto-reopened  dev-autopilot's reopen of its own approval, once per plan
+stack_log() { printf '%s/log\n' "${1%/*}"; }
+
+# Plan $1's log lines, in order, without their prefix.
+log_lines() {
+  local p dir=${1%/*}
+  p="pr$(plan_number "$1"): "
+  [[ ! -f "$dir/log" ]] || awk -v p="$p" 'index($0, p) == 1 { print substr($0, length(p) + 1) }' "$dir/log" 2>/dev/null || true
+}
+
+# What a stop record is bound to: plan $1's Status value, a verdict read as
+# planning so recording one keeps the stop, and its Tip; its spec with the
+# specs below it; and its branch's tip. Not the worktree's HEAD: a parent and
+# its only child share a worktree, and switching between them changes neither.
+# Fails when the plan cannot be hashed.
+stop_key() {
+  local hash branch tip=- status
+  hash=$(plan_hash "$1") || return 1
+  branch=$(field "$1" Branch)
+  [[ -z "$branch" ]] || tip=$(git -C "$REPO_ROOT" rev-parse --verify -q "refs/heads/$branch^{commit}" 2>/dev/null || printf -)
+  status=$(field "$1" Status)
+  [[ "$(status_rank "$status")" != 0 ]] || status=planning
+  printf '%s %s\n%s\n%s\n' "$status" "$(field "$1" Tip)" "$hash" "$tip" | git hash-object --stdin
+}
+
+# Whether stop reason $1 holds until the user's resume, through changes and
+# later stops: one citing three or more failed fixes of three
+# (../CORE.md#work), or a review round limit, which dev-stack.sh records.
+held_stop() {
+  [[ "$1" =~ (review-feature|review-code)\ round\ limit\ \([0-9]+/[0-9]+\) ]] && return 0
+  grep -oE 'Failed fixes: [0-9]+/3([^0-9]|$)' <<<"$1" | grep -qE ': 0*([3-9]|[1-9][0-9]+)/3'
+}
+
+# Plan $1's stop reasons since its last resume.
+stop_records() {
+  log_lines "$1" | awk '$0 == "cleared" || $0 == "reopened" { n = 0; next } /^stop / { rec[++n] = substr($0, 6) }
+    END { for (i = 1; i <= n; i++) print rec[i] }'
+}
+
+# Why plan $1 is stopped; empty when it is not. A held stop (held_stop)
+# recorded since the last resume holds; otherwise the last stop holds while
+# its key does, and a change or a resume ends it. Fails when the plan cannot
+# be hashed.
+stop_reason() {
+  local recs rec held="" key
+  recs=$(stop_records "$1")
+  [[ -n "$recs" ]] || return 0
+  while IFS= read -r rec; do
+    [[ "$rec" =~ ^(.+)\ at\ [0-9a-f]{40,64}$ ]] || continue
+    rec=${BASH_REMATCH[1]}
+    ! held_stop "$rec" || held=$rec
+  done <<<"$recs"
+  [[ -z "$held" ]] || { printf '%s\n' "$held"; return 0; }
+  key=$(stop_key "$1") || return 1
+  rec=$(tail -1 <<<"$recs")
+  [[ "$rec" =~ ^(.+)\ at\ ([0-9a-f]{40,64})$ && "${BASH_REMATCH[2]}" == "$key" ]] || return 0
+  printf '%s\n' "${BASH_REMATCH[1]}"
+}
+
+# Sets ROUND and LIMIT for plan $1's review kind $2, review (review-feature)
+# or code-review (review-code): the rounds recorded and the rounds allowed.
+# The limit starts at 3, round 1 and two re-reviews; a resume at the limit
+# raises it to the rounds so far plus 3. A code-review pass ends its review
+# phase, and a reopen ends the plan's review-feature phase; each starts the
+# count again.
+round_budget() {
+  read -r ROUND LIMIT < <(log_lines "$1" | awk -v kind="$2" '
+    BEGIN { k = 0; l = 3 }
+    $1 == kind { k++; if (kind == "code-review" && $2 == "pass") { k = 0; l = 3 }; next }
+    $0 == "cleared" { if (k >= l) l = k + 3; next }
+    $0 == "reopened" || $0 == "auto-reopened" { k = 0; l = 3 }
+    END { print k, l }')
+}
+
+# Who approved plan $1 since its last reopen, from its last approve line:
+# auto-approved (dev-stack.sh approve), approved (the user's), or empty.
+approval_kind() {
+  log_lines "$1" | awk '$0 == "reopened" || $0 == "auto-reopened" { a = ""; next }
+    $1 == "approve" { a = $2 } END { print a }'
+}
+
+# How many times dev-autopilot reopened plan $1.
+auto_reopens() { log_lines "$1" | grep -cx 'auto-reopened' || true; }
+
+# The spec hash plan $1 was approved at since its last reopen; empty when it
+# was not.
+approved_hash() {
+  log_lines "$1" | awk '$0 == "reopened" || $0 == "auto-reopened" { h = ""; next }
+    $1 == "approve" && match($0, / at [0-9a-f]+$/) { h = substr($0, RSTART + 4) }
+    END { if (h != "") print h }'
+}
+
+# Why plan $1 breaks the approval ratchet (../skills/dev/plan.md#changes);
+# empty when it does not: once approved, a plan's Status never returns to
+# planning and its spec, with the specs below it, never changes, until the
+# user reopens it.
+freeze_reason() {
+  local approved rank hash
+  approved=$(approved_hash "$1")
+  [[ -n "$approved" ]] || return 0
+  status_get "$1"; rank=$(status_rank "$REPLY")
+  [[ "$rank" != 4 ]] || return 0
+  if [[ "$rank" == 0 ]]; then
+    printf "it was approved at %s, but its Status is '%s'; an approved plan never returns to planning. The user reverts the change, or reopens it with dev-stack.sh reopen; where a change goes instead follows skills/dev/plan.md#changes\n" "$approved" "$REPLY"
+    return 0
+  fi
+  hash=$(plan_hash "$1") || { printf 'it was approved at %s, but a plan below it is missing or unreadable\n' "$approved"; return 0; }
+  [[ "$hash" == "$approved" ]] ||
+    printf 'its spec, or a spec below it, changed since its approval at %s; an approved plan is frozen. The user reverts the change, or reopens it with dev-stack.sh reopen (skills/dev/plan.md#changes)\n' "$approved"
+}

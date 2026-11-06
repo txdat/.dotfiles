@@ -4,7 +4,7 @@ The shared contract for application plans. Phase skills say how to do each phase
 
 ## Scope
 
-The workflow applies when the user invokes a phase: design-feature, review-feature, execute-feature, review-code, or create-pr, or [run-stack](run-stack.md), which runs review-feature through create-pr, or [autopilot](autopilot.md), for the changes it routes plan-backed. It governs application code and developer tooling other than this dev flow, with their tests, including refactors. Docs, declarative config, and this dev flow — its skills and its [scripts](../../bin) with their tests — take the direct-edit path under [CORE.md — Work](../../CORE.md#work), even inside plan work; mixed changes follow the workflow for their governed part.
+The workflow applies when the user invokes a phase: design-feature, review-feature, execute-feature, review-code, or create-pr, or [run-stack](run-stack.md), which runs review-feature through create-pr, or [autopilot](autopilot.md), for the changes it routes plan-backed. It governs application code and developer tooling other than this dev flow, with their tests, including refactors. Docs, declarative config, and this dev flow — its skills and its [scripts](../../bin) with their tests — take the direct-edit path under [CORE.md — Work](../../CORE.md#work), even inside plan work, except a `Type: config` plan: declarative config that the repository requires in its own PR within a stack. Mixed changes follow the workflow for their governed part.
 
 ## Sequence
 
@@ -12,7 +12,7 @@ The workflow applies when the user invokes a phase: design-feature, review-featu
 
 | Status | Set by |
 |---|---|
-| `planning` | design-feature, or any revision |
+| `planning` | design-feature, a revision before approval, the user's `dev-stack.sh reopen`, or autopilot's `dev-stack.sh auto-reopen` |
 | `needs-changes`, `ready` | review-feature's verdict, recorded with `Spec:` |
 | `approved` | the user only, from `ready` |
 | `auto-approved` | `dev-stack.sh approve`, from `ready`, under run-stack `--auto-approve`, which only autopilot passes; gates treat it as `approved` |
@@ -20,7 +20,7 @@ The workflow applies when the user invokes a phase: design-feature, review-featu
 | `reviewed` | review-code, with `Tip:` set to the tip it passed |
 | `published` | create-pr's cleanup |
 
-A gate blocks each phase until its entry status holds. No phase resumes or edits a published plan.
+A gate blocks each phase until its entry status holds, and blocks every gated phase on a stopped plan ([run-stack.md](run-stack.md)) or a frozen one ([Changes](#changes)). No phase resumes or edits a published plan.
 
 ## Artifact
 
@@ -37,7 +37,7 @@ Write these lines unfenced in the plan:
 Status: planning
 Spec: -
 Tip: -
-Type: feature|fix|refactor
+Type: feature|fix|refactor|config
 Base: <branch>
 Branch: <branch>
 Issue: #N|none
@@ -72,19 +72,21 @@ IDs are `AC`, `TC`, `ST`, `PC`, and `DD`, numbered from 1, never renumbered or r
 
 ## Changes
 
-After approval only `Status:` and `Tip:` change; everything else in the plan is frozen. To approve, the user changes `ready` to `approved` and leaves `Spec:` as it is; only autopilot, through run-stack `--auto-approve`, runs `dev-stack.sh approve`, which sets `auto-approved`. run-stack records its stops in the stack directory's `stops.log`. Execution decides only details that are not design choices, such as names and internal structure.
+After approval only `Status:` and `Tip:` change, and `Status:` never returns below `approved` until the user's `dev-stack.sh reopen`, or for an `auto-approved` plan autopilot's `auto-reopen`: the spec is frozen. To approve, the user changes `ready` to `approved` and leaves `Spec:` as it is; only autopilot, through run-stack `--auto-approve`, runs `dev-stack.sh approve`, which sets `auto-approved`. Execution decides only details that are not design choices, such as names and internal structure.
 
-Anything else stops the affected work: a failed PC, an unmeetable fixture or obligation, a step that cannot be followed, a different PR split, or new scope. Bring the user options, tradeoffs, and a recommendation. If the user, or autopilot under [autopilot.md — Decisions](autopilot.md#decisions), chooses to revise: set `planning`, revise, re-review, and wait for approval again. The worktree stays.
+[dev-stack.sh](../../bin/dev-stack.sh) records each verdict, approval, and stop, the user's `resume` and `reopen`, and autopilot's `auto-reopen`, in the stack directory's `log`; only dev-stack.sh writes it. It binds each approval to the spec hash approved, including the user's, which `next` and `check` record. The gates and `next` block a plan whose spec, or a spec below it, changed since its approval, or whose Status went back below `approved`. The user lifts that by reverting the change, or with `dev-stack.sh reopen <plan>`, which returns the plan and every plan above it that is approved or later to `planning` and clears their stops. A plan is unapproved when its Status is below `approved` and it has no approval since its last reopen. Where installed ([claude.md](../../references/claude.md)), a hook refuses an agent's edit that sets `approved`, moves an unapproved plan to `approved` or later other than through `dev-stack.sh approve`, returns an approved plan below `approved` other than through `dev-stack.sh auto-reopen`, changes a frozen plan's spec, moves or deletes it, changes a published plan, or moves or deletes a plan the log still names, and an agent's `resume`, `reopen`, or write to the log. It refuses an edit tool's edit before it lands, and after a shell command restores the plans and log of the current repository that the command changed that way. It catches mistakes and shortcuts, not an agent set on evading it: a background job that changes plans after its call returns goes unchecked, and a change the user makes to the same repository's plans while a shell command runs is restored, so the user makes it again.
+
+Anything else stops the affected work: a failed PC, an AC or TC that cannot be met, a step that cannot be followed, a different PR split, or new scope. Bring the user options, tradeoffs, and a recommendation; under autopilot, [autopilot.md — Decisions](autopilot.md#decisions) decides instead. An unapproved plan is revised: set `planning`, revise, and re-review. An agent never reopens an approved plan; only the user does, except that autopilot runs `dev-stack.sh auto-reopen` once per plan on a plan whose approval, and that of every approved plan above it, is `auto-approved`, never past a round limit or a `Failed fixes: 3/3` stop ([autopilot.md — Decisions](autopilot.md#decisions)). `auto-reopen` returns plans to `planning` as `reopen` does but clears no stop: the Status change ends an ordinary stop, and it refuses a held one. For an approved plan, the main agent, once the user decides, or autopilot under its Decisions, puts new scope, a changed behavior, or a contract the plans above need into an unapproved plan above it, a new plan stacked on it, or one inserted above it when every plan above it is unapproved, has no existing Branch, and has no worktree ([Stacks](#stacks)), and the plan's own Branch gets code and test fixes until it meets its ACs, TCs, and Goal as written. On an approved plan, a failed PC, a contract it needs from below, or an AC, TC, or step that cannot be met or followed as written stops the plan for the user, who decides whether to reopen it; under autopilot, [autopilot.md — Decisions](autopilot.md#decisions) decides first. The worktree stays.
 
 ## Stacks
 
 When a goal needs several PRs, each gets its own plan, and the plans form a stack in one directory that shares the issue. Every plan but the root, the lowest-numbered, stacks on one parent; a parent may carry several children. A plan's parent, the parent's parent, and so on are the plans below it. Two plans neither of which is below the other change disjoint files; when they cannot, stack one on the other. A contract between plans belongs to the plan that provides it, in its Design Decisions or a contract file it ships, proven by its ACs and TCs.
 
-A child is designed against the specs below it as if implemented. It cites none of their IDs: it restates each contract fact it relies on as a PC. It uses the parent's Base. Its review requires the parent `approved` or later; its execution and code review require it `reviewed`. Its integration TCs exercise the real code below it; mocks of the contract do not prove integration.
+A child is designed against the specs below it as if implemented. It cites none of their IDs: it restates each contract fact it relies on as a PC, whose Check greps the providing plan's spec, by its absolute path, for the exact name relied on, such as a field or symbol, so a mismatched name fails before review. It uses the parent's Base. Its review requires the parent `approved` or later; its execution and code review require it `reviewed`. Its integration TCs exercise the real code below it; mocks of the contract do not prove integration.
 
 The stack publishes at once as the last step: when every plan in it is `reviewed`, create-pr runs once, on the root, and publishes every plan. A published plan never becomes a parent; later work waits for the stack to merge and starts a new stack directory on Base.
 
-Whoever revises a plan returns every plan above it to `planning` when the contract changes. Only the user drops a plan, and only while it is `planning` and its Branch does not exist; a plan executed once is revised instead. Delete its file. Each of its children returns to `planning` and stacks on the dropped plan's parent; when the root was dropped, its lowest-numbered child becomes the root by deleting its `Stacks On:` line, and the other children stack on it.
+The user, or autopilot, may split, merge, insert, or drop unapproved plans ([Changes](#changes)) whose Branch does not exist, that have no worktree, and that are not stopped; a plan executed once is revised instead, an approved plan stays as it is, and a stopped plan waits until its stop ends ([run-stack.md](run-stack.md)). The main agent removes a plan only through `drop`, which relabels its log lines. The main agent runs [dev-stack.sh](../../bin/dev-stack.sh) `renumber` and `drop`; the planner writes or folds the plans. `renumber <root plan> <old>=<new> ...` renames plans with the `Stacks On:` lines and log lines naming them, keeping each parent's number below its children's. `drop <plan>` deletes a plan and stacks its children on its parent; for the root, its lowest-numbered child becomes the root and the others stack on it. To split or insert, renumber the plans above the new one, write it, and stack the plan above it on it; to merge, fold one plan into the other, then drop it. Repoint every contract PC path that names a moved or dropped plan. Each reshaped plan returns to review-feature, since its spec changed.
 
 ## Worktree
 
@@ -100,7 +102,9 @@ A plan's worktree is found, never recorded: its own at `~/work/wt/<repo>-<issue>
 
 ## Review
 
-When this session wrote the artifact, run the review in a fresh subagent without the conversation: the [dev-reviewer](../../agents/dev-reviewer.md) agent where installed, on the model and effort [README](../../README.md#skills) gives the review skill. Give it only [CODING.md](../../CODING.md), the review skill and the files it links, the artifact path, the user's request, the worktree and refs it needs, and, for a re-review, the prior findings and what changed. A review-code reviewer outside a review-only request also gets its round's scratch path. A stacked plan's reviewer also reads the plans below it. If no subagent is available, review directly and say so.
+When this session wrote the artifact, run the review in a subagent that has not seen the conversation: the [dev-reviewer](../../agents/dev-reviewer.md) agent where installed, on the model and effort [README](../../README.md#skills) gives the review skill. Give it only [CODING.md](../../CODING.md), the review skill and the files it links, the artifact path, the user's request, the worktree and refs it needs, and, for a re-review, the prior findings and the diff of the repair. A review-code reviewer outside a review-only request also gets its round's scratch path. A stacked plan's reviewer also reads the plans below it. If no subagent is available, review directly and say so.
+
+The main agent keeps one reviewer for a stack's review-feature rounds, plans in dependency order, and one per plan for its review-code rounds, and sends each next plan or round to it through the harness's message or resume tool. It starts a fresh reviewer, given the same inputs, where the harness has no such tool, the reviewer's context is full, or another plan's review is still running in it.
 
 Preferences and style never block. The reviewer may read, run tests, and inspect Git. It edits files only in its review-code round's scratch and under `/tmp`, never inside a linked dependency, and never commits, touches refs, the stash, or status, or installs dependencies. The main agent repairs. A review-only request gets no scratch, returns findings, and changes nothing.
 
@@ -108,7 +112,9 @@ Outside a review-only request, each review-code round runs in a scratch from [de
 
 A verdict holds while the spec and the specs below it are unchanged: the spec hash ignores only the header's Status, Spec, and Tip lines, and [dev-stack.sh](../../bin/dev-stack.sh) compares it with `Spec:`. The execute-feature, review-code, and create-pr gates require a current ready `Spec:`; create-pr requires one for every plan in the stack.
 
-Round 1 covers the whole artifact. A re-review covers the prior findings and what the repair changed. After two re-reviews in one review phase, stop and report the remaining blockers; the user decides whether to narrow, decide, or grant more rounds.
+Round 1 covers the whole artifact. A re-review is a delta review: it checks the prior findings, the changed text, what cites or depends on it, and the PC Checks of changed PCs, and, in review-code, the repair diff with the TC and affected tests at the new tip, and nothing else.
+
+[dev-stack.sh](../../bin/dev-stack.sh) counts the rounds in the stack's log: the main agent records each review-feature verdict with `review <plan> ready|needs-changes` and each review-code verdict with `code-review <plan> pass|needs-changes`, which print the round as `<k>/<limit>`. The limit is 3, round 1 and two re-reviews. A needs-changes verdict on round `<limit>` stops the plan until the user runs `dev-stack.sh resume`, which at the limit grants three more rounds, so the count goes on as `4/6`. A review-code pass ends its review phase, and the next one counts from 1; a `reopen` or `auto-reopen` restarts both counts. A ready verdict does not reset the count: when the spec changes after it, the next review continues the count, so a plan ready at `3/3` is re-reviewed at `4/3`, where a needs-changes verdict stops it.
 
 ## Verification
 
@@ -124,6 +130,7 @@ Rules:
 - Restructuring test code must keep each scenario's distinguishing conditions and expected result.
 - Assertions must tell the required result from a plausible wrong one. Snapshots, mock-call checks, and mocked adapters standing in for queries or transactions are weak evidence.
 - At the plan's tip, run the project's local checks (lint, build, whatever CI runs), its TC tests, and affected existing tests.
+- A `Type: config` plan skips RED and its commit: its TCs are checks of the config, such as schema validation or a lookup of each key, run at the tip. The gate requires only a commit of its own.
 
 ## Git identity
 

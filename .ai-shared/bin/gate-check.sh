@@ -5,6 +5,12 @@
 # call (arguments in tool_input.args; the Pi extension sends
 # tool_input.arguments), and UserPromptSubmit for a user-typed /dev-<skill>.
 #
+# Claude Code also runs it before Bash, Edit, Write, and MultiEdit calls
+# (record_guard below) and after Bash calls (bash_post_check), which never
+# invoke a phase: it refuses the user's commands, writes to the stack log,
+# approvals, and changes to a frozen plan. It is a guardrail against an
+# agent's mistakes and shortcuts, not a sandbox (bash_post_check).
+#
 # Only review-feature, execute-feature, review-code, and create-pr are gated.
 # Each checks its entry status; review-feature and review-code also check the
 # plan's ID shape (id_report), every gate but review-feature a current ready
@@ -40,6 +46,8 @@ fi
 # UserPromptSubmit runs on every prompt, so a missing prerequisite blocks only
 # input that could invoke a dev skill.
 if ! command -v jq >/dev/null 2>&1; then
+  # The record guard fails open without jq: it never gates a phase.
+  [[ ! "$HOOK_INPUT" =~ \"tool_name\"[[:space:]]*:[[:space:]]*\"(Bash|Edit|Write|MultiEdit)\" ]] || exit 0
   if [[ "$HOOK_INPUT" == *'"UserPromptSubmit"'* ]]; then
     [[ "$HOOK_INPUT" =~ \"prompt\"[[:space:]]*:[[:space:]]*\"[[:space:]]*/[Dd][Ee][Vv][-:] ]] || exit 0
   else
@@ -48,6 +56,300 @@ if ! command -v jq >/dev/null 2>&1; then
   printf '{"continue":false,"stopReason":"gate-check.sh requires jq to parse hook input.","decision":"block","reason":"gate-check.sh requires jq to parse hook input."}\n'
   exit 0
 fi
+
+block() {
+  jq -cn --arg reason "$1" '{continue:false, stopReason:$reason, decision:"block", reason:$reason}'
+  exit 0
+}
+
+# ── record guard ──────────────────────────────────────────────────────
+
+# What plan.md keeps from agents (skills/dev/plan.md#changes): resume and
+# reopen are the user's, only dev-stack.sh writes the stack log, only the
+# user sets `approved` and only dev-stack.sh approve `auto-approved` (no
+# unapproved plan reaches a later Status otherwise), and an approved plan's
+# Status never returns to planning nor its spec changes. An
+# edit tool's call is simulated and refused before it lands. A shell command
+# is matched as text only for resume, reopen, and log writes; its plan writes
+# are judged after it runs, against a snapshot. Anything it cannot read
+# passes: it never gates a phase.
+record_guard() {
+  local tool="$1" cmd probe path plans_root real dir repo old_status new_status old_rank new_rank
+  plans_root=$(realpath -m -- "${AI_PLANS_ROOT:-$HOME/work/plans}")
+  if [[ "$tool" == Bash ]]; then
+    cmd=$(jq -r '.tool_input.command? // ""' <<<"$HOOK_INPUT" 2>/dev/null) || return 0
+    # dev-stack.sh resume or reopen in command position: at the start, after a
+    # separator or newline, or after a runner such as bash or env. A mention
+    # inside an argument, such as a grep pattern or a message, passes.
+    local user_re="(^|[;&|(]|"$'\n'")[[:space:]]*((bash|sh|exec|env|command|sudo|time|nohup)[[:space:]]+|[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*['\"]?[^[:space:];&|'\"]*dev-stack(\\.sh)?['\"]?[[:space:]]+(resume|reopen)([^A-Za-z0-9_-]|\$)"
+    # A stack log path under the plans root, named by the root's own name
+    # (a worktree's log/ directory is not one), and a write to it: a
+    # redirection into it, or a writing tool anywhere in the command.
+    local root_name log_path log_re redir_re write_re
+    root_name=$(sed 's/[][\.*^$+?(){}|/]/\\&/g' <<<"${plans_root##*/}")
+    # Either under the root, or relative from a word's start (cd'd into the
+    # plans root or a repository's plans); never followed by "/", as a log/
+    # directory is.
+    log_path="$root_name/[^/[:space:]'\"]+/[0-9]+_[a-z0-9-]+/log"
+    local rel_path="((\\.\\./)*|\\./)?([^/[:space:]'\"]+/)?[0-9]+_[a-z0-9-]+/log" end="([^A-Za-z0-9_./-]|\$)"
+    log_re="$log_path$end|(^|[[:space:]'\"=<>])$rel_path$end"
+    redir_re="[0-9]*(>>?\|?|>&|&>>?)[[:space:]]*['\"]?([^[:space:]'\"]*$log_path|$rel_path)$end"
+    write_re='(^|[^A-Za-z0-9_-])(tee|rm|mv|cp|truncate|dd|install|ln|perl|python3?|ruby|node)([[:space:]]|$)|sed[[:space:]]+(-[A-Za-z]+[[:space:]]+)*-[A-Za-z]*i|sed[[:space:]].*--in-place'
+    if [[ "$cmd" =~ $user_re ]]; then
+      local verb=resume
+      [[ "${BASH_REMATCH[0]}" != *reopen* ]] || verb=reopen
+      block "dev-stack.sh $verb is the user's alone: it clears a stop, grants more rounds or fix attempts, or reopens an approved plan. Report the stop and what the user would decide (skills/dev/run-stack.md)."
+    fi
+    # Redirections to /dev/null or another descriptor write nothing.
+    probe=$(sed -E 's#[0-9]*>>?[[:space:]]*/dev/null##g; s#[0-9]*>&[0-9-]##g' <<<"$cmd")
+    if [[ "$probe" =~ $redir_re ]] || [[ "$probe" =~ $log_re && "$probe" =~ $write_re ]]; then
+      block "The stack log is written only by dev-stack.sh (review, code-review, approve, stop, and autopilot's auto-reopen; resume and reopen are the user's). Read it, never write it (skills/dev/plan.md#changes)."
+    fi
+    # Plan writes by a shell command are judged after it runs, against this
+    # snapshot (bash_post_check): exactly, with no parsing of the command.
+    snapshot_plans "$plans_root"
+    return 0
+  fi
+  path=$(jq -r '.tool_input.file_path? // ""' <<<"$HOOK_INPUT" 2>/dev/null) || return 0
+  [[ -n "$path" ]] || return 0
+  real=$(realpath -m -- "$path" 2>/dev/null) || return 0
+  [[ "$real" == "$plans_root"/* ]] || return 0
+  dir=${real%/*}
+  [[ "${dir#"$plans_root"/}" =~ ^[^/]+/[0-9]+_[a-z0-9-]+$ ]] || return 0
+  case "${real##*/}" in
+    log) block "The stack log is written only by dev-stack.sh (review, code-review, approve, stop, and autopilot's auto-reopen; resume and reopen are the user's). Read it, never write it (skills/dev/plan.md#changes)." ;;
+    pr[1-9]*.spec.md) ;;
+    *) return 0 ;;
+  esac
+  # The plan library resolves plans under REPO_ROOT's name; any path with the
+  # plan's <repo> as its last part serves, since no Git call follows.
+  repo=${dir#"$plans_root"/}; repo=${repo%%/*}
+  REPO_ROOT="/$repo"
+  . "$GATE_DIR/dev-plan-lib.sh" || return 0
+  # The plan's text after the call: Write's content, or Edit's and
+  # MultiEdit's replacements applied as literal strings to the current file.
+  GUARD_TMP=$(mktemp) || return 0
+  trap 'rm -f -- "$GUARD_TMP"' EXIT
+  local new=$GUARD_TMP
+  if [[ "$tool" == Write ]]; then
+    jq -j '.tool_input.content? // ""' <<<"$HOOK_INPUT" > "$new" 2>/dev/null || return 0
+  else
+    [[ -f "$real" ]] || return 0
+    jq -j --rawfile f "$real" '
+      def apply($e): (split($e.old_string // "")) as $p
+        | if ($e.old_string // "") == "" or ($p | length) < 2 then error("no match")
+          elif $e.replace_all then $p | join($e.new_string // "")
+          else $p[0] + ($e.new_string // "") + ($p[1:] | join($e.old_string)) end;
+      .tool_input as $t
+      | reduce (if $t.edits then $t.edits[] else $t end) as $e ($f; apply($e))' <<<"$HOOK_INPUT" > "$new" 2>/dev/null || return 0
+  fi
+  load_plans "$new"
+  # Raw Status values: a reviewed plan whose Tip comes later ranks reviewed.
+  field_get "$new" Status; new_status=$REPLY
+  old_status=""
+  if [[ -f "$real" ]]; then field_get "$real" Status; old_status=$REPLY; fi
+  [[ "$old_status" != published ]] ||
+    block "Plan $real is published; no phase resumes or edits it (skills/dev/plan.md#sequence)."
+  if [[ "$new_status" == approved && "$old_status" != approved ]]; then
+    block "Only the user sets 'Status: approved' (skills/dev/plan.md#sequence). Under dev-autopilot, run-stack --auto-approve runs dev-stack.sh approve, which sets auto-approved."
+  fi
+  if [[ "$new_status" == auto-approved && "$old_status" != auto-approved ]]; then
+    block "Only dev-stack.sh approve sets 'Status: auto-approved', under run-stack --auto-approve (skills/dev/plan.md#sequence)."
+  fi
+  old_rank=$(status_rank "$old_status"); new_rank=$(status_rank "$new_status")
+  if [[ -z "$old_rank" || "$old_rank" == 0 ]] && { [[ ! -f "$real" ]] || [[ -z "$(approved_hash "$real")" ]]; }; then
+    [[ -z "$new_rank" || "$new_rank" == 0 ]] ||
+      block "Plan $real is '${old_status:-new}'; it reaches '$new_status' only through approval: the user's 'Status: approved' or dev-stack.sh approve (skills/dev/plan.md#sequence)."
+    return 0
+  fi
+  [[ -n "$new_rank" && "$new_rank" != 0 ]] ||
+    block "Plan $real is '$old_status'; an approved plan's Status never returns to planning or to an unknown value. Leave it as it is: a change goes where skills/dev/plan.md#changes says, or the user reopens it with dev-stack.sh reopen."
+  spec_get "$real"; local before=$REPLY
+  spec_get "$new"
+  [[ "$REPLY" == "$before" ]] ||
+    block "Plan $real is '$old_status' and frozen: after approval only its Status and Tip lines change. Leave it as it is: a change goes where skills/dev/plan.md#changes says, or the user reopens it with dev-stack.sh reopen."
+  return 0
+}
+
+# A Bash call's snapshot directory, keyed by its tool_use_id. Fails without
+# one: a key shared by parallel calls would let one call's check delete or
+# replace another's snapshot. The parent directory must be the user's own.
+snap_dir() {
+  local id base
+  id=$(jq -r '.tool_use_id? // ""' <<<"$HOOK_INPUT" 2>/dev/null) || return 1
+  id=${id//[^A-Za-z0-9_-]/}
+  [[ -n "$id" ]] || return 1
+  base="${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}/dev-gate-check-$(id -u)"
+  mkdir -p -m 700 -- "$base" 2>/dev/null || return 1
+  [[ -O "$base" && ! -L "$base" ]] || return 1
+  chmod 700 -- "$base" 2>/dev/null || return 1
+  printf '%s/%s\n' "$base" "$id"
+}
+
+# The plans of the repository the hook input's cwd belongs to, as a path
+# under the plans root (its main root's name, as dev-plan-lib.sh names it),
+# or "." for the whole root when cwd resolves to no repository.
+snap_scope() {
+  local cwd main
+  cwd=$(jq -r '.cwd? // ""' <<<"$HOOK_INPUT" 2>/dev/null) || cwd=""
+  [[ -d "$cwd" ]] || cwd=$PWD
+  main=$(cd -- "$cwd" && bash "$GATE_DIR/dev-utils.sh" main-root 2>/dev/null) || { echo .; return; }
+  printf '%s\n' "${main##*/}"
+}
+
+# Plan specs and stack logs under directory $1, relative to it, one per line.
+# Follows symlinks, so a stack directory linked elsewhere is still covered.
+plan_files() {
+  (cd -- "$1" 2>/dev/null && find -L . -mindepth "$2" -maxdepth "$2" -type f \( -name 'pr[1-9]*.spec.md' -o -name log \) 2>/dev/null) | sed 's#^\./##'
+}
+
+# Before a Bash call: copies every plan spec and stack log of the cwd's
+# repository (snap_scope) under plans root $1. A file it cannot read is
+# skipped, and the check after treats it as new. Snapshots older than a day,
+# left by calls that never finished, go.
+snapshot_plans() {
+  local root=$1 snap scope depth
+  [[ -d "$root" ]] || return 0
+  snap=$(snap_dir) || return 0
+  find "${snap%/*}" -mindepth 1 -maxdepth 1 -mmin +1440 -exec rm -rf -- {} + 2>/dev/null || true
+  rm -rf -- "$snap"; mkdir -m 700 -- "$snap" 2>/dev/null || return 0
+  scope=$(snap_scope); depth=2; [[ "$scope" != . ]] || depth=3
+  printf '%s\n' "$scope" > "$snap/.scope"
+  mkdir -p -- "$snap/files"
+  [[ ! -d "$root/$scope" ]] || plan_files "$root/$scope" "$depth" | tr '\n' '\0' |
+    (cd -- "$root/$scope" && xargs -0 -r cp -L --parents -p -t "$snap/files" 2>/dev/null) || true
+  : > "$snap/.complete"
+}
+
+# Plan $1's count of log lines matching the extended regex $2.
+log_count() { log_lines "$1" | grep -cE "$2" || true; }
+# File $1's count of lines matching the extended regex $2; 0 when missing.
+line_count() { [[ -f "$1" ]] || { echo 0; return; }; grep -cE "$2" -- "$1" || true; }
+
+# Restores $2 from snapshot copy $1, replacing whatever stands at $2 (a
+# symlink, a hard link, a directory, an unwritable file) with a new file.
+restore_file() {
+  mkdir -p -- "${2%/*}" && rm -rf -- "$2" && cp -p -- "$1" "$2"
+}
+
+# After a Bash call: compares the cwd repository's plans with the snapshot
+# and restores any change only dev-stack.sh or the user may make: a frozen
+# or published plan changed, moved, or deleted, an approved plan back below
+# approved, a plan moved or deleted while the stack log holds its lines, an
+# unapproved plan moved to approved or later except by
+# dev-stack.sh approve, an approved plan back to planning except by
+# dev-stack.sh auto-reopen, or a stack log that lost a stop, review, or
+# auto-reopen line, or gained a resume or reopen. It catches an agent's mistakes and shortcuts,
+# not an agent set on evading it: a command still running after the call
+# returns (a background job) is never compared, a forged log line it cannot
+# tell from dev-stack.sh's, and a change the user makes during the call to
+# the same repository's plans is restored as the agent's.
+bash_post_check() {
+  local root=$1 snap scope base depth rel old new os ns or nr ob frozen why msgs=() logs=() f lib=""
+  snap=$(snap_dir) || return 0
+  [[ -f "$snap/.complete" ]] || return 0
+  GUARD_TMP=$snap
+  trap 'rm -rf -- "$GUARD_TMP"' EXIT
+  scope=$(<"$snap/.scope"); depth=2; [[ "$scope" != . ]] || depth=3
+  base="$root/$scope"
+  # Stack logs first: a lost stop or review line acts as the user's resume,
+  # and a resume or reopen line is the user's alone (refused before the call).
+  while IFS= read -r rel; do
+    [[ "$rel" == */log ]] || continue
+    old="$snap/files/$rel"; new="$base/$rel"
+    why=""
+    if (( $(line_count "$new" ': (cleared|reopened)$') > $(line_count "$old" ': (cleared|reopened)$') )); then
+      why="it gained a resume or reopen line, which only the user's dev-stack.sh writes"
+    else
+      for f in ': stop ' ': review ' ': code-review ' ': approve ' ': auto-reopened$'; do
+        (( $(line_count "$new" "$f") >= $(line_count "$old" "$f") )) || { why="it lost a line only dev-stack.sh writes"; break; }
+      done
+    fi
+    [[ -n "$why" ]] || continue
+    if [[ ! -f "$old" ]]; then
+      if rm -f -- "$new"; then msgs+=("$new: $why. Removed: it did not exist before the command.")
+      else msgs+=("$new: $why. Could not remove it; tell the user."); fi
+    elif restore_file "$old" "$new"; then msgs+=("$new: $why. Restored from before the command.")
+    else msgs+=("$new: $why. Could not restore it; tell the user."); fi
+  done < <({ plan_files "$snap/files" "$depth"; plan_files "$base" "$depth"; } | sort -u)
+  while IFS= read -r rel; do
+    old="$snap/files/$rel"; new="$base/$rel"
+    [[ ! -f "$old" || ! -f "$new" ]] || ! cmp -s -- "$old" "$new" || continue
+    # The plan library resolves plans under REPO_ROOT's name.
+    f=$scope; [[ "$f" != . ]] || f=${rel%%/*}
+    if [[ "$lib" != "$f" ]]; then
+      REPO_ROOT="/$f"; lib=$f
+      . "$GATE_DIR/dev-plan-lib.sh" || return 0
+    fi
+    os="" ns="" or="" nr="" ob="" frozen="" why=""
+    # load_plans reads only files that exist: awk stops at a missing one.
+    [[ ! -f "$old" ]] || load_plans "$old"
+    [[ ! -f "$new" ]] || load_plans "$new"
+    # Raw Status values: a reviewed plan whose Tip comes later ranks reviewed.
+    if [[ -f "$old" ]]; then
+      field_get "$old" Status; os=$REPLY; or=$(status_rank "$os")
+      spec_get "$old"; ob=$REPLY
+      if [[ "$os" == published ]] || { [[ -n "$or" ]] && (( or >= 1 )); } || [[ -n "$(approved_hash "$old")" ]]; then frozen=1; fi
+    fi
+    if [[ -f "$new" ]]; then field_get "$new" Status; ns=$REPLY; nr=$(status_rank "$ns"); fi
+    if [[ -n "$frozen" ]]; then
+      spec_get "$new"
+      if [[ ! -f "$new" ]]; then why="it is '$os' and was moved or deleted"
+      elif [[ "$os" == published ]]; then why="it is published and changed"
+      elif [[ "$REPLY" != "$ob" ]]; then why="it is '$os' and its spec changed; after approval only its Status and Tip lines change"
+      elif [[ -z "$nr" || "$nr" == 0 ]]; then
+        # dev-stack.sh auto-reopen's step: an approval of its own, never
+        # auto-reopened before, back to planning with an auto-reopened line.
+        [[ "$ns" == planning && "$os" != approved && "$(approval_kind "$old")" == auto-approved ]] &&
+          (( $(auto_reopens "$old") == 0 && $(auto_reopens "$new") == 1 )) ||
+          why="it is '$os' and its Status went to '$ns'; an approved plan never returns below approved"
+      fi
+    elif [[ ! -f "$new" ]]; then
+      # A plan removed with its log lines left would hand its rounds and stops
+      # to the next plan written at its number; dev-stack.sh renumber and drop
+      # relabel them.
+      f=${rel##*/}; f=${f%.spec.md}
+      (( $(line_count "${new%/*}/log" "^$f: ") == 0 )) ||
+        why="it was moved or deleted while the stack log still holds its lines; dev-stack.sh renumber moves a plan and drop removes one"
+    elif [[ -n "$nr" ]] && (( nr >= 1 )); then
+      # Unapproved (or new) and now approved or later: only dev-stack.sh
+      # approve's step, from ready to auto-approved at the plan's hash, passes.
+      if [[ "$ns" == approved ]]; then why="its Status was set to approved, which only the user sets"
+      elif [[ "$ns" != auto-approved ]]; then why="its Status went from '${os:-none}' to '$ns', skipping approval"
+      elif [[ "$os" != ready ]] ||
+        (( $(log_count "$new" '^approve auto-approved at ') <= $(log_count "$old" '^approve auto-approved at ') )) ||
+        [[ "$(log_lines "$new" | grep -E '^approve auto-approved at ' | tail -n 1)" != "approve auto-approved at $(plan_hash "$new" 2>/dev/null || true)" ]]; then
+        why="its Status was set to auto-approved, which only dev-stack.sh approve sets, from ready"
+      fi
+    fi
+    [[ -n "$why" ]] || continue
+    if [[ -f "$old" ]]; then
+      if restore_file "$old" "$new"; then msgs+=("$new: $why. Restored from before the command.")
+      else msgs+=("$new: $why. Could not restore it; tell the user."); fi
+    elif set_header "$new" Status planning 2>/dev/null; then msgs+=("$new: $why. Set to 'Status: planning'.")
+    else msgs+=("$new: $why. Could not set it to planning; tell the user."); fi
+  done < <({ plan_files "$snap/files" "$depth"; plan_files "$base" "$depth"; } | grep -E '(^|/)pr[1-9][0-9]*\.spec\.md$' | sort -u)
+  # A symlink or hard link to a plan file or stack directory lets an edit
+  # tool change a plan through a path outside the plans root: each gets its
+  # own copy again.
+  while IFS= read -r f; do
+    [[ -L "$base/$f" || ( -f "$base/$f" && "$(stat -c %h -- "$base/$f")" -gt 1 ) ]] || continue
+    { cp -rpL -- "$base/$f" "$base/$f.gate.$$" && rm -rf -- "$base/$f" && mv -- "$base/$f.gate.$$" "$base/$f"; } 2>/dev/null ||
+      { rm -rf -- "$base/$f.gate.$$"; msgs+=("$base/$f: a link to a plan that could not be replaced with a copy; tell the user."); }
+  done < <(cd -- "$base" 2>/dev/null && find -L . -mindepth $((depth - 1)) -maxdepth "$depth" \( -type d -path './*' -name '[0-9]*_*' -o -type f \( -name 'pr[1-9]*.spec.md' -o -name log \) \) 2>/dev/null | sed 's#^\./##' | sort -r)
+  (( ${#msgs[@]} )) || return 0
+  jq -cn --arg r "$(printf 'A shell command changed plans in a way only dev-stack.sh or the user may (skills/dev/plan.md#changes):\n%s\nChange Status and Tip with the Edit tool; any other change goes where skills/dev/plan.md#changes says, or the user reopens the plan with dev-stack.sh reopen.' "$(printf -- '- %s\n' "${msgs[@]}")")" '{decision:"block", reason:$r}'
+}
+
+TOOL_NAME=$(jq -r '.tool_name? // ""' <<<"$HOOK_INPUT" 2>/dev/null || true)
+if [[ "$TOOL_NAME" == Bash && "$(jq -r '.hook_event_name? // ""' <<<"$HOOK_INPUT" 2>/dev/null)" == PostToolUse* ]]; then
+  GATE_DIR=$(dirname -- "$(realpath -- "${BASH_SOURCE[0]}")")
+  bash_post_check "$(realpath -m -- "${AI_PLANS_ROOT:-$HOME/work/plans}")"
+  exit 0
+fi
+case "$TOOL_NAME" in
+  Bash|Edit|Write|MultiEdit) GATE_DIR=$(dirname -- "$(realpath -- "${BASH_SOURCE[0]}")"); record_guard "$TOOL_NAME"; exit 0 ;;
+esac
 
 DEV_SKILL_SLUG_RE='create-issue|create-pr|design-feature|design-infra|design-system|execute-feature|explore|fix-bug|review-code|review-feature|review-infra|review-system'
 
@@ -92,11 +394,6 @@ case "$SKILL_SLUG" in
   # Everything else is ungated and runs outside a Git repository too.
   *) exit 0 ;;
 esac
-
-block() {
-  jq -cn --arg reason "$1" '{continue:false, stopReason:$reason, decision:"block", reason:$reason}'
-  exit 0
-}
 
 # A gated phase fails closed: a crash or unexpected error prints no verdict,
 # which the hook would take as a pass.
@@ -144,7 +441,14 @@ load_plan() {
   # Before anything else: a published record ends delivery.
   [[ "$STATUS" != published ]] ||
     block "Plan $PLAN is published; no phase resumes it. For follow-up work, start a new stack in a new directory with design-feature."
-  local wt
+  local wt reason
+  reason=$(freeze_reason "$PLAN")
+  [[ -z "$reason" ]] || block "Plan $PLAN is frozen: $reason."
+  # design-feature's stack check runs on plans run-stack may hold stopped.
+  if (( ! DESIGN_CHECK )); then
+    reason=$(stop_reason "$PLAN") || block "Cannot hash $PLAN with the plans below it: one is missing or has an unreadable 'Stacks On:' line."
+    [[ -z "$reason" ]] || block "Plan $PLAN is stopped: $reason. Only the user clears it, with dev-stack.sh resume (skills/dev/run-stack.md)."
+  fi
   wt=$(worktree_of "$PLAN")
   [[ -z "$wt" ]] || GIT_TREE="$wt"
 }
@@ -179,7 +483,7 @@ check_name() {
   [[ -n "$want" ]] || block "Plan header has 'Issue: $issue'; write 'Issue: #<n>' or 'Issue: none' (skills/dev/plan.md#schema)."
   [[ "$num" == "$want" ]] || block "Plan directory starts with $num, but the header has 'Issue: $issue'. The directory's <issue> is the issue number, or 0 for none; fix the header, or move the stack."
   type=$(field "$PLAN" Type); type="${type,,}"
-  [[ "$type" =~ ^(feature|fix|refactor)$ ]] || block "Plan header has 'Type: $type'; write feature, fix, or refactor (skills/dev/plan.md#schema)."
+  [[ "$type" =~ ^(feature|fix|refactor|config)$ ]] || block "Plan header has 'Type: $type'; write feature, fix, refactor, or config (skills/dev/plan.md#schema)."
 }
 
 STACKS_ON_HELP="Write it as one plain header line, 'Stacks On: pr<K>', naming a plan in the same directory with a lower number, or delete it for the stack's root (skills/dev/plan.md#stacks)."
@@ -318,6 +622,19 @@ id_report() {
       for (i = (decl != "" ? 2 : 1); i <= n; i++)
         if (!(ids[i] in refline)) { refline[ids[i]] = NR; reforder[++nr] = ids[i] }
 
+      # A PC carries a Check, never a count of matches, which an unrelated
+      # merge can change (skills/dev/design-feature.md#3-write-the-spec).
+      if (decl ~ /^PC-/) {
+        if (!match(line, /(—|–|-)[[:space:]]*Check:[[:space:]]*[^[:space:]]/))
+          printf "%s has no \"— Check: <command>\": %s\n", decl, trim(line)
+        else {
+          chk = substr(line, RSTART); chk = substr(chk, index(chk, "Check:") + 6)
+          if (chk ~ /(^|[^A-Za-z0-9_-])(grep|rg)[[:space:]]([^|;&]*[[:space:]])?(-[A-Za-z]*c[A-Za-z]*|--count)([[:space:]);|&"\047`]|$)/ ||
+              chk ~ /(^|[^A-Za-z0-9_-])wc[[:space:]]([^|;&]*[[:space:]])?(-[A-Za-z]*l[A-Za-z]*|--lines)([[:space:]);|&"\047`]|$)/)
+            printf "%s counts matches (grep -c, rg -c, wc -l); check the structure instead, such as a definition with grep -q or a forbidden use with ! grep -q: %s\n", decl, trim(line)
+        }
+      }
+
       # A step satisfies the TCs its satisfies clause names, on its own line
       # or a continuation line. A TC mentioned in prose is only a reference.
       if (sec == "Implementation Steps") {
@@ -365,7 +682,7 @@ require_ids() {
   if [[ "$report" == *$'\n'@* || "$report" == @* ]]; then
     block "$(printf "%s cites another artifact's IDs. A plan cites only its own IDs; refer to other artifacts by path and restate contract facts as PCs (skills/dev/plan.md#schema):\n%s" "$PLAN" "$(sed -n 's/^@//p' <<<"$report")")"
   fi
-  block "$(printf 'The ID graph in %s is not closed (skills/dev/plan.md#schema):\n%s\n\nClosure is shape, not correctness: fixing these does not make an edge right.' "$PLAN" "$report")"
+  block "$(printf 'The plan shape in %s fails: its ID graph is not closed, or a PC lacks a Check or counts matches (skills/dev/plan.md#schema, skills/dev/design-feature.md#3-write-the-spec):\n%s\n\nThis is shape, not correctness: fixing these does not make an edge or a Check right.' "$PLAN" "$report")"
 }
 
 # ── branch and proof ──────────────────────────────────────────────────
@@ -400,13 +717,14 @@ resolve_review_base() {
 }
 
 # PROOF_RE and PROOF_WHAT for plan $1: refactors prove the preserved behavior
-# with a passing baseline commit, the rest with a failing test.
+# with a passing baseline commit, config plans with their TC checks at the
+# tip and no proof commit (PROOF_RE empty), the rest with a failing test.
 proof_kind() {
-  if [[ "$(field "$1" Type | tr '[:upper:]' '[:lower:]')" == refactor ]]; then
-    PROOF_RE='^test:[[:space:]]*baseline' PROOF_WHAT="'test: baseline'"
-  else
-    PROOF_RE='^test\(red\):' PROOF_WHAT="'test(red):'"
-  fi
+  case "$(field "$1" Type | tr '[:upper:]' '[:lower:]')" in
+    refactor) PROOF_RE='^test:[[:space:]]*baseline' PROOF_WHAT="'test: baseline'" ;;
+    config) PROOF_RE='' PROOF_WHAT='implementation' ;;
+    *) PROOF_RE='^test\(red\):' PROOF_WHAT="'test(red):'" ;;
+  esac
 }
 
 # Plan $1's reviewed SHA holds its proof after base $2, as review-code checked;
@@ -415,8 +733,10 @@ require_reviewed_proof() {
   local green
   green=$(green_of "$1")
   proof_kind "$1"
+  local what="$PROOF_WHAT commit followed by implementation"
+  [[ -n "$PROOF_RE" ]] || what="implementation commit"
   [[ -n "$2" ]] && proof_sequence_ok "$2" "$PROOF_RE" "$green" ||
-    block "Plan $1's reviewed SHA $green has no $PROOF_WHAT commit followed by implementation after ${2:-its PR target}; run review-code on it (skills/dev/plan.md#verification)."
+    block "Plan $1's reviewed SHA $green has no $what after ${2:-its PR target}; run review-code on it (skills/dev/plan.md#verification)."
 }
 
 # The plan needs a proof commit followed by at least one implementation
@@ -424,6 +744,11 @@ require_reviewed_proof() {
 # repair merged forward reads as one line of history whatever its dates. A
 # merge commit implements nothing, so it never completes the proof.
 proof_sequence_ok() {
+  # A config plan needs only a commit of its own.
+  if [[ -z "$2" ]]; then
+    [[ -n "$(git -C "$GIT_TREE" log --format=%H --no-merges "$1..${3:-HEAD}" 2>/dev/null)" ]]
+    return
+  fi
   # ENVIRON, not -v, so awk applies no escape processing to the regex.
   git -C "$GIT_TREE" log --format='%s' --topo-order --no-merges --reverse "$1..${3:-HEAD}" 2>/dev/null |
     PROOF_RE="$2" awk '
@@ -468,7 +793,7 @@ require_current_review() {
   local plan="${1:-$PLAN}" state
   state=$(review_state "$plan") || block "Cannot hash $plan with the plans below it: one is missing or has an unreadable 'Stacks On:' line."
   [[ "$state" == ready ]] ||
-    block "Plan $plan has no ready 'Spec:' hash for its current spec and the specs below it: it changed after review-feature, its verdict was needs-changes, or no verdict was recorded. Return it to planning, run review-feature, record the verdict with dev-stack.sh review, and have the user approve it again (skills/dev/plan.md#review)."
+    block "Plan $plan has no ready 'Spec:' hash for its current spec and the specs below it: it changed after review-feature, its verdict was needs-changes, or no verdict was recorded. An approved plan is frozen: the user reverts the change, or reopens it with dev-stack.sh reopen (skills/dev/plan.md#changes)."
 }
 
 execute_feature_gate() {
@@ -503,14 +828,18 @@ review_code_gate() {
   require_branch
   [[ -z "$PARENT_PLAN" ]] || require_stacked "$PLAN" "$PARENT_PLAN"
   require_current_review
-  # Re-checked after execution, which edits the plan.
+  # Re-checked here: the gate before execution may not have run.
   require_ids
   require_head
   branch=$(field "$PLAN" Branch)
   target=$(pr_target "$PLAN")
   resolve_review_base "$target" || block "The PR target '$target' is missing or is not an ancestor of '$branch'. If a repair landed on the parent plan's branch, merge it forward first (skills/dev/plan.md#worktree)."
   proof_kind "$PLAN"
-  count=$(git -C "$GIT_TREE" log --format=%s "$REVIEW_BASE..HEAD" 2>/dev/null | grep -Ec "$PROOF_RE" || true)
+  if [[ -n "$PROOF_RE" ]]; then
+    count=$(git -C "$GIT_TREE" log --format=%s "$REVIEW_BASE..HEAD" 2>/dev/null | grep -Ec "$PROOF_RE" || true)
+  else
+    count=$(git -C "$GIT_TREE" log --format=%H --no-merges "$REVIEW_BASE..HEAD" 2>/dev/null | grep -c . || true)
+  fi
   (( count >= 1 )) || block "Found no $PROOF_WHAT commit between $target and $branch (skills/dev/plan.md#verification)."
   proof_sequence_ok "$REVIEW_BASE" "$PROOF_RE" || block "Proof is out of sequence: each $PROOF_WHAT commit needs at least one implementation commit after it, and nothing may come before the first (skills/dev/plan.md#verification)."
 }
@@ -525,7 +854,7 @@ create_pr_gate() {
   require_worktree
   require_current_review
   # create-pr publishes a whole stack at once, from its root.
-  local parent plan plan_status target base=""
+  local parent plan plan_status reason target base=""
   parent=$(stacks_on "$PLAN") || block "Plan has a 'Stacks On:' line that is misplaced, repeated, or malformed. $STACKS_ON_HELP"
   [[ -z "$parent" ]] ||
     block "Plan stacks on $parent. create-pr runs once, on the stack's root $(root_plans "$PLAN" | awk 'NR==1'), and publishes every plan in the stack together (skills/dev/plan.md#stacks)."
@@ -542,6 +871,8 @@ create_pr_gate() {
     [[ "$plan_status" == reviewed ]] ||
       block "Plan $plan stacks above this plan and is '$plan_status'. The stack publishes together: run create-pr on this root once every plan in it is reviewed (skills/dev/plan.md#stacks)."
     require_current_review "$plan"
+    reason=$(stop_reason "$plan") || block "Cannot hash $plan with the plans below it: one is missing or has an unreadable 'Stacks On:' line."
+    [[ -z "$reason" ]] || block "Plan $plan stacks above this plan and is stopped: $reason. Only the user clears it, with dev-stack.sh resume (skills/dev/run-stack.md)."
     require_worktree "$plan"
     # Only a parent's only child shares its worktree.
     [[ "$(worktree_of "$plan")" != "$(worktree_of "$parent")" || "$(child_plans "$parent")" != *$'\n'* ]] ||
