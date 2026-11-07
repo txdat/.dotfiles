@@ -15,7 +15,7 @@ A re-review covers only what [plan.md — Review](plan.md#review) lists for a de
 ## Affected paths
 
 - Security, data integrity, concurrency, compatibility, and failure paths, under [CODING.md — Impact](../../CODING.md#impact).
-- Unnecessary queries, repeated or unbounded work, reimplemented concepts, and shared code bent with flags. Report concrete impact.
+- Unnecessary queries, repeated or unbounded work, reimplemented concepts, and shared code bent with flags. Report concrete impact; unbounded or repeated work on a production path, with a location and evidence, blocks.
 - Secrets and debug or conflict artifacts: run `~/.dotfiles/.ai-shared/bin/dev-check.sh artifacts <review base> HEAD`, judge each line it lists for review, and read the diff.
 
 Report your conclusion on each AC and the Goal, the decisive evidence, and findings with their label, location, and proof, split into blocking and notes. The review passes when nothing blocks.

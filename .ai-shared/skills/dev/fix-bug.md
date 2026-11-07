@@ -2,7 +2,7 @@
 
 Diagnose a bug from runtime evidence, propose a fix, and route it. Diagnosis makes no lasting change: it writes only in its scratch and under `/tmp`.
 
-Establish expected behavior, actual behavior, and any tracking issue. For a comparison base without a plan, use [dev-utils.sh](../../bin/dev-utils.sh) `diagnostic-base`.
+Establish expected behavior, actual behavior, and any tracking issue. A fix the report proposes is a hypothesis under [design-feature.md — Understand](design-feature.md#1-understand). For a comparison base without a plan, use [dev-utils.sh](../../bin/dev-utils.sh) `diagnostic-base`.
 
 ## Reproduce
 
@@ -16,7 +16,7 @@ Rank plausible causes and test the strongest with focused runtime evidence. If c
 
 ## Proposal
 
-- **Fix options:** one to three, ranked by correctness (removes the root cause, leaves no way back in), then blast radius, rollout risk, and effort. Each names where it changes and why it ranks there; the first is the recommendation. Label mitigations as such.
+- **Fix options:** up to three that remove the root cause and leave no way back in, or none when nothing does, narrowest first under [design-feature.md — Keep it simple](design-feature.md#4-keep-it-simple), then by blast radius, rollout risk, and effort; a wider option ranks first only when that section's rule keeps it. An option that carries a cost, such as unbounded or repeated work on a production path, ranks below one without it. Labeled mitigations follow them. Each names where it changes and why it ranks there; the first is the recommendation.
 - **Regression test:** the reproduction as a test, with its level, its `scratch-diff` patch, and its failing output; below the reported surface it must still exercise the failure.
 - **Sibling defects:** other paths with the same faulty pattern. Fix them only when the request covers them.
 - **Remediation:** data, state, or user impact the fix will not repair, such as a backfill or cache purge. Live operations go in a separate [design-infra.md](design-infra.md) runbook.

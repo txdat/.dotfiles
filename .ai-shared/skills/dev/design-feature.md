@@ -27,7 +27,7 @@ Before creating the plan file, send one brief and wait for the answer:
   |---|--------|---------|-----------|----------------|
 - **Stack:** <prN — branch — parent — outcome, root first; omit for one PR>
 
-Decisions that affect behavior, scope, contracts, the data model, dependencies, or cost belong to the user; list each with options and one recommendation. Other technical choices are yours; record the non-obvious ones as DDs with their rationale. Dropping or narrowing anything the user asked for also needs the user's decision. Record every decision as a `DD-n` and cite it rather than repeating it.
+Decisions that affect behavior, scope, contracts, the data model, dependencies, or cost belong to the user; list each with options, among them the narrowest variant that meets the whole requirement under [Keep it simple](#4-keep-it-simple) even when you do not recommend it, and one recommendation. Other technical choices are yours; record the non-obvious ones as DDs with their rationale. When the task says dev-autopilot decides for the user, list, the same way and for dev-autopilot, each technical choice that adds an item [Keep it simple](#4-keep-it-simple) counts as a cost. Dropping or narrowing anything the user asked for also needs the user's decision. Record every decision as a `DD-n` and cite it rather than repeating it.
 
 ## 3. Write the spec
 
@@ -47,11 +47,11 @@ Do not write facts that unrelated merges can falsify: line numbers, counts, "the
 
 ## 4. Keep it simple
 
-Reuse code that implements the same concept, per [CODING.md](../../CODING.md#changes-and-evidence), and handle cases the contract treats alike through one path. For each decision that adds abstraction, state, a dependency, or coordination, its DD names the failure that would occur without it and why a narrower variant would not do; drop the decision otherwise. Count every place that must separately enforce a new rule as a cost. Name the code the change deletes or consolidates.
+Reuse code that implements the same concept, per [CODING.md](../../CODING.md#changes-and-evidence), and handle cases the contract treats alike through one path. For each decision that adds abstraction, a scan or unbounded read, state, a dependency, or coordination, its DD names the failure that would occur without it and why a narrower variant would not do; drop the decision otherwise. Of options that meet the same requirement, the narrowest adds the fewest of these, then changes the fewest files. Count every place that must separately enforce a new rule as a cost. Name the code the change deletes or consolidates.
 
 ## 5. Split PRs
 
-Use one plan and one PR unless review needs separable parts; judge by distinct behaviors, contracts, and migration risks, not line count. Each further PR is a plan stacked on the one it needs, correct and safe to merge after its parent alone, with incomplete behavior unexposed. The stack is dependency order and merge order. Propose the stack in the brief; the user chooses, or autopilot under [autopilot.md — Decisions](autopilot.md#decisions). A later split, merge, insert, or drop follows [plan.md — Stacks](plan.md#stacks).
+Use one plan and one PR unless review needs separable parts; judge by distinct behaviors, contracts, and migration risks, not line count. Each further PR is a plan stacked on the one it needs, correct and safe to merge after its parent alone, with incomplete behavior unexposed. The stack is dependency order and merge order. Propose the stack in the brief; the user chooses, or dev-autopilot when the task says it decides for the user, under [autopilot.md — Decisions](autopilot.md#decisions). A later split, merge, insert, or drop follows [plan.md — Stacks](plan.md#stacks).
 
 ## 6. Finish
 
@@ -61,4 +61,4 @@ Then, from the repository, run `~/.dotfiles/.ai-shared/bin/dev-stack.sh check <r
 
 ## 7. Revise after review
 
-Revise only an unapproved plan; an approved plan follows [plan.md — Changes](plan.md#changes). On NEEDS CHANGES or a stop's findings, correct each blocking finding within the recorded DDs and the user's answers, rerun the PC Checks the change touches with `dev-check.sh pcs <plan> --cwd <checkout> PC-<n> ...` and the stack check from step 6, and re-review under [plan.md — Review](plan.md#review). A finding that needs a new or changed decision goes to the user with options and a recommendation, or under autopilot to dev-autopilot.
+Revise only an unapproved plan; an approved plan follows [plan.md — Changes](plan.md#changes). On NEEDS CHANGES or a stop's findings, correct each blocking finding within the recorded DDs and the user's answers, rerun the PC Checks the change touches with `dev-check.sh pcs <plan> --cwd <checkout> PC-<n> ...` and the stack check from step 6, and re-review under [plan.md — Review](plan.md#review). A finding that needs a new or changed decision goes to the user with options as in [Brief the user](#2-brief-the-user), or, when the task says dev-autopilot decides for the user, to dev-autopilot. When the task says dev-autopilot decides for the user, also return each technical choice the revision adds that [Brief the user](#2-brief-the-user) lists for dev-autopilot.
