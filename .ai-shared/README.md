@@ -34,7 +34,7 @@ Where a row leaves effort or model blank, the wrapper installs without that fiel
 
 | skill | description | md file | effort | model |
 | ----- | ----------- | ------- | ------ | ----- |
-| dev-autopilot | Drive an issue or requirement through the whole dev flow with auto-approval: triage, fix-bug, create-issue, a direct edit or plan-backed stack, draft PRs, and one code-review round, stopping where a decision needs the user. | skills/dev/autopilot.md | medium | opus |
+| dev-autopilot | Drive an issue or requirement through the whole dev flow with auto-approval: triage, fix-bug, create-issue, a direct edit or plan-backed stack, draft PRs marked ready for one code-review round, stopping where a decision needs the user. | skills/dev/autopilot.md | medium | opus |
 | dev-create-issue | Create a GitHub issue with a specific problem, expected outcome, and requested metadata, standalone or for a plan to link. | skills/dev/create-issue.md | medium | haiku |
 | dev-create-pr | Publish a reviewed plan, with every plan stacked on it, as draft or ready pull requests, one per plan, mark the plans published, and clean up their worktrees and branches, unless cleanup is deferred. | skills/dev/create-pr.md | medium | haiku |
 | dev-design-feature | Design a feature, fix, or refactor plan before implementation: decisions, acceptance criteria, concrete test cases, ordered steps, and a stack of plans when the work needs several PRs. | skills/dev/design-feature.md | medium | opus |

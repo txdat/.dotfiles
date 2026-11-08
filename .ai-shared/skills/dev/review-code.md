@@ -24,4 +24,4 @@ Report your conclusion on each AC and the Goal, the decisive evidence, and findi
 
 Unless the request is review-only, the main agent records each round's verdict with `~/.dotfiles/.ai-shared/bin/dev-stack.sh code-review <plan> pass|needs-changes` before repairing or finalizing; [plan.md — Review](plan.md#review) owns the round limit.
 
-On a passing review, the main agent runs the local checks and tests at the Branch tip, leaves the worktree on the Branch, sets `Status: reviewed` and `Tip: <tip SHA>`, and hands off to [create-pr.md](create-pr.md). A later change to the Branch returns the plan to `implemented` for another review.
+On a passing review, the main agent runs the local checks, TC tests, and affected tests at the Branch tip, leaves the worktree on the Branch, sets `Status: reviewed` and `Tip: <tip SHA>`, and hands off to [create-pr.md](create-pr.md). A later change to the Branch returns the plan to `implemented` for another review.

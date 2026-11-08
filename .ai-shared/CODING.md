@@ -8,9 +8,15 @@ Duplication is cheaper than the wrong abstraction: extract an established shared
 
 Verify changed calls, fields, imports, and assumptions against actual definitions or runtime evidence. Design failure paths deliberately and preserve error causes. Comment only non-obvious reasons or invariants. UI work follows [frontend-design.md](skills/dev/frontend-design.md).
 
-Tests assert required observable behavior; never special-case test inputs or replace behavior with canned results. Start with affected tests and callers plus required project checks; broaden to the full suite when requested, required, cheap, or needed to cover the impact. Run tests serially in the test runner's own process, including a project's test script, by passing the runner's serial flag when it has one, such as Jest `--runInBand`, pytest-xdist `-n 0`, Mocha `--no-parallel`, or Node `--test-isolation=none`; when a runner cannot run in-process, limit it to one worker, such as Vitest `--no-file-parallelism` or `go test -p 1 -parallel 1`. Plan-backed work adds [test-first proof](skills/dev/plan.md#verification).
-
 Report inspected facts, inference, and unrun checks distinctly, with decisive file locations or command results and no secrets.
+
+## Tests
+
+Tests assert required observable behavior; never special-case test inputs or replace behavior with canned results. Plan-backed work adds [test-first proof](skills/dev/plan.md#verification).
+
+Affected tests are the tests the change adds or edits, plus existing tests that exercise the changed code or its callers. Find them through references and imports, or the runner's related-test selection, such as Jest `--findRelatedTests`. Unless the user or the project's instructions, such as AGENTS.md or CLAUDE.md, require the full suite, run only affected tests, selected by file or test name, such as `go test ./changed/pkg -run '^(TestA|TestB)$'` or a pytest node id; when the runner cannot select them, run the smallest unit that contains them and report what else it ran. A CI workflow or test script that runs the full suite is not such a requirement. When a project check runs a full suite that neither the user nor the project's instructions require, run the check's other steps and the affected tests instead, and report the full suite as unrun; the full suite is then not a required check under [CORE.md — Work](CORE.md#work).
+
+Run tests serially in the test runner's own process, including a project's test script, by passing the runner's serial flag when it has one, such as Jest `--runInBand`, pytest-xdist `-n 0`, Mocha `--no-parallel`, or Node `--test-isolation=none`; when a runner cannot run in-process, limit it to one worker, such as Vitest `--no-file-parallelism` or `go test -p 1 -parallel 1`.
 
 ## Critical work
 

@@ -129,7 +129,7 @@ Rules:
 - If a fixture cannot be built or an expected result would need invented semantics, stop under [Changes](#changes). Never take an expected result from production output, and never relax an obligation to make a test pass.
 - Restructuring test code must keep each scenario's distinguishing conditions and expected result.
 - Assertions must tell the required result from a plausible wrong one. Snapshots, mock-call checks, and mocked adapters standing in for queries or transactions are weak evidence.
-- At the plan's tip, run the project's local checks (lint, build, whatever CI runs), its TC tests, and affected existing tests.
+- At the plan's tip, run the project's local checks (such as lint, build, and the checks CI runs), its TC tests, and affected tests, selected under [CODING.md — Tests](../../CODING.md#tests).
 - A `Type: config` plan skips RED and its commit: its TCs are checks of the config, such as schema validation or a lookup of each key, run at the tip. The gate requires only a commit of its own.
 
 ## Git identity
