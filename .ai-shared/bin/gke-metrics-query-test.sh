@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # Offline smoke tests for template output and argument validation.
 set -euo pipefail
 

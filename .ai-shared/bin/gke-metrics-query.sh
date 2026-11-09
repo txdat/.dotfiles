@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # Print the manual MQL templates; no query is executed by this helper.
 set -euo pipefail
 

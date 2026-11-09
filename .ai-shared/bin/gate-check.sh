@@ -33,8 +33,9 @@ set -euo pipefail
 export LC_ALL=C
 
 # `--design <plan>`, which hooks never pass, runs the review-feature gate
-# without its parent check, for design-feature (dev-stack.sh check, which
-# needs jq itself). Without jq it exits 127 with no verdict, never a pass.
+# without its parent-approval and stop checks, for design-feature
+# (dev-stack.sh check, which needs jq itself). Without jq it exits 127 with
+# no verdict, never a pass.
 DESIGN_CHECK=0
 if [[ "${1-}" == --design ]]; then
   DESIGN_CHECK=1
@@ -96,7 +97,7 @@ record_guard() {
     if [[ "$cmd" =~ $user_re ]]; then
       local verb=resume
       [[ "${BASH_REMATCH[0]}" != *reopen* ]] || verb=reopen
-      block "dev-stack.sh $verb is the user's alone: it clears a stop, grants more rounds or fix attempts, or reopens an approved plan. Report the stop and what the user would decide (skills/dev/run-stack.md)."
+      block "dev-stack.sh $verb is the user's alone: it clears a stop, grants more rounds or fix attempts, or reopens an approved plan. Report the stop and what the user would decide (skills/dev/run-stack.md#stops)."
     fi
     # Redirections to /dev/null or another descriptor write nothing.
     probe=$(sed -E 's#[0-9]*>>?[[:space:]]*/dev/null##g; s#[0-9]*>&[0-9-]##g' <<<"$cmd")
@@ -438,7 +439,7 @@ load_plan() {
   # design-feature's stack check runs on plans run-stack may hold stopped.
   if (( ! DESIGN_CHECK )); then
     reason=$(stop_reason "$PLAN") || block "Cannot hash $PLAN with the plans below it: one is missing or has an unreadable 'Stacks On:' line."
-    [[ -z "$reason" ]] || block "Plan $PLAN is stopped: $reason. Only the user clears it, with dev-stack.sh resume (skills/dev/run-stack.md)."
+    [[ -z "$reason" ]] || block "Plan $PLAN is stopped: $reason. Only the user clears it, with dev-stack.sh resume (skills/dev/run-stack.md#stops)."
   fi
   wt=$(worktree_of "$PLAN")
   [[ -z "$wt" ]] || GIT_TREE="$wt"
@@ -449,11 +450,10 @@ require_worktree() {
   local plan="${1-$PLAN}" name
   [[ -z "$(worktree_of "$plan")" ]] || return 0
   name=$(worktree_name "$plan")
-  block "Plan $plan has no worktree: neither $(worktree_path "$name") nor, once its Branch exists, its parent's. Create it with dev-worktree.sh create $name $(field "$plan" Branch) <PR target> [sparse directory ...], which reattaches an existing Branch, or share an only child's parent worktree with git switch -c <Branch> <parent Branch> there. If publication cleanup removed it, rerun dev-publish.sh cleanup on the plans not yet published (skills/dev/plan.md#worktree)."
+  block "Plan $plan has no worktree at $(worktree_path "$name"). Create it with dev-worktree.sh create $name $(field "$plan" Branch) <PR target>, which reattaches an existing Branch. If publication cleanup removed it, rerun dev-publish.sh cleanup on the plans not yet published (skills/dev/plan.md#worktree)."
 }
 
-# The plan's worktree is on its Branch: a parent and its only child share a
-# worktree, so it may be on the other's.
+# The plan's worktree is on its Branch.
 require_head() {
   local branch head
   branch=$(field "$PLAN" Branch)
@@ -733,7 +733,9 @@ require_reviewed_proof() {
 # The plan needs a proof commit followed by at least one implementation
 # commit, and nothing may precede the first proof. Topological order, so a
 # repair merged forward reads as one line of history whatever its dates. A
-# merge commit implements nothing, so it never completes the proof.
+# merge commit implements nothing, so it never completes the proof; a
+# test(update) commit, a revised plan's test change, is neither proof nor
+# implementation (plan.md#verification).
 proof_sequence_ok() {
   # A config plan needs only a commit of its own.
   if [[ -z "$2" ]]; then
@@ -743,6 +745,7 @@ proof_sequence_ok() {
   # ENVIRON, not -v, so awk applies no escape processing to the regex.
   git -C "$GIT_TREE" log --format='%s' --topo-order --no-merges --reverse "$1..${3:-HEAD}" 2>/dev/null |
     PROOF_RE="$2" awk '
+      /^test\(update\):/ { next }
       $0 ~ ENVIRON["PROOF_RE"] { if (waiting) bad = 1; proofs++; waiting = 1; seen = 1; next }
       { if (!seen) bad = 1; waiting = 0 }
       END { if (proofs < 1 || waiting || bad) exit 1 }'
@@ -835,6 +838,12 @@ review_code_gate() {
   proof_sequence_ok "$REVIEW_BASE" "$PROOF_RE" || block "Proof is out of sequence: each $PROOF_WHAT commit needs at least one implementation commit after it, and nothing may come before the first (skills/dev/plan.md#verification)."
 }
 
+# Plan $1's Status of reviewed rests on a review-code pass logged at its Tip.
+require_passed() {
+  passed_at_tip "$1" ||
+    block "Plan $1 is reviewed, but its last review-code verdict in the stack log is not a pass at its Tip $(green_of "$1"). Run review-code and record its verdict with dev-stack.sh code-review; the main agent sets reviewed only after a logged pass (skills/dev/review-code.md#finalize)."
+}
+
 create_pr_gate() {
   case "$STATUS" in
     reviewed) ;;
@@ -844,6 +853,7 @@ create_pr_gate() {
   esac
   require_worktree
   require_current_review
+  require_passed "$PLAN"
   # create-pr publishes a whole stack at once, from its root.
   local parent plan plan_status reason target base=""
   parent=$(stacks_on "$PLAN") || block "Plan has a 'Stacks On:' line that is misplaced, repeated, or malformed. $STACKS_ON_HELP"
@@ -863,11 +873,9 @@ create_pr_gate() {
       block "Plan $plan stacks above this plan and is '$plan_status'. The stack publishes together: run create-pr on this root once every plan in it is reviewed (skills/dev/plan.md#stacks)."
     require_current_review "$plan"
     reason=$(stop_reason "$plan") || block "Cannot hash $plan with the plans below it: one is missing or has an unreadable 'Stacks On:' line."
-    [[ -z "$reason" ]] || block "Plan $plan stacks above this plan and is stopped: $reason. Only the user clears it, with dev-stack.sh resume (skills/dev/run-stack.md)."
+    [[ -z "$reason" ]] || block "Plan $plan stacks above this plan and is stopped: $reason. Only the user clears it, with dev-stack.sh resume (skills/dev/run-stack.md#stops)."
     require_worktree "$plan"
-    # Only a parent's only child shares its worktree.
-    [[ "$(worktree_of "$plan")" != "$(worktree_of "$parent")" || "$(child_plans "$parent")" != *$'\n'* ]] ||
-      block "Plan $plan shares $parent's worktree, but $parent has other children; each of them needs its own worktree (skills/dev/plan.md#worktree)."
+    require_passed "$plan"
     # Reviewed on top of the parent's current reviewed tip, not an older one.
     contains_parent_green "$plan" "$parent" ||
       block "Plan $plan's reviewed SHA $(green_of "$plan") does not contain its parent $parent's, $(green_of "$parent"). Merge the parent forward into $plan (skills/dev/plan.md#worktree), return it to review-code, then run create-pr here."

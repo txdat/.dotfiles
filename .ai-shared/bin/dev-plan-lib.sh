@@ -234,20 +234,13 @@ branch_exists() {
   else git -C "$REPO_ROOT" show-ref --verify -q "refs/heads/$1"; fi
 }
 
-# Plan $1's worktree, which nothing records: its own when registered; else,
-# once its Branch exists, the one it shares with its parent; else empty, as
-# for a plan not yet executed.
+# Plan $1's worktree, which nothing records: its own, dev-worktree.sh create's
+# <issue>_<slug>-pr<N>, when registered; else empty, as for a plan not yet
+# executed. Each plan has its own (../skills/dev/plan.md#worktree).
 worktree_of() {
-  local plan="$1" dir n own
-  while :; do
-    # worktree_path of worktree_name, inline: this runs once per level.
-    dir=${plan%/*}; n=${plan##*/pr}
-    own="$WORKTREES_ROOT/${REPO_ROOT##*/}-${dir##*/}-pr${n%.spec.md}"
-    if is_worktree "$own"; then printf '%s\n' "$own"; return 0; fi
-    field_get "$plan" Branch && [[ -n "$REPLY" ]] && branch_exists "$REPLY" || return 0
-    parent_get "$plan" 2>/dev/null && [[ -n "$REPLY" ]] || return 0
-    plan=$REPLY
-  done
+  local own
+  own=$(worktree_path "$(worktree_name "$1")")
+  ! is_worktree "$own" || printf '%s\n' "$own"
 }
 
 # Unpublished plans stacked on plan $1, by number; "!<plan>" for one whose
@@ -380,9 +373,8 @@ log_lines() {
 
 # What a stop record is bound to: plan $1's Status value, a verdict read as
 # planning so recording one keeps the stop, and its Tip; its spec with the
-# specs below it; and its branch's tip. Not the worktree's HEAD: a parent and
-# its only child share a worktree, and switching between them changes neither.
-# Fails when the plan cannot be hashed.
+# specs below it; and its branch's tip, not the worktree's HEAD. Fails when
+# the plan cannot be hashed.
 stop_key() {
   local hash branch tip=- status
   hash=$(plan_hash "$1") || return 1
@@ -394,11 +386,13 @@ stop_key() {
 }
 
 # Whether stop reason $1 holds until the user's resume, through changes and
-# later stops: one citing three or more failed fixes of three
-# (../CORE.md#work), or a review round limit, which dev-stack.sh records.
+# later stops: a review round limit, which dev-stack.sh records, or one citing
+# failed fixes at their limit, "Failed fixes: <n>/<limit>" with n >= limit
+# (../CORE.md#work).
 held_stop() {
   [[ "$1" =~ (review-feature|review-code)\ round\ limit\ \([0-9]+/[0-9]+\) ]] && return 0
-  grep -oE 'Failed fixes: [0-9]+/3([^0-9]|$)' <<<"$1" | grep -qE ': 0*([3-9]|[1-9][0-9]+)/3'
+  grep -oE 'Failed fixes: [0-9]+/[0-9]+([^0-9]|$)' <<<"$1" |
+    awk -F'[ /]' '{ n = $3 + 0; m = $4 + 0; if (m > 0 && n >= m) held = 1 } END { exit !held }'
 }
 
 # Plan $1's stop reasons since its last resume.
@@ -440,6 +434,17 @@ round_budget() {
     $0 == "cleared" { if (k >= l) l = k + 3; next }
     $0 == "reopened" || $0 == "auto-reopened" { k = 0; l = 3 }
     END { print k, l }')
+}
+
+# Whether plan $1's last review-code verdict is a pass logged at its Tip, so
+# a Status of reviewed set without one never publishes.
+passed_at_tip() {
+  local tip last
+  tip=$(green_of "$1")
+  [[ -n "$tip" ]] || return 1
+  last=$(log_lines "$1" | awk '$1 == "code-review" { l = $0 } END { print l }')
+  [[ "$last" =~ ^code-review\ pass\ \([0-9]+/[0-9]+\)\ at\ ([0-9a-f]{7,64})$ ]] || return 1
+  [[ "${BASH_REMATCH[1]}" == "$tip"* || "$tip" == "${BASH_REMATCH[1]}"* ]]
 }
 
 # Who approved plan $1 since its last reopen, from its last approve line:

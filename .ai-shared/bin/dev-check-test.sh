@@ -50,6 +50,24 @@ printf '#[test]\nfn behavior() {}\n' > "$TMP/src/lib.rs"
 git -C "$TMP" add . && git -C "$TMP" commit -qm 'test(red): inline rust test again'
 ok proof HEAD --test src/lib.rs
 
+# A revised plan's test(update) edits or deletes existing in-source test code.
+printf '#[test]\nfn behavior() { assert_eq!(1, 2); }\n' > "$TMP/src/lib.rs"
+git -C "$TMP" commit -qam 'test(update): change an inline rust test'
+ok proof HEAD --test src/lib.rs
+printf 'fn lib() {}\n' > "$TMP/src/lib.rs"
+git -C "$TMP" commit -qam 'test(update): delete an inline rust test'
+ok proof HEAD --test src/lib.rs
+git -C "$TMP" reset -q --hard HEAD~2
+
+# Files past the pipe buffer: rg -q stops reading at its first match.
+{ printf '#[cfg(test)]\nmod tests {\n#[test]\nfn behavior() {}\n}\n'; for i in $(seq 2000); do printf '// padding line %d for a file past the pipe buffer\n' "$i"; done; } > "$TMP/src/big.rs"
+git -C "$TMP" add . && git -C "$TMP" commit -qm 'test(red): large inline rust test'
+ok proof HEAD --test src/big.rs
+printf '// edited at the end\n' >> "$TMP/src/big.rs"
+git -C "$TMP" commit -qam 'test(update): edit a large inline rust test'
+ok proof HEAD --test src/big.rs
+git -C "$TMP" reset -q --hard HEAD~2
+
 printf 'fn stub() -> u32 { match 0 { _ => todo!("later") } }\n' > "$TMP/src/stub.rs"
 printf 'int Foo() => throw new NotImplementedException();\n' > "$TMP/src/Stub.cs"
 git -C "$TMP" add . && git -C "$TMP" commit -qm 'test(red): throwing stubs'

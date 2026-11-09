@@ -69,7 +69,7 @@ const COMMANDS: Command[] = [
   {
     name: 'dev-stack-check',
     description:
-      'Run the review-feature gate on every plan in a stack, minus the parent check (dev-stack.sh check)',
+      'Run the review-feature gate on every plan in a stack, minus the parent-approval and stop checks (dev-stack.sh check)',
     argumentHint: '<root spec file>',
     parse: planOnly('check'),
   },
@@ -103,7 +103,7 @@ const COMMANDS: Command[] = [
     parse: planOnly('resume'),
     write: {
       note: ([, plan]) =>
-        `The user cleared the stop on ${plan} with dev-stack.sh resume; for a "Failed fixes: 3/3" stop this grants three more attempts, and for a review round limit three more rounds.`,
+        `The user cleared the stop on ${plan} with dev-stack.sh resume; for a "Failed fixes" stop at its limit this raises the limit by three attempts, and for a review round limit three more rounds.`,
     },
   },
   {

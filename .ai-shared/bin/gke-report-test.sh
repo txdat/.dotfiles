@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # Offline regression tests; the helper's PATH contains only its text-processing tools.
 set -euo pipefail
 

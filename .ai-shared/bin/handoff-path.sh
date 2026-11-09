@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # Resolve a snapshot destination without writing or deleting a handoff
 # (../skills/handoff.md).
 set -euo pipefail

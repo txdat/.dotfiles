@@ -22,4 +22,4 @@ Time window: <duration, rollback deadline>
 
 Order phases so backups and baselines precede mutation, healthy replacements precede cutover and drain, and gated destruction comes last; keep the rollback target until cutover is verified. Mark irreversible actions; never promise rollback after its prerequisites are gone. Check source and target coexistence and duplicate processing, pinned versions, dependent resources, DNS and traffic mappings, IaC changes, and CI/CD placement. A destruction phase accounts for dependencies, deletion protection, backups, and explicit human confirmation.
 
-Finish when the operation is concrete and reviewable; hand off to [review-infra.md](review-infra.md). The main agent adds `## Execution Record` when execution happens.
+Finish when the operation is concrete and reviewable; hand off to [review-infra.md](review-infra.md). On `NEEDS CHANGES`, fix each blocking finding in the runbook, take a finding that needs a new decision to the user with options and a recommendation, and hand back to review-infra; [plan.md — Review](plan.md#review) owns the round limit. The main agent adds `## Execution Record` when execution happens.

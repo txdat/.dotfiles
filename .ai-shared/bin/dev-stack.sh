@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # The stack tree of plans (../skills/dev/plan.md#stacks), for
 # design-feature, create-pr, and run-stack. `review` sets a planning plan's
 # Status and Spec; `approve` sets a ready one auto-approved; `reopen` returns
@@ -30,29 +30,28 @@ usage() {
     '"<plan> <status> <parent> <action> <reason>" tab-separated, with "-" for none' \
     '(--tab, the default);' \
     'action is a runnable phase (review-feature, execute-feature, review-code,' \
-    'create-pr), revise after a needs-changes review, or stopped, wait-parent,' \
+    'create-pr), revise after a needs-changes review or a reopen, or stopped, wait-parent,' \
     'wait-user, blocked, or done. --tree prints the stack as a tree instead, and' \
     '--md as a Markdown table, both with a colored dot per status and a mark per' \
     'action.' \
     'review sets Status to the review-feature verdict, ready or needs-changes,' \
     'and Spec to its hash of the current spec, and logs the round <k>/<limit>;' \
     'code-review logs a review-code verdict the same way. A needs-changes verdict' \
-    'on the last round stops the plan. The limit is 3; resume at the limit adds 3.' \
+    'at or past the limit stops the plan. The limit starts at 3; resume at or past the limit sets it to the current round plus 3.' \
     'approve sets a ready plan, whose review holds and whose parent is approved or later,' \
     'to auto-approved, the agent'"'"'s approval; only the user sets approved. An' \
     'approved plan is frozen: its Status never returns to planning and its spec' \
     'never changes, until the user runs reopen, which returns it and every plan' \
     'above it that is approved or later to planning and clears their stops. stop records in the' \
     'stack'"'"'s log why run-stack stopped a plan; it holds until the plan changes' \
-    'or resume clears it, and a round limit or one citing "Failed fixes: 3/3" or' \
-    'more holds until resume. Only the user runs resume and reopen.' \
+    'or resume clears it, and a round limit or one citing "Failed fixes: <n>/<limit>"' \
+    'with n at or past the limit holds until resume. Only the user runs resume and reopen.' \
     'auto-reopen, dev-autopilot'"'"'s reopen, returns plans to planning as reopen does when' \
     'the approval of each is auto-approved, once per plan; it clears no stop: the' \
-    'Status change ends ordinary stops, and it refuses a round limit or a' \
-    '"Failed fixes: 3/3" stop.' \
+    'Status change ends ordinary stops, and it refuses a held stop.' \
     'renumber renames unapproved plans never executed, with the Stacks On lines' \
     'and log lines naming them; drop deletes one and restacks its children.' \
-    'check runs the review-feature gate, without its parent check, on each plan' \
+    'check runs the review-feature gate, without its parent-approval and stop checks, on each plan' \
     'in the stack still in planning, printing PASS or BLOCK and the reason, and' \
     'SKIP for a plan approved or later whose review still holds (BLOCK when it' \
     'does not); it exits 1 on a block.' \
@@ -140,8 +139,8 @@ require_open() {
 }
 
 # Sets Status to verdict $2 and Spec to its hash of the current spec, in place,
-# and logs the round; a needs-changes verdict on the last round stops the
-# plan until the user's resume.
+# and logs the round; a needs-changes verdict at or past the limit stops the
+# plan until the user's resume or reopen.
 cmd_review() {
   local hash spec key k
   case "$2" in ready|needs-changes) ;; *) usage >&2; exit 2 ;; esac
@@ -161,7 +160,7 @@ cmd_review() {
 }
 
 # Logs review-code's verdict on an implemented plan; a needs-changes verdict
-# on the last round stops the plan until the user's resume. Status and Tip
+# at or past the limit stops the plan until the user's resume or reopen. Status and Tip
 # stay with review-code (skills/dev/review-code.md#finalize).
 cmd_code_review() {
   local key k tip
@@ -192,7 +191,7 @@ cmd_reopen() {
   while IFS= read -r plan; do
     status_get "$plan"; rank=$(status_rank "$REPLY")
     [[ -n "$rank" ]] && { (( rank >= 1 )) || [[ -n "$(approved_hash "$plan")" ]]; } || continue
-    (( rank == 0 )) || set_header "$plan" Status planning || fail "Cannot write the header of $plan."
+    (( rank == 0 )) || set_header "$plan" Status planning Tip - || fail "Cannot write the header of $plan."
     log_event "$plan" reopened
     reopened+=("$plan")
   done <<<"$plans"
@@ -223,7 +222,7 @@ cmd_auto_reopen() {
   while IFS= read -r plan; do
     status_get "$plan"; rank=$(status_rank "$REPLY")
     [[ -n "$rank" ]] && { (( rank >= 1 )) || [[ -n "$(approved_hash "$plan")" ]]; } || continue
-    (( rank == 0 )) || set_header "$plan" Status planning || fail "Cannot write the header of $plan."
+    (( rank == 0 )) || set_header "$plan" Status planning Tip - || fail "Cannot write the header of $plan."
     log_event "$plan" auto-reopened
     reopened+=("$plan")
   done <<<"$plans"
@@ -240,7 +239,7 @@ require_movable() {
   # Rewritten at its number, an auto-reopened plan would regain its one auto-reopen.
   (( $(auto_reopens "$1") == 0 )) || fail "$1 was auto-reopened; it is revised, never renumbered or dropped."
   reason=$(stopped_why "$1")
-  [[ -z "$reason" ]] || fail "$1 is stopped: $reason. It is renumbered or dropped only after its stop ends (skills/dev/run-stack.md)."
+  [[ -z "$reason" ]] || fail "$1 is stopped: $reason. It is renumbered or dropped only after its stop ends (skills/dev/run-stack.md#stops)."
   branch=$(field "$1" Branch)
   [[ -z "$branch" ]] || ! branch_exists "$branch" || fail "$1's Branch $branch exists; a plan executed once is revised instead."
   ! is_worktree "$(worktree_path "$(worktree_name "$1")")" || fail "$1 has a worktree; a plan executed once is revised instead."
@@ -373,7 +372,7 @@ gate_reason() {
   [[ -z "$out" ]] || jq -r '.reason' <<<"$out" 2>/dev/null || printf '%s\n' "$out"
 }
 
-# The review-feature gate, without its parent check, on each plan in the
+# The review-feature gate, without its parent-approval and stop checks, on each plan in the
 # stack still in planning, as design-feature hands it over; fails when any
 # plan blocks. An approved plan whose review still holds is past design and
 # frozen (plan.md#changes), so a revision above it still checks; one that
@@ -439,6 +438,7 @@ cmd_next() {
         if (( ${prank:-0} < 1 )); then action=wait-parent; reason="$parent must be approved or auto-approved first"
         elif [[ "$state" == ready && "$status" == ready ]]; then action=wait-user; reason="review-feature ready ($rounds); the user approves it, or dev-autopilot auto-approves it"
         elif [[ "$state" == needs-changes ]]; then action=revise; reason="review-feature needs-changes ($rounds); revise it (skills/dev/design-feature.md#7-revise-after-review), then review it again"
+        elif [[ "$state" == ready && "$status" == planning ]]; then action=revise; reason="back in planning with its ready review still holding; revise it with the user's answers (skills/dev/design-feature.md#7-revise-after-review), then review it again"
         else skill=review-feature; fi ;;
       approved|auto-approved|implemented)
         if (( ${prank:-0} < 3 )); then action=wait-parent; reason="$parent must be reviewed first"

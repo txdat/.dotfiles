@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # dev-publish.sh against a local bare origin and a jq-backed gh stand-in that
 # keeps PRs in a JSON file. No GitHub requests are made.
 set -euo pipefail
@@ -107,13 +107,13 @@ open_pr() { # <branch> <base> <body-file> [--draft]
 set_body() { jq --argjson i "$1" --arg b "$2" '.[$i].body = $b' "$GH_STORE" > "$GH_STORE.tmp" && mv "$GH_STORE.tmp" "$GH_STORE"; }
 status_of() { sed -n 's/^Status: \([a-z]*\).*/\1/p' "$1"; }
 
-# ── a parent and its only child sharing one worktree, from check through cleanup ──
+# ── a parent and its only child, each in its own worktree, from check through cleanup ──
 new_repo chain
 P1="$D/pr1.spec.md"; P2="$D/pr2.spec.md"
 wt=$(plan_worktree 7_demo-pr1 feat/demo-1 main)
 commit_file "$wt" one.txt
-git -C "$wt" switch -q -c feat/demo-2 feat/demo-1
-commit_file "$wt" two.txt
+wt2=$(plan_worktree 7_demo-pr2 feat/demo-2 feat/demo-1)
+commit_file "$wt2" two.txt
 g1=$(git -C "$REPO" rev-parse feat/demo-1); g2=$(git -C "$REPO" rev-parse feat/demo-2)
 [[ "$wt" == "$AI_WORKTREES_ROOT/main-7_demo-pr1" ]] || fail "worktree path: $wt"
 write_plan "$P1" feat/demo-1 "$g1"
@@ -144,11 +144,11 @@ jq '.[0].baseRefName = "other"' "$GH_STORE" > "$GH_STORE.tmp" && mv "$GH_STORE.t
 expect_fail 'check blocks an open PR with another base' 'open PR not based on main' check "$P1"
 jq '.[0].baseRefName = "main"' "$GH_STORE" > "$GH_STORE.tmp" && mv "$GH_STORE.tmp" "$GH_STORE"
 # A repair to the parent after its PR opens: re-reviewed, then merged forward.
-git -C "$wt" switch -q feat/demo-1 && printf 'fixed\n' >> "$wt/one.txt" && git -C "$wt" commit -qam 'fix: one'
+printf 'fixed\n' >> "$wt/one.txt" && git -C "$wt" commit -qam 'fix: one'
 g1=$(git -C "$REPO" rev-parse feat/demo-1)
 reviewed "$P1" "$g1"
 expect_fail 'a child lacking its parent repair blocks' "does not contain its parent plan's branch feat/demo-1" check "$P2"
-git -C "$wt" switch -q feat/demo-2 && git -C "$wt" merge -q --no-edit feat/demo-1
+git -C "$wt2" merge -q --no-edit feat/demo-1
 g2=$(git -C "$REPO" rev-parse feat/demo-2)
 reviewed "$P2" "$g2"
 run check "$P1" >/dev/null && run check "$P2" >/dev/null
@@ -178,10 +178,10 @@ expect_fail 'verify checks origin against the reviewed SHA' 'origin/feat/demo-1 
 reviewed "$P1" "$g1"
 
 out=$(run cleanup "$P2")
-[[ "$out" == *"WORKTREE $wt returned to feat/demo-1"* && "$out" == *'deleted feat/demo-2'* && "$out" == *'Status: published'* ]] || fail "shared cleanup: $out"
-[[ -d "$wt" && "$(git -C "$wt" symbolic-ref --short HEAD)" == feat/demo-1 ]] || fail 'the shared worktree was not handed back'
+[[ "$out" == *"WORKTREE removed $wt2; deleted feat/demo-2"* && "$out" == *'Status: published'* ]] || fail "child cleanup: $out"
+[[ ! -e "$wt2" && -d "$wt" ]] || fail "the child's cleanup removed the wrong worktree"
 [[ "$(sed -n 2,8p "$P2")" == "Status: published"$'\n'"Spec: -"$'\n'"Tip: $g2"$'\n'"Type: feature"$'\n'"Base: main"$'\n'"Branch: feat/demo-2"$'\n'"Issue: #7" ]] || fail "published header: $(sed -n 2,8p "$P2")"
-pass 'cleanup of a child sharing the worktree hands it back, deletes its branch, and keeps the plan as published'
+pass 'cleanup of a child removes its own worktree, deletes its branch, and keeps the plan as published'
 [[ "$(run cleanup "$P2")" == *'already complete'* ]] || fail 'cleanup rerun'
 pass 'a cleanup rerun after completion is a no-op'
 expect_fail 'a published plan takes no check' 'is published' check "$P2"
@@ -217,14 +217,13 @@ expect_fail 'a name outside pr<N>.spec.md is refused' 'Plan must be' check "$D/d
 expect_fail "another repository's plans are refused" 'Plan must be' check "$TEST_ROOT/other/docs/plans/7_demo/pr1.spec.md"
 
 # ── a stack tree publishing at once: root -> child -> grandchild, root -> sibling ──
-# The root has two children, so each creates its own worktree; the grandchild
-# is its parent's only child and shares the child's. create-pr runs each step
-# on every plan, parents first, before the next step.
+# Each plan has its own worktree. create-pr runs each step on every plan,
+# parents first, before the next step.
 new_repo tree
 wtr=$(plan_worktree 7_demo-pr1 feat/root main); commit_file "$wtr" root.txt
 wtc=$(plan_worktree 7_demo-pr2 feat/child feat/root); commit_file "$wtc" child.txt
 wts=$(plan_worktree 7_demo-pr3 feat/sib feat/root); commit_file "$wts" sib.txt
-git -C "$wtc" switch -q -c feat/grand feat/child; commit_file "$wtc" grand.txt
+wtg=$(plan_worktree 7_demo-pr4 feat/grand feat/child); commit_file "$wtg" grand.txt
 stack=(1:feat/root:main: 2:feat/child:feat/root:pr1 3:feat/sib:feat/root:pr1 4:feat/grand:feat/child:pr2)
 for entry in "${stack[@]}"; do
   IFS=: read -r n branch parent on <<<"$entry"
@@ -258,15 +257,12 @@ rm "$D/pr9.spec.md"
 for (( k = ${#stack[@]} - 1; k >= 0; k-- )); do
   IFS=: read -r n _ <<<"${stack[$k]}"
   out=$(cd "$wtr" && bash "$PUBLISH" cleanup "$D/pr$n.spec.md" 2>&1) || fail "cleanup pr$n: $out"
-  case "$n" in
-    4) [[ "$out" == *"returned to feat/child"* ]] || fail "grandchild cleanup: $out" ;;
-    3|2|1) [[ "$out" == *'WORKTREE removed'* ]] || fail "pr$n cleanup: $out" ;;
-  esac
+  [[ "$out" == *'WORKTREE removed'* ]] || fail "pr$n cleanup: $out"
 done
 [[ "$(jq -r '[.[].baseRefName] | join(",")' "$GH_STORE")" == 'main,feat/root,feat/root,feat/child' ]] || fail "tree PR bases: $(jq -c . "$GH_STORE")"
 for n in 1 2 3 4; do [[ "$(status_of "$D/pr$n.spec.md")" == published ]] || fail "pr$n not published"; done
 [[ -z "$(git -C "$REPO" branch --list 'feat/*')" ]] || fail "branches left: $(git -C "$REPO" branch --list 'feat/*')"
-[[ ! -e "$wtr" && ! -e "$wtc" && ! -e "$wts" ]] || fail 'worktrees left'
-pass 'the tree verifies with every PR on its parent branch, then cleans up children first, removing each worktree once'
+[[ ! -e "$wtr" && ! -e "$wtc" && ! -e "$wts" && ! -e "$wtg" ]] || fail 'worktrees left'
+pass "the tree verifies with every PR on its parent branch, then cleans up children first, removing each plan's own worktree"
 
 printf 'All dev-publish tests passed. Temporary fixtures: %s\n' "$TEST_ROOT"

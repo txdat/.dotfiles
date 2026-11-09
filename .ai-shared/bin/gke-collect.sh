@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # gke-collect.sh — single-pass, read-only evidence collector for the gke-inspect-incident skill.
 #
 # Collects incident evidence under tagged section headers. Interpretation lives in
@@ -586,13 +586,13 @@ else
     mon_ok=0; mon_error=""
     for mon_lp in label labels; do
       mon_out=$(mon_ts "$mon_mt" "$mon_rt" "$mon_lp")
-      if printf '%s' "$mon_out" | grep -q '^ERROR'; then
+      if grep -q '^ERROR' <<<"$mon_out"; then
         mon_error="$mon_out"
         continue                                 # wrong label form (or real failure) — try the twin
       fi
       # This form is accepted; whether it carried points or not, don't retry its twin.
       mon_ok=1
-      printf '%s' "$mon_out" | grep -q '^#TRUNC' && MON_TRUNC=1
+      grep -q '^#TRUNC' <<<"$mon_out" && MON_TRUNC=1
       mon_out=$(printf '%s' "$mon_out" | grep -v '^#TRUNC') || true
       if [ -n "$mon_out" ]; then
         # Via a variable, NOT an inline $'\n': ANSI-C quoting is not applied inside ${x:+...}, so
@@ -1035,7 +1035,7 @@ log_read \
   --format="table(timestamp,protoPayload.methodName,protoPayload.authenticationInfo.principalEmail)" --limit=20
 if [ "${CAP_LOGGING:-0}" = 0 ] || [ "$BILLING_LOG_OK" = 0 ]; then
   verdict UNKNOWN "B1: Cloud Logging unreadable — cannot confirm or deny a billing-disabled event."
-elif printf '%s' "$BILLING_LOG" | grep -q .; then
+elif grep -q . <<<"$BILLING_LOG"; then
   if [ "${BILLING_NOW:-}" = "True" ]; then
     verdict INFO "B1: in-window billing-disabled log FOUND but billing is ENABLED now — likely resolved/transient. Score CRITICAL only if the log timestamps overlap the symptom window (it was causal then)."
   else
@@ -1055,8 +1055,8 @@ else
   H13_OPS=$(cluster_ops \
     | awk -F'\t' -v s="$T_START_CRITICAL" -v e="$T_END" '$3>=s && $3<=e && ($1=="REPAIR_CLUSTER" || $1 ~ /^UPGRADE/) {print}') && H13_READ_OK=1 || H13_READ_OK=0
   printf '%s\n' "$H13_OPS"
-  printf '%s' "$H13_OPS" | grep -q 'REPAIR_CLUSTER' && H13_REP=1 || H13_REP=0
-  printf '%s' "$H13_OPS" | grep -q 'UPGRADE'        && H13_UP=1  || H13_UP=0
+  grep -q 'REPAIR_CLUSTER' <<<"$H13_OPS" && H13_REP=1 || H13_REP=0
+  grep -q 'UPGRADE' <<<"$H13_OPS"        && H13_UP=1  || H13_UP=0
   [ "$H13_REP" = 1 ] && verdict FIRES-WARNING "H13: in-window REPAIR_CLUSTER (node auto-repair) rebuilt nodes — correlate its startTime with symptom onset."
   if [ "$H13_UP" = 1 ]; then
     if [ -n "$MAINT" ]; then
@@ -1465,7 +1465,7 @@ printf '%s\n' "$STOCKOUT"
 if [ "${CAP_LOGGING:-0}" = 0 ] || [ "$STOCKOUT_OK" = 0 ]; then
   STOCKOUT_HIT=0
   verdict UNKNOWN "H11: Cloud Logging unreadable — cannot detect ZONE_RESOURCE_POOL_EXHAUSTED; stockout can neither be confirmed nor ruled out."
-elif printf '%s' "$STOCKOUT" | grep -q .; then
+elif grep -q . <<<"$STOCKOUT"; then
   STOCKOUT_HIT=1
   verdict FIRES-CRITICAL "H11: capacity stockout — GCE rejects instances.insert with ZONE_RESOURCE_POOL_EXHAUSTED; new nodes cannot be created and this will NOT self-resolve."
 else
@@ -1499,8 +1499,8 @@ SCALEUP=$(log_read \
   --project=$PROJECT --order=asc \
   --format="table(timestamp,jsonPayload.involvedObject.name,jsonPayload.reason,jsonPayload.message)" --limit=50) && SCALEUP_OK=1 || SCALEUP_OK=0
 printf '%s\n' "$SCALEUP"
-printf '%s' "$SCALEUP" | grep -q 'TriggeredScaleUp'  && TRIG=1    || TRIG=0
-printf '%s' "$SCALEUP" | grep -q 'NotTriggerScaleUp' && NOTRIG=1  || NOTRIG=0
+grep -q 'TriggeredScaleUp' <<<"$SCALEUP"  && TRIG=1    || TRIG=0
+grep -q 'NotTriggerScaleUp' <<<"$SCALEUP" && NOTRIG=1  || NOTRIG=0
 # NOTE: UNSCHED/OLDEST_PENDING_S are a LIVE kubectl snapshot (now), while the log queries above
 # are windowed to T_START..T_END. For a past/recovered incident the numeric verdict may read
 # "does not fire" even though the windowed TriggeredScaleUp/FailedScheduling events show the latency.

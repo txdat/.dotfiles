@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # Mechanics shared by dev phase skills and gate-check.sh. Every command is
 # read-only except issue-create, the only one that creates an external record;
 # run it only after the owning phase's authorization.

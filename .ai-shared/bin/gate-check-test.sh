@@ -61,9 +61,13 @@ ready() {
   sed -i "0,/^Spec:/ s/^Spec: .*/Spec: $hash/" "$1"
 }
 
+# log_pass <plan> <sha>: the stack log line dev-stack.sh code-review writes
+# for a passing review-code verdict at <sha>.
+log_pass() { printf 'pr%s: code-review pass (1/3) at %s\n' "$(basename "$1" .spec.md | tr -d pr)" "$2" >> "$(dirname "$1")/log"; }
+
 # write_plan <file> <status> [graph] [type] [issue] [extra header line] [branch]
 # A bare `reviewed` gets the repository's HEAD as its Tip; `reviewed <sha>`
-# gets <sha>.
+# gets <sha>. A reviewed plan gets a logged review-code pass at its Tip.
 write_plan() {
   local file="$1" status="$2" graph="${3-$(valid_graph)}" type="${4-feature}" issue="${5-#12}" extra="${6-}" branch="${7-feat/gate}" tip=-
   [[ "$status" != reviewed ]] || status="reviewed $(git -C "$repo" rev-parse HEAD)"
@@ -75,6 +79,7 @@ write_plan() {
     if [[ -n "$extra" ]]; then printf '%s\n' "$extra"; fi
     printf '\n## Goal\nGate the phases.\n\n%s\n' "$graph"
   } > "$file"
+  [[ "$tip" == - ]] || log_pass "$file" "$tip"
 }
 
 # The path the gate looks for plan $1's own worktree at.
@@ -97,7 +102,7 @@ plan_with_worktree() {
 # The Tip SHA of plan $1 when it is reviewed.
 green_in() { grep -qx 'Status: reviewed' "$1" && sed -n '0,/^Tip:/ s/^Tip: \([0-9a-f]*\)$/\1/p' "$1"; }
 # set_reviewed <plan> [sha]: Status reviewed with Tip <sha>, or none.
-set_reviewed() { sed -i "s/^Status: .*/Status: reviewed/; s/^Tip: .*/Tip: ${2:--}/" "$1"; }
+set_reviewed() { sed -i "s/^Status: .*/Status: reviewed/; s/^Tip: .*/Tip: ${2:--}/" "$1"; [[ -z "${2-}" ]] || log_pass "$1" "$2"; }
 
 # A proof on top of commit $1: a test(red) commit, then an implementation.
 proof_on() {
@@ -232,7 +237,7 @@ assert_block "$out" 'requires jq' 'missing jq still blocks a dev skill'
 use_repo
 write_plan "$P" implemented
 mkdir -p "$(wt_of "$P")"
-assert_block "$(run_gate "$repo" dev-review-code "$P")" "Plan $P has no worktree: neither $(wt_of "$P")" 'an unregistered directory at the worktree path is no worktree'
+assert_block "$(run_gate "$repo" dev-review-code "$P")" "Plan $P has no worktree at $(wt_of "$P")" 'an unregistered directory at the worktree path is no worktree'
 write_plan "$P" "reviewed $(git -C "$repo" rev-parse HEAD)"
 assert_block "$(run_gate "$repo" dev-create-pr "$P")" 'rerun dev-publish.sh cleanup' 'a missing worktree points to cleanup'
 
@@ -576,6 +581,17 @@ git -C "$wt" merge -q --no-edit main
 assert_block "$(run_gate "$repo" dev-review-code "$P")" 'out of sequence' 'a merge after RED is not an implementation'
 
 use_repo
+plan_with_worktree implemented
+wt=$(wt_of "$P")
+wt_commit "$wt" 'test(red): gate' tests/gate_test.py
+wt_commit "$wt" 'test(update): gate' tests/gate_test.py
+assert_block "$(run_gate "$repo" dev-review-code "$P")" 'out of sequence' 'a test(update) after RED is not an implementation'
+wt_commit "$wt" 'feat(gate): implement' src/gate.py
+assert_pass "$(run_gate "$repo" dev-review-code "$P")" 'RED, test(update), then implementation enters review'
+wt_commit "$wt" 'test(update): gate again' tests/gate_test.py
+assert_pass "$(run_gate "$repo" dev-review-code "$P")" 'a trailing test(update) leaves the proof complete'
+
+use_repo
 plan_with_worktree implemented "$(valid_graph)" refactor
 wt=$(wt_of "$P")
 wt_commit "$wt" 'test(red): gate' tests/gate_test.py
@@ -615,23 +631,20 @@ assert_block "$(run_gate "$repo" dev-review-code "$FE")" "The PR target 'feat/ga
 # history even when commit dates interleave the plans.
 use_repo
 wt=$(wt_of "$BE")
+wtf=$(wt_of "$FE")
 git -C "$repo" worktree add -q -b feat/gate "$wt" main
-dated() { GIT_AUTHOR_DATE="@$1 +0000" GIT_COMMITTER_DATE="@$1 +0000" wt_commit "$wt" "$2" "$3"; }
-dated 1700000001 'test(red): s1' tests/s1_test.py
-dated 1700000002 'feat(s1): implement' src/s1.py
-git -C "$wt" switch -q -c feat/fe feat/gate
-dated 1700000003 'test(red): s2' tests/s2_test.py
-git -C "$wt" switch -q feat/gate
-dated 1700000004 'test(red): s1 repair' tests/s1_test.py
-git -C "$wt" switch -q feat/fe
-dated 1700000005 'feat(s2): implement' src/s2.py
-git -C "$wt" switch -q feat/gate
-dated 1700000006 'fix(s1): repair' src/s1.py
-git -C "$wt" switch -q feat/fe
-GIT_AUTHOR_DATE='@1700000007 +0000' GIT_COMMITTER_DATE='@1700000007 +0000' git -C "$wt" merge -q --no-edit feat/gate
+dated() { GIT_AUTHOR_DATE="@$1 +0000" GIT_COMMITTER_DATE="@$1 +0000" wt_commit "$2" "$3" "$4"; }
+dated 1700000001 "$wt" 'test(red): s1' tests/s1_test.py
+dated 1700000002 "$wt" 'feat(s1): implement' src/s1.py
+git -C "$repo" worktree add -q -b feat/fe "$wtf" feat/gate
+dated 1700000003 "$wtf" 'test(red): s2' tests/s2_test.py
+dated 1700000004 "$wt" 'test(red): s1 repair' tests/s1_test.py
+dated 1700000005 "$wtf" 'feat(s2): implement' src/s2.py
+dated 1700000006 "$wt" 'fix(s1): repair' src/s1.py
+GIT_AUTHOR_DATE='@1700000007 +0000' GIT_COMMITTER_DATE='@1700000007 +0000' git -C "$wtf" merge -q --no-edit feat/gate
 write_plan "$BE" reviewed
 write_plan "$FE" implemented "$(valid_graph)" feature '#12' 'Stacks On: pr1' feat/fe
-assert_pass "$(run_gate "$repo" dev-review-code "$FE")" 'a parent repair merged forward into a shared worktree passes despite interleaved dates'
+assert_pass "$(run_gate "$repo" dev-review-code "$FE")" 'a parent repair merged forward passes despite interleaved dates'
 
 # Base may advance without the plan merging it; review starts at the fork.
 use_repo
@@ -674,13 +687,20 @@ set_reviewed "$P" "$(git -C "$repo" rev-parse feat/gate)"
 assert_block "$(run_gate "$repo" dev-create-pr "$P")" "has no 'test(red):' commit followed by implementation after" 'a reviewed status set by hand does not skip the proof'
 use_repo
 plan_with_worktree reviewed
-# A tree: $P has children $C2 and $C3, each in its own worktree, and $C2 has
-# its only child $C4, which shares $C2's once its branch exists.
+printf 'pr1: code-review needs-changes (2/3) at %s\n' "$(git -C "$repo" rev-parse feat/gate)" >> "$(dirname "$P")/log"
+assert_block "$(run_gate "$repo" dev-create-pr "$P")" "its last review-code verdict in the stack log is not a pass" 'a reviewed status after a needs-changes verdict blocks publication'
+log_pass "$P" "$(git -C "$repo" rev-parse main)"
+assert_block "$(run_gate "$repo" dev-create-pr "$P")" "its last review-code verdict in the stack log is not a pass" 'a pass logged at another SHA does not cover the Tip'
+use_repo
+plan_with_worktree reviewed
+# A tree: $P has children $C2 and $C3, and $C2 has its only child $C4, each
+# in its own worktree.
 C2="$PD/12_gate/pr2.spec.md"
 C3="$PD/12_gate/pr3.spec.md"
 C4="$PD/12_gate/pr4.spec.md"
 git -C "$repo" worktree add -q --detach "$(wt_of "$C2")" main
 git -C "$repo" worktree add -q --detach "$(wt_of "$C3")" main
+git -C "$repo" worktree add -q --detach "$(wt_of "$C4")" main
 git -C "$repo" branch -q feat/c4 main
 green=$(git -C "$repo" rev-parse feat/gate)
 stack_on() {  # stack_on <plan> <status> <parent pr<K>> <own branch>; reviewed with a proof on the parent's reviewed SHA
@@ -706,7 +726,7 @@ stack_on "$C4" reviewed pr2 feat/c4
 git -C "$repo" worktree remove "$(wt_of "$C3")"
 assert_block "$(run_gate "$repo" dev-create-pr "$P")" "Plan $C3 has no worktree" 'a plan without its worktree or branch has no worktree'
 git -C "$repo" branch -q feat/c3 main
-assert_block "$(run_gate "$repo" dev-create-pr "$P")" "Plan $C3 shares $P's worktree, but $P has other children" 'a sibling may not share its parent worktree'
+assert_block "$(run_gate "$repo" dev-create-pr "$P")" "Plan $C3 has no worktree" "a plan never uses its parent's worktree"
 git -C "$repo" worktree add -q --detach "$(wt_of "$C3")" main
 set_reviewed "$C2"
 assert_block "$(run_gate "$repo" dev-create-pr "$P")" "Plan $C2 stacks above this plan and is 'reviewed without its SHA'" 'each plan above needs its reviewed SHA'
@@ -730,7 +750,7 @@ stack_on "$C4" reviewed pr2 feat/c4
 assert_pass "$(run_gate "$repo" dev-create-pr "$P")" 'children re-reviewed on the repaired root publish'
 printf 'pr3: stop review-code round limit (3/3) at %s\n' "$(printf '0%.0s' {1..40})" >> "$PD/12_gate/log"
 assert_block "$(run_gate "$repo" dev-create-pr "$P")" "Plan $C3 stacks above this plan and is stopped" 'a stopped plan above the root blocks publication'
-rm "$PD/12_gate/log"
+sed -i '/^pr3: stop /d' "$PD/12_gate/log"
 printf '\n```\nStacks On: pr3\n```\n' >> "$C4"
 assert_pass "$(run_gate "$repo" dev-create-pr "$P")" 'a Stacks On line in a fenced block is not the header'
 stack_on "$C4" reviewed ./pr2 feat/c4
@@ -749,7 +769,7 @@ write_plan "$PD/12_gate/pr6.spec.md" reviewed "$(valid_graph)" feature '#12' 'St
 assert_block "$(run_gate "$repo" dev-create-pr "$P")" "pr6.spec.md has a 'Stacks On:' line that is misplaced, repeated, malformed, or names no plan" 'a child of a missing plan blocks publication'
 rm "$PD/12_gate/pr6.spec.md"
 assert_block "$(run_gate "$repo" dev-create-pr "$C2")" "create-pr runs once, on the stack's root $P" 'create-pr on a stacked plan names the root'
-git -C "$repo" branch -q -D feat/c4
+git -C "$repo" worktree remove "$(wt_of "$C4")"
 assert_block "$(run_gate "$repo" dev-create-pr "$P")" "Plan $C4 has no worktree" 'publication needs every worktree in the stack'
 sed -i 's/^Status: reviewed$/Status: published/' "$C4"
 assert_pass "$(run_gate "$repo" dev-create-pr "$P")" 'a plan published by an earlier cleanup leaves the stack'

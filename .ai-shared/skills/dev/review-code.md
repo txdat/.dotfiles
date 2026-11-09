@@ -1,6 +1,6 @@
 # /review-code — Verify the Implementation
 
-Review an `implemented` plan's code independently under [plan.md — Review](plan.md#review), in the plan's worktree, which the main agent leaves on the plan's Branch. The review base is where the work leaves its PR target: for Base, the merge-base with `origin/<Base>` (or local Base without one); for the parent plan's Branch, its tip (local, or `origin/<branch>`), which the work must contain.
+Review an `implemented` plan's code independently under [plan.md — Review](plan.md#review). Run every command in the round's scratch ([plan.md — Review rounds](plan.md#review-rounds)), which holds the plan's Branch tip with the open findings' repros applied. A review-only request has no scratch: read the plan's worktree and run only commands that leave its `git status` unchanged. The review base is defined in [plan.md — Verification](plan.md#verification).
 
 ## Behavior
 
@@ -8,9 +8,9 @@ A re-review covers only what [plan.md — Review](plan.md#review) lists for a de
 
 - Derive the required outcome from the Goal and contracts before treating the tests as the oracle. Run the TC tests and affected tests yourself at the final tip.
 - Trace each AC to assertions at the production boundary. A helper-level test cannot prove authorization, routing, or transaction behavior.
-- Compare each test with its approved TC: fixture, distinguishing conditions, action, and expected result, which you check against the contract yourself. Apply the assertion rules in [plan.md — Verification](plan.md#verification), and check each RED commit with `dev-check.sh proof`; every TC has its test there, except under plan.md — Verification's `Type: config` rule.
+- Compare each test with its approved TC: fixture, distinguishing conditions, action, and expected result, which you check against the contract yourself. Apply the assertion rules in [plan.md — Verification](plan.md#verification), and check each proof and `test(update)` commit with `dev-check.sh proof`, reading the diff of each `--test` path for non-test changes; every TC has its test in one of them, except under plan.md — Verification's `Type: config` rule. Check that the reported result of each TC's test was taken where plan.md — Verification requires it; without a report, report each such TC as an `asserted` finding that names the run at that commit which would settle it.
 - Passing tests do not override a violated obligation. Code that departs from an AC, TC, step, or DD blocks; a needed spec change follows [plan.md — Changes](plan.md#changes).
-- Try to break the behavior, not only confirm it. Prove each runtime-behavior finding, including an AC violation, with a run: in the round's scratch under [plan.md — Review](plan.md#review), or, for a review-only request, an existing command with crafted inputs that changes no file or shared state. Give the command, its output, the output the contract requires, and the repro. Label each finding `ran`, `traced` (failure walked through cited code), `located` (cited `file:line`), or `asserted`; an `asserted` finding names the run that would settle it and never blocks. A step, DD, or TC departure visible in the plan or diff is `located`.
+- Try to break the behavior, not only confirm it. Prove each runtime-behavior finding, including an AC violation, with a run: in the round's scratch, or, for a review-only request, an existing command with crafted inputs that changes no file or shared state. Give the command, its output, the output the contract requires, and the repro. Label each finding `ran`, `traced` (failure walked through cited code), `located` (cited `file:line`), or `asserted`; an `asserted` finding names the run that would settle it and never blocks. A step, DD, or TC departure visible in the plan or diff is `located`.
 
 ## Affected paths
 
@@ -22,6 +22,6 @@ Report your conclusion on each AC and the Goal, the decisive evidence, and findi
 
 ## Finalize
 
-Unless the request is review-only, the main agent records each round's verdict with `~/.dotfiles/.ai-shared/bin/dev-stack.sh code-review <plan> pass|needs-changes` before repairing or finalizing; [plan.md — Review](plan.md#review) owns the round limit.
+Unless the request is review-only, the main agent records each round's verdict with `~/.dotfiles/.ai-shared/bin/dev-stack.sh code-review <plan> pass|needs-changes` before repairing or finalizing; [plan.md — Review rounds](plan.md#review-rounds) owns the round limit.
 
-On a passing review, the main agent runs the local checks, TC tests, and affected tests at the Branch tip, leaves the worktree on the Branch, sets `Status: reviewed` and `Tip: <tip SHA>`, and hands off to [create-pr.md](create-pr.md). A later change to the Branch returns the plan to `implemented` for another review.
+After a logged pass, the main agent runs the local checks, TC tests, and affected tests at the Branch tip, leaves the worktree on the Branch, sets `Status: reviewed` and `Tip: <tip SHA>` to the SHA the pass names, and hands off to [create-pr.md](create-pr.md). A later change to the Branch returns the plan to `implemented` for another review.

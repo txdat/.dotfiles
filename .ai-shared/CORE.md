@@ -26,7 +26,7 @@ Never wait on background work or CI. While something is pending, continue indepe
 
 When a fix fails in a way its assumed cause did not predict, or before a third fix on the same assumed cause, state that cause and run a check whose result would differ if it were false; base the next fix on the result. The check is not a fix attempt.
 
-After three failed fix-and-verify attempts at the same failure, stop and report what you tried, what happened, and the evidence or decision you need; stop sooner when attempts yield no new evidence. The count persists across hypotheses, delegation, and sessions until verification passes or the user grants three more; record it as `Failed fixes: <n>/3 — <failure>` in a [handoff](skills/handoff.md). Diagnosis that makes no lasting change and other authorized work may continue.
+Failed fix-and-verify attempts at the same failure count against a limit of three; each grant from the user adds three. When the count reaches the limit, stop and report what you tried, what happened, and the evidence or decision you need; stop sooner when attempts yield no new evidence. The count persists across hypotheses, delegation, and sessions until verification passes; record it as `Failed fixes: <n>/<limit> — <failure>`, such as `Failed fixes: 3/3`, in a [handoff](skills/handoff.md). Diagnosis that makes no lasting change and other authorized work may continue.
 
 ## Load on demand
 

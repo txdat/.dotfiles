@@ -10,7 +10,7 @@ Validate each `CL-n` claim and `RS-n` resource against live workloads, images, n
 
 Failed collection is `UNVERIFIED`, never proof of absence. Check the phases against design-infra's ordering and gate rules, especially coexistence and duplicate processing, traffic dependencies, and whether rollback resources survive their promised window. Gates need observable pass and stop conditions: a phase's Prerequisites gate its Commands, and its Verification gates the next phase. Missing evidence that affects execution safety blocks.
 
-Return `READY` or `NEEDS CHANGES` with findings ranked by severity and the decisive command evidence. During authorized runbook work, the main agent sets `Review: READY <date>` for a passing review; any revision clears it until re-reviewed.
+Return `READY` or `NEEDS CHANGES` with findings ranked by severity and the decisive command evidence; a re-review is a delta review under [plan.md — Review](plan.md#review). During authorized runbook work, the main agent sets `Review: READY <date>` for a passing review; any revision clears it until re-reviewed.
 
 ## After execution
 

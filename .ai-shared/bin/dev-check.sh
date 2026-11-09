@@ -35,10 +35,16 @@ case "${1:-}" in
       if $allowed_test; then
         # --test exempts a path that does not look like a test, so it is the
         # one way past the non-test-path block below. Require the claim to be
-        # backed by test code the commit actually adds: an in-source test file
-        # that introduces no test declares itself a test and isn't one.
+        # backed by test code: the commit adds a test declaration, or the file
+        # held one before the commit, so an edit or deletion of existing test
+        # code passes. An in-source file with neither declares itself a test
+        # and isn't one.
+        test_decl='#\[(test|cfg\(test\))|\bmod tests\b|\bdef test|\bclass Test|\bfunc (Test|Benchmark|Fuzz)|@(Test|ParameterizedTest|Nested)\b|\[(Test|Fact|Theory)\]|\b(it|test|describe)(\.(each|only|skip))?[[:space:]]*\(|\bTEST(_F|_P|_CASE)?[[:space:]]*\(|\bfunction test'
         additions=$(git show --format= --unified=0 "$commit" -- "$path" | sed -n 's/^+\([^+]\)/\1/p')
-        if ! printf '%s\n' "$additions" | rg -q '#\[(test|cfg\(test\))|\bmod tests\b|\bdef test|\bclass Test|\bfunc (Test|Benchmark|Fuzz)|@(Test|ParameterizedTest|Nested)\b|\[(Test|Fact|Theory)\]|\b(it|test|describe)(\.(each|only|skip))?[[:space:]]*\(|\bTEST(_F|_P|_CASE)?[[:space:]]*\(|\bfunction test'; then
+        # rg reads its input directly: rg -q exits at its first match, which
+        # under pipefail would fail a pipe whose writer is still writing.
+        if ! rg -q "$test_decl" <<<"$additions" &&
+          ! rg -q "$test_decl" < <(git show "$commit^:$path" 2>/dev/null); then
           block "--test path adds no test code: $path (declare a real stub with --stub, or commit the test)"
         fi
         continue

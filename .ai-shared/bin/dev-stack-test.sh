@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # dev-stack.sh against scratch repositories: the stack listing, check, review
 # verdicts, and next, whose runnable actions must pass their gates.
 set -euo pipefail
@@ -243,8 +243,8 @@ expect_fail 'approve refuses a published plan' 'is published; no phase resumes i
 write_plan "$G" planning feat/grand pr2
 run review "$G" ready >/dev/null; set_status "$G" planning
 expect_fail 'approve refuses a plan returned to planning with a ready Spec' 'approve needs a ready plan whose review still holds' approve "$G"
-[[ "$(run next "$R" | awk -F'\t' -v g="$G" '$1 == g { print $4 }')" == review-feature ]] || fail 'a plan returned to planning with a ready Spec was not sent back to review'
-pass 'a plan returned to planning goes back to review-feature, not wait-user'
+[[ "$(run next "$R" | awk -F'\t' -v g="$G" '$1 == g { print $4 }')" == revise ]] || fail 'a plan returned to planning with a ready Spec was not sent to revise'
+pass 'a plan returned to planning goes to revise, not wait-user'
 run review "$G" needs-changes >/dev/null
 expect_fail 'approve refuses a needs-changes verdict' 'approve needs a ready plan whose review still holds' approve "$G"
 [[ -z "$(jq -cn --arg p "/dev-autopilot $R answers" '{hook_event_name:"UserPromptSubmit",prompt:$p}' | (cd "$REPO" && "$GATE"))" ]] ||
@@ -346,7 +346,7 @@ run stop "$S" 'three failed fixes' >/dev/null
 git -C "$WT" switch -q feat/root
 git -C "$WT" commit -q --allow-empty -m 'fix: the parent'
 [[ "$(reason_of "$S")" == stopped* ]] || fail 'switching the worktree or committing to another branch cleared the stop'
-pass "a shared worktree's switches and other branches' commits keep a stop"
+pass "a worktree's branch switches and other branches' commits keep a stop"
 git -C "$WT" switch -q feat/sib
 git -C "$WT" commit -q --allow-empty -m 'fix: by hand'
 [[ "$(reason_of "$S")" != stopped* ]] || fail "a new commit on the plan's branch kept the stop"
@@ -363,10 +363,18 @@ run stop "$S" 'needs repair' >/dev/null
 git -C "$WT" commit -q --allow-empty -m 'fix: one more'
 [[ "$(reason_of "$S")" == 'stopped|Failed fixes: 1/3 — a; Failed fixes: 3/3 — b' ]] || fail "a later stop released three failed fixes: $(reason_of "$S")"
 run resume "$S" >/dev/null
-run stop "$S" 'Failed fixes: 3/30 — not a count' >/dev/null
+run stop "$S" 'Failed fixes: 3/30 — below its limit' >/dev/null
 git -C "$WT" commit -q --allow-empty -m 'fix: and another'
-[[ "$(reason_of "$S")" != stopped* ]] || fail 'a 3/30 reason held'
+[[ "$(reason_of "$S")" != stopped* ]] || fail 'a count below its limit held'
 pass 'three failed fixes hold through later stops, read from every count'
+run stop "$S" 'Failed fixes: 4/6 — after a grant' >/dev/null
+git -C "$WT" commit -q --allow-empty -m 'fix: under the raised limit'
+[[ "$(reason_of "$S")" != stopped* ]] || fail 'a count below its raised limit held'
+run stop "$S" 'Failed fixes: 6/6 — at the raised limit' >/dev/null
+git -C "$WT" commit -q --allow-empty -m 'fix: past it'
+[[ "$(reason_of "$S")" == 'stopped|Failed fixes: 6/6 — at the raised limit' ]] || fail "a count at its raised limit did not hold: $(reason_of "$S")"
+run resume "$S" >/dev/null
+pass 'failed fixes hold at their limit, which a grant raises'
 [[ "$(run next "$R" --md | grep -c '^| ')" -ge 5 ]] || fail 'md after stops'
 
 # ── records and failures ──
@@ -466,9 +474,12 @@ run review "$Q2" ready >/dev/null; set_status "$Q2" approved
 expect_fail 'reopen needs an approved plan' "reopen takes a plan approved or later" reopen "$Q3"
 run stop "$Q1" 'Failed fixes: 3/3 — tests' >/dev/null
 [[ "$(row_of "$Q1")" == stopped* ]] || fail "held stop: $(row_of "$Q1")"
+sed -i 's/^Tip: .*/Tip: 1234567/' "$Q1" "$Q2"
 out=$(run reopen "$Q1")
 [[ "$out" == "Reopened to planning: $Q1 $Q2" ]] || fail "reopen: $out"
 grep -qx 'Status: planning' "$Q1" && grep -qx 'Status: planning' "$Q2" && grep -qx 'Status: planning' "$Q3" || fail 'reopen statuses'
+grep -qx 'Tip: -' "$Q1" && grep -qx 'Tip: -' "$Q2" || fail 'reopen kept a Tip'
+[[ "$(row_of "$Q1")" == revise* ]] || fail "a reopened plan with its spec unchanged is not sent to revise: $(row_of "$Q1")"
 sed -i '/^## Goal/a Reopened change.' "$Q1"
 [[ "$(row_of "$Q1")" == review-feature* ]] || fail "a reopened plan is still frozen or stopped: $(row_of "$Q1")"
 [[ "$(run review "$Q1" needs-changes)" == *'review-feature round 1/3' ]] || fail 'reopen kept the review round count'

@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # Read an existing collector report; never invoke cloud or cluster clients.
 set -euo pipefail
 

@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # Publication checks for create-pr (../skills/dev/create-pr.md): reviewed-tip
 # checks, PR verification, and cleanup. A plan is one PR; the PR carries code
 # only, and the plan stays in docs/plans, untracked, as a published record.
@@ -174,8 +174,7 @@ cmd_verify() {
 # The plan with its Status set to published.
 mark_published() { set_header "$PLAN_FILE" Status published || fail "Cannot set Status: published in $PLAN_FILE."; }
 
-# A plan shares its worktree with its parent when both resolve to the same one
-# (an only child); the plan that created the worktree removes it.
+# Removes the plan's own worktree and local Branch, then marks it published.
 cmd_cleanup() {
   local checked="$1" out ignored children head tip
   # "!<plan>" is a plan whose Stacks On line cannot be read, so it may name this one.
@@ -186,27 +185,20 @@ cmd_cleanup() {
   if [[ -n "$WT" ]]; then
     [[ -z "$(git -C "$WT" status --porcelain --untracked-files=all)" ]] || fail "Worktree $WT has uncommitted or untracked changes."
     head=$(git -C "$WT" symbolic-ref --quiet --short HEAD || true)
-    if [[ -n "$PARENT_PLAN" && "$(worktree_of "$PARENT_PLAN")" == "$WT" ]]; then
-      # Shared: hand the worktree back to the parent, which removes it later.
-      [[ "$head" == "$BRANCH" || "$head" == "$TARGET" ]] || fail "Worktree $WT is on '${head:-a detached HEAD}', neither $BRANCH nor its parent's $TARGET."
-      [[ "$head" == "$TARGET" ]] || git -C "$WT" switch --quiet "$TARGET" || fail "Cannot switch $WT to $TARGET."
-      printf 'WORKTREE %s returned to %s\n' "$WT" "$TARGET"
-    else
-      [[ "$head" == "$BRANCH" ]] || fail "Worktree $WT is on '${head:-a detached HEAD}', not $BRANCH; clean up the plans stacked on this one first."
-      # Removal deletes ignored content unseen, so it is shown first for the
-      # agent to check for unrelated files.
-      if [[ "$checked" != 1 ]]; then
-        ignored=$(git -C "$WT" status --porcelain --ignored --untracked-files=normal) || fail "Cannot list ignored files in $WT."
-        ignored=$(sed -n 's/^!! //p' <<<"$ignored")
-        if [[ -n "$ignored" ]]; then
-          printf 'IGNORED in %s:\n%s\n' "$WT" "$ignored"
-          printf 'Check the ignored content above for unrelated files, then rerun: dev-publish.sh cleanup %s --ignored-checked\n' "$PLAN_FILE" >&2
-          exit 4
-        fi
+    [[ "$head" == "$BRANCH" ]] || fail "Worktree $WT is on '${head:-a detached HEAD}', not $BRANCH; switch it back to $BRANCH."
+    # Removal deletes ignored content unseen, so it is shown first for the
+    # agent to check for unrelated files.
+    if [[ "$checked" != 1 ]]; then
+      ignored=$(git -C "$WT" status --porcelain --ignored --untracked-files=normal) || fail "Cannot list ignored files in $WT."
+      ignored=$(sed -n 's/^!! //p' <<<"$ignored")
+      if [[ -n "$ignored" ]]; then
+        printf 'IGNORED in %s:\n%s\n' "$WT" "$ignored"
+        printf 'Check the ignored content above for unrelated files, then rerun: dev-publish.sh cleanup %s --ignored-checked\n' "$PLAN_FILE" >&2
+        exit 4
       fi
-      out=$(bash "$SCRIPT_DIR/dev-worktree.sh" remove "$WT" 2>&1 | tail -1) || fail "Worktree removal failed: $out"
-      printf 'WORKTREE removed %s; %s\n' "$WT" "$out"
     fi
+    out=$(bash "$SCRIPT_DIR/dev-worktree.sh" remove "$WT" 2>&1 | tail -1) || fail "Worktree removal failed: $out"
+    printf 'WORKTREE removed %s; %s\n' "$WT" "$out"
   else
     printf 'WORKTREE none\n'
   fi

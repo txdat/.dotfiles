@@ -20,10 +20,10 @@ Rank plausible causes and test the strongest with focused runtime evidence. If c
 - **Regression test:** the reproduction as a test, with its level, its `scratch-diff` patch, and its failing output; below the reported surface it must still exercise the failure.
 - **Sibling defects:** other paths with the same faulty pattern. Fix them only when the request covers them.
 - **Remediation:** data, state, or user impact the fix will not repair, such as a backfill or cache purge. Live operations go in a separate [design-infra.md](design-infra.md) runbook.
-- **Route:** direct edit for a contained change; plan-backed when the fix crosses modules or contracts or carries rollout risk.
+- **Route:** direct edit when [plan.md — Scope](plan.md#scope) sends the change to the direct-edit path or calls it contained; plan-backed otherwise.
 
 With ongoing impact, containment comes first; remediation follows whatever stops new damage.
 
 ## Route
 
-Without a fix request, end with the proposal and the decision needed. The user's request decides the route: an approved fix plan goes to [execute-feature.md](execute-feature.md); a requested plan-backed fix starts [design-feature.md](design-feature.md) with `Type: fix`; any other fix is a direct edit under [CORE.md — Work](../../CORE.md#work), using the option the user confirms. A direct fix applies the regression test from its patch, shows it failing then passing, and reruns the original reproduction on the same surface; one it cannot reach is reported as unrun. Ask first when the user named no option, or when the request leaves the route open and the proposal recommends plan-backed.
+Without a fix request, end with the proposal and the decision needed. The user's request decides the route: a requested plan-backed fix starts [design-feature.md](design-feature.md) with `Type: fix`; any other fix is a direct edit under [CORE.md — Work](../../CORE.md#work), using the option the user confirms. A direct fix applies the regression test from its patch, shows it failing then passing, and reruns the original reproduction on the same surface; one it cannot reach is reported as unrun. Ask first when the user named no option, or when the request leaves the route open and the proposal recommends plan-backed.

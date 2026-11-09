@@ -4,7 +4,7 @@ Write a plan another agent can implement test-first without inventing behavior. 
 
 ## 1. Understand
 
-Inspect the relevant code, contracts, and conventions, and pick the Base branch: the default branch unless the user names one, or the parent's for a stacked plan. Name the plan's own Branch after the project's convention. When the goal needs several PRs, propose the stack in the brief and write its plans root first under [plan.md — Stacks](plan.md#stacks).
+Inspect the relevant code, contracts, and conventions, and pick the Base branch: the default branch unless the user names one, or the parent's for a stacked plan. Name the plan's own Branch after the project's convention.
 
 Resolve what the requirement means before writing:
 
@@ -27,7 +27,7 @@ Before creating the plan file, send one brief and wait for the answer:
   |---|--------|---------|-----------|----------------|
 - **Stack:** <prN — branch — parent — outcome, root first; omit for one PR>
 
-Decisions that affect behavior, scope, contracts, the data model, dependencies, or cost belong to the user; list each with options, among them the narrowest variant that meets the whole requirement under [Keep it simple](#4-keep-it-simple) even when you do not recommend it, and one recommendation. Other technical choices are yours; record the non-obvious ones as DDs with their rationale. When the task says dev-autopilot decides for the user, list, the same way and for dev-autopilot, each technical choice that adds an item [Keep it simple](#4-keep-it-simple) counts as a cost. Dropping or narrowing anything the user asked for also needs the user's decision. Record every decision as a `DD-n` and cite it rather than repeating it.
+Decisions that affect behavior, scope, contracts, the data model, dependencies, or cost belong to the user; list each with options, among them the narrowest variant that meets the whole requirement under [Keep it simple](#4-keep-it-simple) even when you do not recommend it, and one recommendation. Dropping or narrowing anything the user asked for also needs the user's decision. Other technical choices are yours; record the non-obvious ones as DDs with their rationale. When the task says you decide for the user under [autopilot.md — Decisions](autopilot.md#decisions), send no brief and wait for no answer: decide each decision this step gives the user under that section, which never drops or narrows what the user asked for, and return each decision with its options. Record every decision as a `DD-n` and cite it rather than repeating it.
 
 ## 3. Write the spec
 
@@ -51,14 +51,14 @@ Reuse code that implements the same concept, per [CODING.md](../../CODING.md#cha
 
 ## 5. Split PRs
 
-Use one plan and one PR unless review needs separable parts; judge by distinct behaviors, contracts, and migration risks, not line count. Each further PR is a plan stacked on the one it needs, correct and safe to merge after its parent alone, with incomplete behavior unexposed. The stack is dependency order and merge order. Propose the stack in the brief; the user chooses, or dev-autopilot when the task says it decides for the user, under [autopilot.md — Decisions](autopilot.md#decisions). A later split, merge, insert, or drop follows [plan.md — Stacks](plan.md#stacks).
+Use one plan and one PR unless review needs separable parts; judge by distinct behaviors, contracts, and migration risks, not line count. Each further PR is a plan stacked on the one it needs, correct and safe to merge after its parent alone, with incomplete behavior unexposed. The stack is dependency order and merge order. Propose the stack in the brief; the user chooses, or you when the task says you decide for the user. Write its plans root first under [plan.md — Stacks](plan.md#stacks); a later split, merge, insert, or drop follows that section.
 
 ## 6. Finish
 
 Link the issue the user supplied, or record `Issue: none` and `0` in the directory name. Before handoff, run every PC Check in one batch, `~/.dotfiles/.ai-shared/bin/dev-check.sh pcs <plan> --cwd <checkout>`, against the inspected branch (the PR target, or Base while that branch does not exist): a Check may fail only when an earlier step establishes its fact; read each FAIL against that step. Save the plan at its [plan.md — Artifact](plan.md#artifact) path with `Status: planning`.
 
-Then, from the repository, run `~/.dotfiles/.ai-shared/bin/dev-stack.sh check <root plan>`: the review-feature gate, minus its parent-approval check, on every plan in the stack not yet approved. Fix each reported block within the recorded DDs and rerun until every plan passes, under the attempt limit in [CORE.md — Work](../../CORE.md#work). A pass proves shape, not correctness. Hand the stack to [review-feature.md](review-feature.md) only after it passes.
+Then, from the repository, run `~/.dotfiles/.ai-shared/bin/dev-stack.sh check <root plan>`: the review-feature gate, minus its parent-approval and stop checks, on every plan in the stack not yet approved. Fix each reported block within the recorded DDs and rerun until every plan passes, under the attempt limit in [CORE.md — Work](../../CORE.md#work). A pass proves shape, not correctness. Hand the stack to [review-feature.md](review-feature.md) only after it passes.
 
 ## 7. Revise after review
 
-Revise only an unapproved plan; an approved plan follows [plan.md — Changes](plan.md#changes). On NEEDS CHANGES or a stop's findings, correct each blocking finding within the recorded DDs and the user's answers, rerun the PC Checks the change touches with `dev-check.sh pcs <plan> --cwd <checkout> PC-<n> ...` and the stack check from step 6, and re-review under [plan.md — Review](plan.md#review). A finding that needs a new or changed decision goes to the user with options as in [Brief the user](#2-brief-the-user), or, when the task says dev-autopilot decides for the user, to dev-autopilot. When the task says dev-autopilot decides for the user, also return each technical choice the revision adds that [Brief the user](#2-brief-the-user) lists for dev-autopilot.
+Revise only an unapproved plan; an approved plan follows [plan.md — Changes](plan.md#changes). On NEEDS CHANGES or a stop's findings, correct each blocking finding within the recorded DDs and the user's answers, rerun the PC Checks the change touches with `dev-check.sh pcs <plan> --cwd <checkout> PC-<n> ...` and the stack check from step 6, and re-review under [plan.md — Review](plan.md#review). A finding that needs a new or changed decision goes to the user with options as in [Brief the user](#2-brief-the-user); when the task says you decide for the user, decide it under [autopilot.md — Decisions](autopilot.md#decisions) and return it with its options. After a reopen, the revision takes the user's answers, or after `auto-reopen` the choices labeled dev-autopilot's; on a plan executed before, execute-feature updates its tests ([execute-feature.md](execute-feature.md)).

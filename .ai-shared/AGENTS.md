@@ -15,7 +15,7 @@ Edits to this directory are direct edits, not plan-backed work. See [plan.md —
 - **Headings and paths are load-bearing.** Before renaming a heading, a file, or a `bin/` script, grep all three places that refer to them:
   - links in `.ai-shared` (agents cite anchors such as `CORE.md#work`)
   - `gate-check.sh` block messages (they cite anchors such as `skills/dev/plan.md#schema`)
-  - external consumers that hard-code `bin/` paths: `../.pi/agent/extensions/*.ts` and `../.claude/marketplace/plugins/dev-stack/hooks/register.ts`
+  - external consumers that hard-code `bin/` paths: `../.pi/agent/extensions/*.ts`, `../.claude/marketplace/plugins/dev-stack/hooks/register.ts` and `register.test.ts`
 - **Rules must be harness-neutral.** Six harnesses read these files. Phrase tool-specific steps the way existing files do: "where installed", "Without a Skill tool, read … with the file-read tool".
 - **Style:** terse, declarative, and imperative, without filler or rigid templates. Word choice follows [Wording](#wording).
 - **Skill files** start with `# /<name> — <summary>` and stay short. Load-time metadata (description, effort, model) lives in the README tables, not in the skill file.
@@ -61,11 +61,11 @@ Update every place below:
 
 ## Plan schema and scripts
 
-The gate reads plan header fields and IDs, never prose. A change to the plan schema, statuses, or stack rules in [plan.md](skills/dev/plan.md) therefore needs matching changes to `bin/gate-check.sh`, `bin/dev-stack.sh`, `bin/dev-plan-lib.sh`, and their `-test.sh` files.
+The gate reads plan header fields and IDs, never prose. A change to the plan schema, statuses, or stack rules in [plan.md](skills/dev/plan.md) therefore needs matching changes to `bin/gate-check.sh`, `bin/dev-stack.sh`, `bin/dev-publish.sh`, `bin/dev-plan-lib.sh`, and their `-test.sh` files.
 
 Script conventions:
 
-- Start with `#!/bin/bash` and `set -euo pipefail`. `gate-check.sh` also sets `LC_ALL=C`, because a multibyte locale once crashed `awk` and the hook read the crash as a pass.
+- Start with `#!/bin/bash` and `set -euo pipefail`. A sourced library such as `dev-plan-lib.sh` has no shebang or `set` line; it runs under its caller's options. `gke-collect.sh` omits `-e` so one failed query never aborts the sweep. `gate-check.sh` also sets `LC_ALL=C`, because a multibyte locale once crashed `awk` and the hook read the crash as a pass.
 - Begin with a header comment that links the owning md section.
 - Callers invoke scripts by full path, `~/.dotfiles/.ai-shared/bin/<script>`.
 - Tests live in `bin/<name>-test.sh`. They build scratch Git repos under `/tmp`, whose `docs/plans` hold their plans, ignore those through each repo's `.git/info/exclude` with `GIT_CONFIG_GLOBAL=/dev/null`, and set `AI_WORKTREES_ROOT` so they never touch `~/work/wt`.
