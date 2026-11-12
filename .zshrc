@@ -198,11 +198,6 @@ codex() {
 }
 
 oc() {
-    local -a env_vars=(
-        CLAUDE_API_KEY=
-        DEEPSEEK_API_KEY=
-        OPENCODE_API_KEY=$OC_API_KEY
-    )
     local -a args=(
         --auto
     )
@@ -212,7 +207,7 @@ oc() {
             *)  args+=("$arg") ;;
         esac
     done
-    env "${env_vars[@]}" command opencode "${args[@]}"
+    command opencode "${args[@]}"
 }
 
 # clipboard: xc -f FILE | xc -o [FILE] | cmd | xc

@@ -2,11 +2,11 @@
 
 Rules symlinks: `~/.gemini/config/GEMINI.md` and `~/.gemini/GEMINI.md` → `~/.dotfiles/.ai-shared/CORE.md`.
 
-**skills** — create `~/.gemini/config/skills/<name>/SKILL.md` from the [Antigravity template](#antigravity-template), or register its path in `~/.gemini/config/skills.json`, taking name, description, and effort from [skills](../README.md#skills) and the model through [model mapping](../README.md#model-mapping).
+**skills** — create `~/.gemini/config/skills/<name>/SKILL.md` from the [Antigravity template](#antigravity-template), or register its path in `~/.gemini/config/skills.json`, taking name, description, and effort from [skills](../skills/README.md) and the model [skills](../skills/README.md) assigns.
 
-**agents** — create `~/.gemini/config/agents/<name>/agent.md` from the [Antigravity agent template](#antigravity-agent-template), or register its path in `~/.gemini/config/agents.json`, taking name, description, and md file from [agents](../README.md#agents).
+**agents** — create `~/.gemini/config/agents/<name>/agent.md` from the [Antigravity agent template](#antigravity-agent-template), or register its path in `~/.gemini/config/agents.json`, taking name, description, and md file from [agents](../agents/README.md).
 
-**hooks** — register lifecycle hooks in `~/.gemini/config/hooks.json`, such as the `gate-check.sh` command as a `PreToolUse` hook.
+**hooks** — in `~/.gemini/config/hooks.json`, register `~/.dotfiles/.ai-shared/bin/gate-check.sh` for `PreToolUse` with matcher `.*` and `PostToolUse` with matcher `run_command`. On `read_file` of a dev skill it gates the phase; on `run_command`, `edit_file`, and `write_file` it applies the refusals of [plan.md — Changes](../skills/dev/plan.md#changes), with `run_command` as the shell call. Also register `~/.dotfiles/.ai-shared/bin/test-serial-check.sh` for `PreToolUse` with matcher `run_command`; it blocks a command that names `jest` without `--runInBand` under [CODING.md — Tests](../CODING.md#tests).
 
 ## Antigravity template
 

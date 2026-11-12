@@ -22,6 +22,14 @@
  * the read when it names a plan — run-stack names each plan as it starts its
  * phase in one session — and otherwise the latest user message.
  *
+ * A user-typed skill command loads a phase without a read, as a user-typed
+ * `/dev-*` command bypasses Claude Code's Skill tool; there the `input` event
+ * sends the UserPromptSubmit JSON and refuses the prompt when gate-check.sh
+ * blocks. A shell call that another `tool_call` handler blocks, or that is
+ * aborted before it starts, skips `tool_result` after its snapshot was taken,
+ * so the snapshot is compared and cleared at `tool_execution_end`, as Claude
+ * Code's PostToolUseFailure hook runs the same check.
+ *
  * If gate-check.sh cannot run (missing, timed out, unreadable output) the
  * call passes, as a failed Claude Code hook does, with a UI warning.
  */
@@ -48,6 +56,8 @@ const HOME = os.homedir();
 const GATE_CHECK = path.join(HOME, ".dotfiles", ".ai-shared", "bin", "gate-check.sh");
 const TIMEOUT_MS = 15_000;
 const PLAN_MENTION = /pr\d+\.spec\.md/;
+/** A user-typed skill command for a dev phase, as Pi expands `/skill:<name>`. */
+const SKILL_COMMAND = /^\s*\/skill:dev[-:]/i;
 
 /**
  * A path as written and with symlinks resolved. Matching every form of the
@@ -156,8 +166,8 @@ function runGateCheck(hookJson: string, cwd: string): Promise<Verdict> {
       { cwd, timeout: TIMEOUT_MS, killSignal: "SIGKILL" },
       (err, stdout, stderr) => {
         // gate-check.sh prints verdict JSON and exits 0, or prints nothing to pass:
-        // continue:false blocks a PreToolUse, and decision:block reports a Bash
-        // call whose changes the post-check restored.
+        // continue:false blocks a PreToolUse call or a user prompt, and decision:block
+        // reports a shell call whose changes the post-check restored.
         try {
           const out = JSON.parse(stdout) as {
             continue?: boolean;
@@ -223,6 +233,28 @@ export default function gateCheckExtension(pi: ExtensionAPI) {
     if (event.message.role === "assistant") lastAssistant = event.message as Message;
   });
 
+  // Bash calls whose PostToolUse check already ran at tool_result.
+  const postChecked = new Set<string>();
+
+  // A user-typed /skill:dev-<slug> loads a phase without a read: gate-check.sh
+  // decides on the prompt, and a blocked prompt never reaches the agent.
+  pi.on("input", async (event, ctx) => {
+    if (!SKILL_COMMAND.test(event.text)) return;
+    const hookJson = JSON.stringify({
+      hook_event_name: "UserPromptSubmit",
+      prompt: event.text,
+      cwd: ctx.cwd,
+    });
+    const verdict = await runGateCheck(hookJson, ctx.cwd);
+    if (verdict.block) {
+      ctx.ui.notify(`[gate-check.sh] ${verdict.reason}`, "error");
+      return { action: "handled" };
+    }
+    if (verdict.error) {
+      ctx.ui.notify(`gate-check.sh failed, ${event.text} loaded ungated: ${verdict.error}`, "warning");
+    }
+  });
+
   pi.on("tool_call", async (event, ctx) => {
     // Before a bash, edit, or write call: the record guard.
     if (!isToolCallEventType("read", event)) {
@@ -267,6 +299,7 @@ export default function gateCheckExtension(pi: ExtensionAPI) {
       tool_use_id: event.toolCallId,
       cwd: ctx.cwd,
     });
+    postChecked.add(event.toolCallId);
     const verdict = await runGateCheck(hookJson, ctx.cwd);
     const report = (reason: string) => {
       ctx.ui.notify(`[gate-check.sh] ${reason}`, "warning");
@@ -275,6 +308,25 @@ export default function gateCheckExtension(pi: ExtensionAPI) {
     if (verdict.block) return report(verdict.reason);
     if (verdict.warning) return report(verdict.warning);
     if (verdict.error) {
+      ctx.ui.notify(`gate-check.sh failed, ${event.toolName} ran unguarded: ${verdict.error}`, "warning");
+    }
+  });
+
+  // A call blocked by another tool_call handler, or aborted before it starts,
+  // skips tool_result, and its snapshot still needs comparing and clearing:
+  // gate-check.sh's report has no result to join, so it goes to the user.
+  pi.on("tool_execution_end", async (event, ctx) => {
+    if (event.toolName !== "bash" || postChecked.delete(event.toolCallId)) return;
+    const hookJson = JSON.stringify({
+      hook_event_name: "PostToolUseFailure",
+      tool_name: "Bash",
+      tool_use_id: event.toolCallId,
+      cwd: ctx.cwd,
+    });
+    const verdict = await runGateCheck(hookJson, ctx.cwd);
+    if (verdict.block) return;
+    if (verdict.warning) ctx.ui.notify(`[gate-check.sh] ${verdict.warning}`, "warning");
+    else if (verdict.error) {
       ctx.ui.notify(`gate-check.sh failed, ${event.toolName} ran unguarded: ${verdict.error}`, "warning");
     }
   });

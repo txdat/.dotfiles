@@ -208,6 +208,13 @@ assert_block "$out" 'already approved' 'the Pi arguments shape resolves the plan
 assert_block "$(prompt_gate "$repo" "/dev-review-feature $P")" 'already approved' 'a typed /dev-review-feature is gated'
 assert_block "$(prompt_gate "$repo" "/dev-review-feature, $P")" 'already approved' 'punctuation after a typed skill still gates it'
 assert_block "$(prompt_gate "$repo" "/Dev-review-feature $P")" 'already approved' 'a typed skill is gated regardless of case'
+out=$(prompt_gate "$repo" "/dev-review-feature $P")
+jq -e '.hookSpecificOutput == null' <<<"$out" >/dev/null ||
+  { printf 'FAIL: a UserPromptSubmit block carries no PreToolUse output\n%s\n' "$out" >&2; exit 1; }
+printf 'PASS: a UserPromptSubmit block carries no PreToolUse output\n'
+assert_block "$(prompt_gate "$repo" "/skill:dev-review-feature $P")" 'already approved' "Pi's expanded skill command is gated"
+assert_block "$(prompt_gate "$repo" "/Skill:dev-review-feature, $P")" 'already approved' "Pi's skill command is gated regardless of case and punctuation"
+assert_pass "$(prompt_gate "$repo" "run /skill:dev-review-feature $P")" 'a skill command not at the start is not gated'
 assert_block "$(prompt_gate "$repo" '/dev-execute-feature')" 'none was named' 'a typed phase without a path blocks'
 assert_pass "$(prompt_gate "$repo" "please review-feature $P later")" 'prose that mentions a skill is not gated'
 assert_pass "$(prompt_gate "$repo" 'explain /dev-review-feature to me')" 'a slash command not at the start is not gated'
@@ -232,6 +239,13 @@ assert_pass "$(shim_prompt "$nojq" 'fix the login bug')" 'missing jq does not bl
 assert_pass "$(shim_prompt "$nojq" 'restart the dev-server')" 'missing jq does not block a prompt that mentions dev-'
 out=$(jq -cn --arg p "/dev-review-feature $P" '{hook_event_name:"UserPromptSubmit",prompt:$p}' | (cd "$repo" && PATH="$nojq" "$GATE"))
 assert_block "$out" 'requires jq' 'missing jq still blocks a dev skill'
+out=$(jq -cn --arg p "/skill:dev-review-feature $P" '{hook_event_name:"UserPromptSubmit",prompt:$p}' | (cd "$repo" && PATH="$nojq" "$GATE"))
+assert_block "$out" 'requires jq' "missing jq still blocks Pi's skill command"
+out=$(jq -cn --arg p "$P" '{hook_event_name:"PreToolUse",tool_name:"Skill",tool_input:{skill:"dev-review-feature",args:$p}}' | (cd "$repo" && PATH="$nojq" "$GATE"))
+assert_block "$out" 'requires jq' 'missing jq still blocks a dev Skill call'
+jq -e '.hookSpecificOutput.hookEventName == "PreToolUse" and .hookSpecificOutput.permissionDecision == "deny"' <<<"$out" >/dev/null ||
+  { printf 'FAIL: a no-jq PreToolUse block carries the PreToolUse permission deny\n%s\n' "$out" >&2; exit 1; }
+printf 'PASS: a no-jq PreToolUse block carries the PreToolUse permission deny\n'
 
 # ── worktree and root ──
 use_repo
@@ -857,6 +871,10 @@ bash_guard() { guard Bash "$(jq -cn --arg c "$1" '{command:$c}')"; }
 LOG="$(dirname "$P")/log"
 assert_block "$(bash_guard "~/.dotfiles/.ai-shared/bin/dev-stack.sh resume $P")" "dev-stack.sh resume is the user's alone" 'an agent cannot run resume'
 assert_block "$(bash_guard "bash dev-stack.sh reopen '$P'")" "dev-stack.sh reopen is the user's alone" 'an agent cannot run reopen'
+out=$(bash_guard "bash dev-stack.sh reopen '$P'")
+jq -e '.hookSpecificOutput == {hookEventName:"PreToolUse", permissionDecision:"deny", permissionDecisionReason:.reason}' <<<"$out" >/dev/null ||
+  { printf 'FAIL: a PreToolUse block carries the PreToolUse permission deny\n%s\n' "$out" >&2; exit 1; }
+printf 'PASS: a PreToolUse block carries the PreToolUse permission deny\n'
 assert_block "$(bash_guard "cd /tmp && env FOO=1 \"\$HOME/.dotfiles/.ai-shared/bin/dev-stack.sh\" resume $P")" "dev-stack.sh resume is the user's alone" 'resume after a separator and a quoted path is caught'
 assert_block "$(bash_guard $'true\ndev-stack.sh resume '"$P")" "dev-stack.sh resume is the user's alone" 'resume on a later line is caught'
 assert_pass "$(bash_guard "grep -n 'dev-stack.sh resume' README.md; echo 'ask the user to run dev-stack.sh reopen'")" 'a mention of resume or reopen in an argument passes'
@@ -995,5 +1013,116 @@ write_plan "$P" approved
 write_plan "$P" published
 assert_block "$(guard Edit "$(jq -cn --arg f "$P" '{file_path:$f,old_string:"Status: published",new_string:"Status: reviewed"}')")" 'is published' 'a published plan takes no edit'
 assert_pass "$(guard Edit "$(jq -cn --arg f "$repo/README.md" '{file_path:$f,old_string:"seed",new_string:"x"}')")" "files outside docs/plans pass"
+
+# ── Antigravity hook shapes ──
+assert_deny_agy() {
+  local out="$1" exp="$2" label="$3"
+  jq -e --arg e "$exp" '.decision == "deny" and (.reason | contains($e)) and (.hookSpecificOutput == null) and (.continue == null) and (.stopReason == null)' <<<"$out" >/dev/null 2>&1 ||
+    { printf 'FAIL: want deny with %q and strict proto fields, got: %s\n' "$exp" "$out" >&2; exit 1; }
+  printf 'PASS: %s\n' "$label"
+}
+
+# Antigravity starts a hook in the directory of hooks.json, never the agent's:
+# every case runs from a directory outside any repository, with cwd set.
+agy_gate() { (cd "$nogit" && PATH="${1:-$PATH}" "$GATE"); }
+
+# run_command denying resume
+out=$(jq -cn --arg cwd "$repo" '{hookEventName:"PreToolUse",toolCall:{id:"a1",name:"run_command",args:{CommandLine:"dev-stack.sh resume"}},cwd:$cwd}' | agy_gate)
+assert_deny_agy "$out" 'is the user'\''s alone' 'agy run_command cannot run resume'
+
+# run_command denying stack log write
+out=$(jq -cn --arg d "$D" --arg cwd "$repo" '{hookEventName:"PreToolUse",toolCall:{id:"a2",name:"run_command",args:{CommandLine:("echo x >> " + $d + "/log")}},cwd:$cwd}' | agy_gate)
+assert_deny_agy "$out" 'stack log is written only by dev-stack.sh' 'agy run_command cannot write stack log'
+
+# write_file denying write to published plan, by a path relative to cwd
+out=$(jq -cn --arg f "${P#"$repo"/}" --arg cwd "$repo" '{hookEventName:"PreToolUse",toolCall:{id:"a3",name:"write_file",args:{Path:$f,Content:"# Edited"}},cwd:$cwd}' | agy_gate)
+assert_deny_agy "$out" 'is published' 'agy write_file resolves a relative Path against cwd'
+
+# edit_file denying unapproved skip
+write_plan "$P" ready
+out=$(jq -cn --arg f "$P" --arg cwd "$repo" '{hookEventName:"PreToolUse",toolCall:{id:"a4",name:"edit_file",args:{Path:$f,Target:"Status: ready",Replacement:"Status: implemented"}},cwd:$cwd}' | agy_gate)
+assert_deny_agy "$out" 'only through approval' 'agy edit_file cannot skip approval'
+
+# Arguments that arrive JSON-encoded are decoded first.
+out=$(jq -cn --arg f "$P" --arg cwd "$repo" '{hookEventName:"PreToolUse",toolCall:{id:"a4b",name:"edit_file",args:({Path:$f,Target:"Status: ready",Replacement:"Status: implemented"} | tojson)},cwd:$cwd}' | agy_gate)
+assert_deny_agy "$out" 'only through approval' 'agy edit_file decodes arguments sent as a JSON string'
+out=$(jq -cn --arg f "$P" --arg cwd "$repo" '{hookEventName:"PreToolUse",toolCall:{id:"a4c",name:"edit_file",args:{Path:($f | tojson),Target:("Status: ready" | tojson),Replacement:("Status: implemented" | tojson)}},cwd:$cwd}' | agy_gate)
+assert_deny_agy "$out" 'only through approval' 'agy edit_file decodes JSON-encoded argument values'
+
+# read_file on dev-review-feature gating an approved plan
+write_plan "$P" approved
+SKILL_PATH=/x/skills/dev-review-feature/SKILL.md
+out=$(jq -cn --arg f "$P" --arg cwd "$repo" --arg s "$SKILL_PATH" '{hookEventName:"PreToolUse",toolCall:{id:"a5",name:"read_file",args:{Path:$s}},lastUserInput:$f,cwd:$cwd}' | agy_gate)
+assert_deny_agy "$out" 'already approved' 'agy read_file gates dev-review-feature from outside the repository'
+
+# An unusable cwd leaves the hook outside any repository: a gated read blocks.
+for bad in "$TMP_ROOT/missing-dir" ""; do
+  out=$(jq -cn --arg f "$P" --arg cwd "$bad" --arg s "$SKILL_PATH" '{hookEventName:"PreToolUse",toolCall:{id:"a5b",name:"read_file",args:{Path:$s}},lastUserInput:$f,cwd:$cwd}' | agy_gate)
+  assert_deny_agy "$out" 'Cannot resolve the main working-tree root' "agy read_file blocks when cwd is unusable (${bad:-empty})"
+done
+
+# The plan comes from the agent text of the response that issued the read when
+# it names one, else from lastUserInput.
+transcript="$TMP_ROOT/transcript.jsonl"
+agy_transcript_read() {
+  jq -cn --arg tp "$transcript" --arg cwd "$repo" --arg s "$SKILL_PATH" --arg u "$1" '{hookEventName:"PreToolUse",toolCall:{id:"a7",name:"read_file",args:{Path:$s}},lastUserInput:$u,transcriptPath:$tp,cwd:$cwd}' | agy_gate
+}
+issuer() { jq -cn --arg c "$1" --arg s "$SKILL_PATH" '{type:"PLANNER_RESPONSE",content:$c,tool_calls:[{name:"read_file",args:{Path:$s}}]}'; }
+missing="$(dirname "$P")/pr9.spec.md"
+{ jq -cn '{type:"USER_INPUT",content:"next step"}'; issuer "Reviewing $P now"; } > "$transcript"
+assert_deny_agy "$(agy_transcript_read "$missing")" 'already approved' 'agy read_file takes the plan the issuing response names over lastUserInput'
+{ jq -cn '{type:"USER_INPUT",content:"next step"}'; jq -cn --arg c "Reviewing $P now" --arg s "$SKILL_PATH" '{type:"PLANNER_RESPONSE",content:$c,tool_calls:[{name:"read_file",args:({Path:$s} | tojson)}]}'; } > "$transcript"
+assert_deny_agy "$(agy_transcript_read "next step")" 'already approved' 'agy read_file finds an issuer whose arguments are a JSON string'
+{ jq -cn '{type:"USER_INPUT",content:"next step"}'; jq -cn --arg c "Reviewing $P now" --arg s "$SKILL_PATH" '{type:"PLANNER_RESPONSE",content:$c,tool_calls:[{name:"read_file",args:{Path:($s | tojson)}}]}'; } > "$transcript"
+assert_deny_agy "$(agy_transcript_read "next step")" 'already approved' 'agy read_file finds an issuer whose Path value is JSON-encoded, as real transcripts store it'
+{ jq -cn '{type:"USER_INPUT",content:"next step"}'; issuer "Reviewing $P now"; jq -cn --arg c "Next is $missing" '{type:"PLANNER_RESPONSE",content:$c,tool_calls:[{name:"read_file",args:{Path:"/x/other.md"}}]}'; } > "$transcript"
+assert_deny_agy "$(agy_transcript_read "next step")" 'already approved' 'agy read_file takes the issuer by its Path, not the latest response'
+{ jq -cn '{type:"USER_INPUT",content:"next step"}'; issuer ""; } > "$transcript"
+assert_deny_agy "$(agy_transcript_read "$P")" 'already approved' 'agy read_file falls back to lastUserInput when the issuer names no plan'
+{ jq -cn --arg p "$P" '{type:"USER_INPUT",content:"next step"}, {type:"PLANNER_RESPONSE",content:("Next is " + $p)}'; issuer ""; } > "$transcript"
+assert_deny_agy "$(agy_transcript_read "next step")" 'none was named' 'agy read_file ignores a plan named by a response other than the issuer'
+{ jq -cn --arg p "$P" '{type:"USER_INPUT",content:"next step"}, {type:"GENERIC",content:("ls: " + $p)}'; issuer ""; } > "$transcript"
+assert_deny_agy "$(agy_transcript_read "next step")" 'none was named' 'agy read_file ignores a plan named only in tool output'
+{ issuer "Reviewing $P"; jq -cn '{type:"USER_INPUT",content:"next step"}'; } > "$transcript"
+assert_deny_agy "$(agy_transcript_read "next step")" 'none was named' 'agy read_file ignores an issuer before the latest user input'
+rm -f "$transcript"
+
+# read_file of a file that only shares a skill name passes
+out=$(jq -cn --arg cwd "$repo" --arg f "$P" '{hookEventName:"PreToolUse",toolCall:{id:"a8",name:"read_file",args:{Path:"/x/docs/review-feature.md"}},lastUserInput:$f,cwd:$cwd}' | agy_gate)
+assert_pass "$out" 'agy read_file passes a non-skill file named like a phase'
+out=$(jq -cn --arg cwd "$repo" --arg f "$P" '{hookEventName:"PreToolUse",toolCall:{id:"a9",name:"read_file",args:{Path:"/x/.ai-shared/skills/dev/review-feature.md"}},lastUserInput:$f,cwd:$cwd}' | agy_gate)
+assert_deny_agy "$out" 'already approved' 'agy read_file gates the shared phase instructions'
+
+# read_file on ordinary file passes
+out=$(jq -cn --arg f "$repo/README.md" --arg cwd "$repo" '{hookEventName:"PreToolUse",toolCall:{id:"a6",name:"read_file",args:{Path:$f}},cwd:$cwd}' | agy_gate)
+assert_pass "$out" 'agy read_file passes ordinary files'
+
+# Without jq, only a dev skill read is denied.
+out=$(jq -cn --arg cwd "$repo" --arg s "$SKILL_PATH" --arg f "$P" '{hookEventName:"PreToolUse",toolCall:{id:"n1",name:"read_file",args:{Path:$s}},lastUserInput:$f,cwd:$cwd}' | agy_gate "$nojq")
+assert_deny_agy "$out" 'requires jq' 'missing jq still denies an agy dev skill read'
+out=$(jq -cn --arg cwd "$repo" '{hookEventName:"PreToolUse",toolCall:{id:"n2",name:"grep_search",args:{Query:"dev-stack.sh"}},lastUserInput:"run dev-review-feature",cwd:$cwd}' | agy_gate "$nojq")
+assert_pass "$out" 'missing jq passes an agy call that only mentions dev-'
+out=$(jq -cn --arg cwd "$repo" --arg f "$repo/README.md" '{hookEventName:"PreToolUse",toolCall:{id:"n3",name:"read_file",args:{Path:$f}},lastUserInput:"dev-review-feature",cwd:$cwd}' | agy_gate "$nojq")
+assert_pass "$out" 'missing jq passes an agy read of an ordinary file'
+out=$(jq -cn --arg cwd "$repo" --arg s "$SKILL_PATH" '{hookEventName:"PreToolUse",toolCall:{id:"n4",name:"grep_search",args:{Query:$s}},cwd:$cwd}' | agy_gate "$nojq")
+assert_pass "$out" 'missing jq passes a non-read agy call that names a skill path'
+out=$(jq -cn --arg cwd "$repo" --arg s "$SKILL_PATH" '{hookEventName:"PreToolUse",toolCall:{id:"n5",name:"read_file",args:{Path:($s | tojson)}},cwd:$cwd}' | agy_gate "$nojq")
+assert_deny_agy "$out" 'requires jq' 'missing jq denies an agy skill read whose Path is JSON-encoded'
+
+# run_command snapshot and restore, scoped to its Cwd argument over cwd
+id="agypost$RANDOM"
+jq -cn --arg id "$id" --arg c "$repo" --arg cwd "$nogit" '{hookEventName:"PreToolUse",toolCall:{id:$id,name:"run_command",args:{CommandLine:"true",Cwd:$c}},cwd:$cwd}' | agy_gate >/dev/null
+sed -i 's/^Status: approved/Status: planning/' "$P"
+out=$(jq -cn --arg id "$id" --arg c "$repo" --arg cwd "$nogit" '{hookEventName:"PostToolUse",toolCall:{id:$id,name:"run_command",args:{CommandLine:"true",Cwd:$c}},cwd:$cwd}' | agy_gate)
+[[ "$(jq -r '.overwriteResult // ""' <<<"$out")" == *"Restored from before the command"* && "$(jq -r '.decision // ""' <<<"$out")" == "" && "$(jq -r '.reason // ""' <<<"$out")" == "" ]] || { printf 'FAIL: agy post check did not return overwriteResult\n%s\n' "$out" >&2; exit 1; }
+grep -qx 'Status: approved' "$P" || { printf 'FAIL: agy post check did not restore plan\n' >&2; exit 1; }
+printf 'PASS: agy run_command post check restores a plan in its Cwd and returns overwriteResult\n'
+out=$(jq -cn --arg cwd "$repo" '{hookEventName:"PostToolUse",toolCall:{id:"nosnap1",name:"run_command",args:{CommandLine:"true"}},cwd:$cwd}' | agy_gate)
+[[ "$out" == '{}' ]] || { printf 'FAIL: agy post check without a snapshot printed %s\n' "$out" >&2; exit 1; }
+out=$(jq -cn --arg cwd "$repo" '{hookEventName:"PostToolUse",toolCall:{id:"nosnap2",name:"run_command",args:{CommandLine:"true"}},cwd:$cwd}' | agy_gate "$nojq")
+[[ "$out" == '{}' ]] || { printf 'FAIL: agy post check without jq printed %s\n' "$out" >&2; exit 1; }
+out=$(printf '{"hookEventName":"PostToolUse","toolCall":{"name":"run_command"' | agy_gate)
+[[ "$out" == '{}' ]] || { printf 'FAIL: agy post check on unparseable input printed %s\n' "$out" >&2; exit 1; }
+printf 'PASS: agy post check prints {} when it has nothing to report, with or without jq or parseable input\n'
 
 printf 'All gate-check.sh tests passed. Temporary fixtures: %s\n' "$TMP_ROOT"

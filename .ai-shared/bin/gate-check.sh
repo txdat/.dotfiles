@@ -1,15 +1,17 @@
 #!/bin/bash
 # Gate checker for the plan-backed phases (../skills/dev/plan.md#sequence).
 # Reads hook JSON from stdin, or a plan after --design (below), and prints
-# block JSON when a phase's entry condition fails. Two hook events reach it: PreToolUse for a model-invoked Skill
-# call (arguments in tool_input.args; the Pi extension sends
-# tool_input.arguments), and UserPromptSubmit for a user-typed /dev-<skill>.
+# block JSON when a phase's entry condition fails. Three hook sources reach it:
+# PreToolUse for a model-invoked Skill call (arguments in tool_input.args; the
+# Pi extension sends tool_input.arguments), Antigravity read_file on a dev skill
+# file (arguments in lastUserInput or transcriptPath), and UserPromptSubmit for a
+# user-typed /dev-<skill> or, as Pi expands it, /skill:dev-<skill>.
 #
-# Claude Code also runs it before Bash, Edit, Write, and MultiEdit calls
-# (record_guard below) and after Bash calls (bash_post_check), which never
-# invoke a phase: it refuses the user's commands, writes to the stack log,
-# approvals, and changes to a frozen plan. It is a guardrail against an
-# agent's mistakes and shortcuts, not a sandbox (bash_post_check).
+# Claude Code, Antigravity, and Pi also run it before shell and edit calls (record_guard
+# below) and after shell calls (bash_post_check), which never invoke a phase:
+# it refuses the user's commands, writes to the stack log, approvals, and changes
+# to a frozen plan. It is a guardrail against an agent's mistakes and shortcuts,
+# not a sandbox (bash_post_check).
 #
 # Only review-feature, execute-feature, review-code, and create-pr are gated.
 # Each checks its entry status; review-feature and review-code also check the
@@ -44,22 +46,78 @@ else
   HOOK_INPUT=$(cat)
 fi
 
+# Antigravity's hook JSON uses camelCase keys; --design input is never hook JSON.
+IS_ANTIGRAVITY=0
+if (( ! DESIGN_CHECK )) && [[ "$HOOK_INPUT" == *'"toolCall"'* || "$HOOK_INPUT" == *'"hookEventName"'* ]]; then
+  IS_ANTIGRAVITY=1
+fi
+
 # UserPromptSubmit runs on every prompt, so a missing prerequisite blocks only
 # input that could invoke a dev skill.
 if ! command -v jq >/dev/null 2>&1; then
+  # Antigravity's PostToolUse expects a JSON object on every path.
+  if (( IS_ANTIGRAVITY )) && [[ "$HOOK_INPUT" =~ \"hookEventName\"[[:space:]]*:[[:space:]]*\"PostToolUse\" ]]; then
+    printf '{}\n'
+    exit 0
+  fi
   # The record guard fails open without jq: it never gates a phase.
-  [[ ! "$HOOK_INPUT" =~ \"tool_name\"[[:space:]]*:[[:space:]]*\"(Bash|Edit|Write|MultiEdit)\" ]] || exit 0
-  if [[ "$HOOK_INPUT" == *'"UserPromptSubmit"'* ]]; then
-    [[ "$HOOK_INPUT" =~ \"prompt\"[[:space:]]*:[[:space:]]*\"[[:space:]]*/[Dd][Ee][Vv][-:] ]] || exit 0
+  [[ ! "$HOOK_INPUT" =~ \"(tool_name|name)\"[[:space:]]*:[[:space:]]*\"(Bash|Edit|Write|MultiEdit|run_command|edit_file|write_file)\" ]] || exit 0
+  if (( IS_ANTIGRAVITY )); then
+    # Antigravity runs this hook on every tool call; only a read_file of a dev
+    # skill path could enter a phase. Without jq the phase is unknown, so a
+    # read of any dev skill file, ungated ones included, is denied.
+    [[ "$HOOK_INPUT" =~ \"name\"[[:space:]]*:[[:space:]]*\"read_file\" ]] || exit 0
+    [[ "$HOOK_INPUT" =~ /dev-[a-z-]+/SKILL\.md(\\)?\"|/skills/dev/[a-z-]+\.md(\\)?\" ]] || exit 0
+  elif [[ "$HOOK_INPUT" == *'"UserPromptSubmit"'* ]]; then
+    [[ "$HOOK_INPUT" =~ \"prompt\"[[:space:]]*:[[:space:]]*\"[[:space:]]*/([Ss][Kk][Ii][Ll][Ll]:)?[Dd][Ee][Vv][-:] ]] || exit 0
   else
     [[ "$HOOK_INPUT" == *[Dd][Ee][Vv][-:]* ]] || exit 0
   fi
-  printf '{"continue":false,"stopReason":"gate-check.sh requires jq to parse hook input.","decision":"block","reason":"gate-check.sh requires jq to parse hook input."}\n'
+  if (( IS_ANTIGRAVITY )); then
+    printf '{"decision":"deny","reason":"gate-check.sh requires jq to parse hook input."}\n'
+  else
+    # Only a PreToolUse deny carries hookSpecificOutput, naming its event.
+    deny=''
+    [[ ! "$HOOK_INPUT" =~ \"hook_event_name\"[[:space:]]*:[[:space:]]*\"PreToolUse\" ]] ||
+      deny=',"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"gate-check.sh requires jq to parse hook input."}'
+    printf '{"continue":false,"stopReason":"gate-check.sh requires jq to parse hook input.","decision":"block","reason":"gate-check.sh requires jq to parse hook input."%s}\n' "$deny"
+  fi
   exit 0
 fi
 
+if (( IS_ANTIGRAVITY )); then
+  # Tool arguments may arrive as a JSON string, or with each value JSON-encoded,
+  # as some of Antigravity's transcripts store them; decode both so every check reads
+  # plain values.
+  AGY_INPUT=$(jq -c '
+    if (.toolCall.args? | type) == "string" then .toolCall.args |= (fromjson? // .) else . end
+    | if (.toolCall.args? | type) == "object" then
+        .toolCall.args |= map_values(if type == "string" and test("^\"(.|\n)*\"$") then (fromjson? // .) else . end)
+      else . end' <<<"$HOOK_INPUT" 2>/dev/null) || {
+    # Unparseable input: no check applies, and PostToolUse still expects an object.
+    [[ ! "$HOOK_INPUT" =~ \"hookEventName\"[[:space:]]*:[[:space:]]*\"PostToolUse\" ]] || printf '{}\n'
+    exit 0
+  }
+  HOOK_INPUT=$AGY_INPUT
+  # Antigravity starts a hook in the directory of hooks.json; the agent's own
+  # directory, where relative paths and Git resolve, is cwd.
+  AGY_CWD=$(jq -r '.cwd? // ""' <<<"$HOOK_INPUT" 2>/dev/null || true)
+  # When cwd is unusable the hook stays where it is: a gated phase then fails
+  # to resolve the repository and blocks.
+  [[ ! -d "$AGY_CWD" ]] || cd -- "$AGY_CWD" 2>/dev/null || true
+fi
+
 block() {
-  jq -cn --arg reason "$1" '{continue:false, stopReason:$reason, decision:"block", reason:$reason}'
+  if (( IS_ANTIGRAVITY )); then
+    jq -cn --arg reason "$1" '{decision:"deny", reason:$reason}'
+  else
+    # hookSpecificOutput must name the event it answers, so only PreToolUse
+    # carries the permission deny; UserPromptSubmit reads decision:block.
+    jq -c --arg reason "$1" '{continue:false, stopReason:$reason, decision:"block", reason:$reason}
+      + if (.hook_event_name? // "") == "PreToolUse"
+        then {hookSpecificOutput:{hookEventName:"PreToolUse", permissionDecision:"deny", permissionDecisionReason:$reason}} else {} end' <<<"$HOOK_INPUT" 2>/dev/null ||
+      jq -cn --arg reason "$1" '{continue:false, stopReason:$reason, decision:"block", reason:$reason}'
+  fi
   exit 0
 }
 
@@ -76,8 +134,12 @@ block() {
 # passes: it never gates a phase.
 record_guard() {
   local tool="$1" cmd probe path real dir old_status new_status old_rank new_rank
-  if [[ "$tool" == Bash ]]; then
-    cmd=$(jq -r '.tool_input.command? // ""' <<<"$HOOK_INPUT" 2>/dev/null) || return 0
+  if [[ "$tool" == Bash || "$tool" == run_command ]]; then
+    cmd=$(jq -r '
+      if .tool_name? == "Bash" then .tool_input.command?
+      elif .toolCall?.name? == "run_command" then .toolCall.args.CommandLine? // .toolCall.args.command_line? // .toolCall.args.command?
+      else empty end // ""
+    ' <<<"$HOOK_INPUT" 2>/dev/null) || return 0
     # dev-stack.sh resume or reopen in command position: at the start, after a
     # separator or newline, or after a runner such as bash or env. A mention
     # inside an argument, such as a grep pattern or a message, passes.
@@ -109,7 +171,7 @@ record_guard() {
     snapshot_plans
     return 0
   fi
-  path=$(jq -r '.tool_input.file_path? // ""' <<<"$HOOK_INPUT" 2>/dev/null) || return 0
+  path=$(jq -r '.tool_input.file_path? // .toolCall.args.Path? // .toolCall.args.file_path? // ""' <<<"$HOOK_INPUT" 2>/dev/null) || return 0
   [[ -n "$path" ]] || return 0
   real=$(realpath -m -- "$path" 2>/dev/null) || return 0
   [[ "$real" =~ ^(/.*)/docs/plans/[0-9]+_[a-z0-9-]+/[^/]+$ ]] || return 0
@@ -128,16 +190,16 @@ record_guard() {
   GUARD_TMP=$(mktemp) || return 0
   trap 'rm -f -- "$GUARD_TMP"' EXIT
   local new=$GUARD_TMP
-  if [[ "$tool" == Write ]]; then
-    jq -j '.tool_input.content? // ""' <<<"$HOOK_INPUT" > "$new" 2>/dev/null || return 0
+  if [[ "$tool" == Write || "$tool" == write_file ]]; then
+    jq -j '.tool_input.content? // .toolCall.args.Content? // ""' <<<"$HOOK_INPUT" > "$new" 2>/dev/null || return 0
   else
     [[ -f "$real" ]] || return 0
     jq -j --rawfile f "$real" '
-      def apply($e): (split($e.old_string // "")) as $p
-        | if ($e.old_string // "") == "" or ($p | length) < 2 then error("no match")
-          elif $e.replace_all then $p | join($e.new_string // "")
-          else $p[0] + ($e.new_string // "") + ($p[1:] | join($e.old_string)) end;
-      .tool_input as $t
+      def apply($e): (split($e.old_string // $e.Target // "")) as $p
+        | if ($e.old_string // $e.Target // "") == "" or ($p | length) < 2 then error("no match")
+          elif ($e.replace_all // false) then $p | join($e.new_string // $e.Replacement // "")
+          else $p[0] + ($e.new_string // $e.Replacement // "") + ($p[1:] | join($e.old_string // $e.Target // "")) end;
+      (.tool_input // .toolCall.args) as $t
       | reduce (if $t.edits then $t.edits[] else $t end) as $e ($f; apply($e))' <<<"$HOOK_INPUT" > "$new" 2>/dev/null || return 0
   fi
   load_plans "$new"
@@ -168,12 +230,12 @@ record_guard() {
   return 0
 }
 
-# A Bash call's snapshot directory, keyed by its tool_use_id. Fails without
+# A shell call's snapshot directory, keyed by its tool_use_id. Fails without
 # one: a key shared by parallel calls would let one call's check delete or
 # replace another's snapshot. The parent directory must be the user's own.
 snap_dir() {
   local id base
-  id=$(jq -r '.tool_use_id? // ""' <<<"$HOOK_INPUT" 2>/dev/null) || return 1
+  id=$(jq -r '.toolCall?.id? // .tool_use_id? // ""' <<<"$HOOK_INPUT" 2>/dev/null) || return 1
   id=${id//[^A-Za-z0-9_-]/}
   [[ -n "$id" ]] || return 1
   base="${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}/dev-gate-check-$(id -u)"
@@ -188,7 +250,8 @@ snap_dir() {
 # plans goes unchecked.
 snap_scope() {
   local cwd
-  cwd=$(jq -r '.cwd? // ""' <<<"$HOOK_INPUT" 2>/dev/null) || cwd=""
+  # Antigravity's run_command runs in its Cwd argument when it has one.
+  cwd=$(jq -r '.toolCall.args.Cwd? // .cwd? // ""' <<<"$HOOK_INPUT" 2>/dev/null) || cwd=""
   [[ -d "$cwd" ]] || cwd=$PWD
   (cd -- "$cwd" && bash "$GATE_DIR/dev-utils.sh" main-root 2>/dev/null)
 }
@@ -330,17 +393,34 @@ bash_post_check() {
       { rm -rf -- "$base/$f.gate.$$"; msgs+=("$base/$f: a link to a plan that could not be replaced with a copy; tell the user."); }
   done < <(cd -- "$base" 2>/dev/null && find -L . -mindepth $((depth - 1)) -maxdepth "$depth" \( -type d -path './*' -name '[0-9]*_*' -o -type f \( -name 'pr[1-9]*.spec.md' -o -name log \) \) 2>/dev/null | sed 's#^\./##' | sort -r)
   (( ${#msgs[@]} )) || return 0
-  jq -cn --arg r "$(printf 'A shell command changed plans in a way only dev-stack.sh or the user may (skills/dev/plan.md#changes):\n%s\nChange Status and Tip with the Edit tool; any other change goes where skills/dev/plan.md#changes says, or the user reopens the plan with dev-stack.sh reopen.' "$(printf -- '- %s\n' "${msgs[@]}")")" '{decision:"block", reason:$r}'
+  local report
+  report=$(printf 'A shell command changed plans in a way only dev-stack.sh or the user may (skills/dev/plan.md#changes):\n%s\nChange Status and Tip with the Edit tool; any other change goes where skills/dev/plan.md#changes says, or the user reopens the plan with dev-stack.sh reopen.' "$(printf -- '- %s\n' "${msgs[@]}")")
+  if (( IS_ANTIGRAVITY )); then
+    jq -cn --arg r "$report" '{overwriteResult:$r}'
+  else
+    jq -cn --arg r "$report" '{decision:"block", reason:$r}'
+  fi
 }
 
-TOOL_NAME=$(jq -r '.tool_name? // ""' <<<"$HOOK_INPUT" 2>/dev/null || true)
-if [[ "$TOOL_NAME" == Bash && "$(jq -r '.hook_event_name? // ""' <<<"$HOOK_INPUT" 2>/dev/null)" == PostToolUse* ]]; then
+TOOL_NAME=$(jq -r '.toolCall?.name? // .tool_name? // ""' <<<"$HOOK_INPUT" 2>/dev/null || true)
+HOOK_EVENT=$(jq -r '.hookEventName? // .hook_event_name? // ""' <<<"$HOOK_INPUT" 2>/dev/null || true)
+if [[ ("$TOOL_NAME" == Bash || "$TOOL_NAME" == run_command) && "$HOOK_EVENT" == PostToolUse* ]]; then
   GATE_DIR=$(dirname -- "$(realpath -- "${BASH_SOURCE[0]}")")
-  bash_post_check
+  if (( IS_ANTIGRAVITY )); then
+    # Antigravity's PostToolUse expects a JSON object on every path.
+    POST_OUT=$(bash_post_check) || true
+    printf '%s\n' "${POST_OUT:-"{}"}"
+  else
+    bash_post_check
+  fi
   exit 0
 fi
 case "$TOOL_NAME" in
-  Bash|Edit|Write|MultiEdit) GATE_DIR=$(dirname -- "$(realpath -- "${BASH_SOURCE[0]}")"); record_guard "$TOOL_NAME"; exit 0 ;;
+  Bash|run_command|Edit|edit_file|Write|write_file|MultiEdit)
+    GATE_DIR=$(dirname -- "$(realpath -- "${BASH_SOURCE[0]}")")
+    record_guard "$TOOL_NAME"
+    exit 0
+    ;;
 esac
 
 DEV_SKILL_SLUG_RE='create-issue|create-pr|design-feature|design-infra|design-system|execute-feature|explore|fix-bug|review-code|review-feature|review-infra|review-system'
@@ -357,12 +437,20 @@ extract_skill_slug() {
   echo ""
 }
 
-HOOK_EVENT=$(jq -r '.hook_event_name? // ""' <<<"$HOOK_INPUT" 2>/dev/null || true)
-if [[ "$HOOK_EVENT" == UserPromptSubmit ]]; then
+if [[ "$TOOL_NAME" == read_file ]]; then
+  READ_PATH=$(jq -r '.toolCall.args.Path? // .toolCall.args.file_path? // ""' <<<"$HOOK_INPUT" 2>/dev/null || true)
+  # A phase's skill wrapper (dev-<slug>/SKILL.md) or its shared instructions
+  # (skills/dev/<slug>.md); any other file of that name is not a skill.
+  if [[ "$READ_PATH" =~ /dev-($DEV_SKILL_SLUG_RE)/SKILL\.md$ || "$READ_PATH" =~ /skills/dev/($DEV_SKILL_SLUG_RE)\.md$ ]]; then
+    RAW_SKILL="${BASH_REMATCH[1]}"
+  else
+    exit 0
+  fi
+elif [[ "$HOOK_EVENT" == UserPromptSubmit ]]; then
   # Only a leading slash command invokes a skill; prose that mentions one is
-  # never gated.
+  # never gated. Pi expands a skill as /skill:<name> before the agent sees it.
   PROMPT=$(jq -r '.prompt? // ""' <<<"$HOOK_INPUT" 2>/dev/null || true)
-  [[ "$PROMPT" =~ ^[[:space:]]*/([Dd][Ee][Vv][-:][A-Za-z_-]+)([^A-Za-z0-9_-]|$) ]] || exit 0
+  [[ "$PROMPT" =~ ^[[:space:]]*/(([Ss][Kk][Ii][Ll][Ll]:)?[Dd][Ee][Vv][-:][A-Za-z_-]+)([^A-Za-z0-9_-]|$) ]] || exit 0
   RAW_SKILL="${BASH_REMATCH[1]}"
 else
   RAW_SKILL=$(
@@ -402,9 +490,29 @@ cd "$REPO_ROOT" || block "Cannot access the main working-tree root: $REPO_ROOT"
 GIT_TREE="$REPO_ROOT"
 
 HOOK_TEXT=$(
-  jq -r '[.tool_input.args?, .tool_input.arguments?, .tool_input.command?, .arguments?, .command?, .prompt?]
+  jq -r '[.tool_input.args?, .tool_input.arguments?, .tool_input.command?, .arguments?, .command?, .prompt?, .lastUserInput?]
     | map(select(type == "string")) | join(" ")' <<<"$HOOK_INPUT" 2>/dev/null || true
 )
+
+# Antigravity: the agent's text in the response that issued this read, when it
+# names a plan, wins over lastUserInput, as the Pi extension reads the issuing
+# message first. The issuer is the latest agent response since the latest user
+# input whose read_file call has this Path; tool output and earlier turns never
+# name the plan.
+if [[ "$TOOL_NAME" == read_file ]]; then
+  TPATH=$(jq -r '.transcriptPath? // ""' <<<"$HOOK_INPUT" 2>/dev/null || true)
+  if [[ -f "$TPATH" ]]; then
+    ISSUER_TEXT=$(jq -Rnr --arg path "$READ_PATH" '[inputs | fromjson? | objects] as $e
+        | ([range($e | length) | select($e[.].type? == "USER_INPUT")] | max // -1) as $u
+        | [$e[($u + 1):][] | select(.type? == "PLANNER_RESPONSE")
+            | select([.tool_calls? // [] | .[]? | select(.name? == "read_file")
+                | .args? | if type == "string" then (fromjson? // {}) else . end
+                | .Path? | if type == "string" and test("^\"") then (fromjson? // .) else . end]
+              | any(. == $path))]
+        | last | .content? // "" | strings' "$TPATH" 2>/dev/null || true)
+    [[ ! "$ISSUER_TEXT" =~ pr[0-9]+\.spec\.md ]] || HOOK_TEXT=$ISSUER_TEXT
+  fi
+fi
 
 . "$GATE_DIR/dev-plan-lib.sh"
 

@@ -2,9 +2,9 @@
 
 Rules symlink: `~/.codex/CODEX.md` → `~/.dotfiles/.ai-shared/CORE.md`. `CODEX.md` is the only setup-managed symlink. Never remove or modify other symlinks in `~/.codex`: Codex creates them for its runtime under `packages/` and `tmp/`.
 
-**skills** — create `~/.codex/skills/<name>/SKILL.md` from the [Codex template](#codex-template), taking name, description, and effort from [skills](../README.md#skills) and the model through [model mapping](../README.md#model-mapping).
+**skills** — create `~/.codex/skills/<name>/SKILL.md` from the [Codex template](#codex-template), taking name, description, and effort from [skills](../skills/README.md) and the model [skills](../skills/README.md) assigns.
 
-**agents** — create `~/.codex/agents/<name>.toml` from the [Codex agent template](#codex-agent-template), taking name, description, and md file from [agents](../README.md#agents).
+**agents** — create `~/.codex/agents/<name>.toml` from the [Codex agent template](#codex-agent-template), taking name, description, and md file from [agents](../agents/README.md).
 
 ## Codex template
 

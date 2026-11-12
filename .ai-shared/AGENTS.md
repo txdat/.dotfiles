@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) and other AI agents 
 
 ## What this directory is
 
-`.ai-shared` holds the rules, skills, agents, and helper scripts shared by every agent harness on this machine. The Git root is `~/.dotfiles`, one level up. [CORE.md](CORE.md) is the global rules file: Claude Code, Codex, Antigravity, Pi, dsh, and OpenCode all load it through a symlink, so it is already in your context. Don't restate it here or in other files. [README.md](README.md) indexes the skills and agents; one file per harness — [claude.md](references/claude.md), [codex.md](references/codex.md), [antigravity.md](references/antigravity.md), [pi.md](references/pi.md), [dsh.md](references/dsh.md), [opencode.md](references/opencode.md) — wires it up.
+`.ai-shared` holds the rules, skills, agents, and helper scripts shared by every agent harness on this machine. The Git root is `~/.dotfiles`, one level up. [CORE.md](CORE.md) is the global rules file: Claude Code, Codex, Antigravity, Pi, dsh, and OpenCode all load it through a symlink, so it is already in your context. Don't restate it here or in other files. [README.md](README.md) lists the harnesses, [skills/README.md](skills/README.md) indexes the skills, and [agents/README.md](agents/README.md) indexes the agents. One file per harness — [claude.md](references/claude.md), [codex.md](references/codex.md), [antigravity.md](references/antigravity.md), [pi.md](references/pi.md), [dsh.md](references/dsh.md), [opencode.md](references/opencode.md) — wires them up.
 
 Edits to this directory are direct edits, not plan-backed work. See [plan.md — Scope](skills/dev/plan.md#scope).
 
@@ -15,10 +15,10 @@ Edits to this directory are direct edits, not plan-backed work. See [plan.md —
 - **Headings and paths are load-bearing.** Before renaming a heading, a file, or a `bin/` script, grep all three places that refer to them:
   - links in `.ai-shared` (agents cite anchors such as `CORE.md#work`)
   - `gate-check.sh` block messages (they cite anchors such as `skills/dev/plan.md#schema`)
-  - external consumers that hard-code `bin/` paths: `../.pi/agent/extensions/*.ts`, `../.claude/marketplace/plugins/dev-stack/hooks/register.ts` and `register.test.ts`
+  - external consumers that hard-code `bin/` paths: `../.pi/agent/extensions/*.ts`, `../.claude/marketplace/plugins/dev-stack/hooks/register.ts` and `register.test.ts`, and the hook registrations the harness files describe, such as `~/.claude/settings.json` and `~/.gemini/config/hooks.json`
 - **Rules must be harness-neutral.** Six harnesses read these files. Phrase tool-specific steps the way existing files do: "where installed", "Without a Skill tool, read … with the file-read tool".
 - **Style:** terse, declarative, and imperative, without filler or rigid templates. Word choice follows [Wording](#wording).
-- **Skill files** start with `# /<name> — <summary>` and stay short. Load-time metadata (description, effort, model) lives in the README tables, not in the skill file.
+- **Skill files** start with `# /<name> — <summary>` and stay short. Load-time metadata (description, effort, model) lives in the [skills/README.md](skills/README.md) table, not in the skill file.
 
 ## Wording
 
@@ -54,10 +54,21 @@ Write rules in English only, whatever language the request uses.
 
 Update every place below:
 
-1. The row in [README — Skills](README.md#skills) or [README — Agents](README.md#agents): name, description, md file, effort, and model. Codex and Antigravity models come from [Model mapping](README.md#model-mapping).
+1. The row in [skills/README.md](skills/README.md) (name, description, md file, effort, and model) or [agents/README.md](agents/README.md) (name, description, md file, and tools). Codex and Antigravity models come from [skills/README.md](skills/README.md).
 2. Each harness's wrapper, built from the templates in its harness file. Wrappers live outside this repo, such as `~/.claude/skills/<name>/SKILL.md`, and must use an absolute md path, with no `~` or `$HOME`. Agents carry no model or effort, and only the [Claude agent template](references/claude.md#claude-agent-template) takes `tools`.
 3. For dev skills, the table in [skills/dev/README.md](skills/dev/README.md).
 4. For a dev phase the gate must recognize, `DEV_SKILL_SLUG_RE` in `bin/gate-check.sh` and its cases in `bin/gate-check-test.sh`.
+
+## Adding a hook script
+
+A hook script in `bin/`, such as `gate-check.sh` or `test-serial-check.sh`, reads each harness's hook JSON on stdin and prints that harness's verdict. Update every place below:
+
+1. The script and its `bin/<name>-test.sh`, with cases for the Claude Code input (`tool_name`, `tool_input`) and the Antigravity input (`toolCall.name`, `toolCall.args`).
+2. The verdict shape each harness reads per event, asserted by the tests:
+   - Claude Code: a pass prints nothing. A PreToolUse deny carries `hookSpecificOutput` with `hookEventName: "PreToolUse"` and `permissionDecision: "deny"`. A top-level `decision` must be `approve` or `block`; any other value makes Claude Code drop the whole output. Only a PreToolUse deny carries `hookSpecificOutput`; a UserPromptSubmit or PostToolUse block uses top-level `decision: "block"`.
+   - Antigravity: a PreToolUse pass prints nothing, because every `decision` value, `allow` included, changes Antigravity's permission flow. A PreToolUse deny is `{"decision":"deny","reason":…}` with no Claude Code fields. PostToolUse prints `{}`, or `{"overwriteResult":…}` to report to the agent, on every path.
+3. The hooks entry in [claude.md](references/claude.md) and [antigravity.md](references/antigravity.md): event, matcher, and what the script refuses.
+4. For Pi, an extension in `../.pi/agent/extensions/` that sends the script the Claude-shaped JSON and blocks on its verdict, its entry in [pi.md](references/pi.md), and a passing `typecheck.sh`.
 
 ## Plan schema and scripts
 
@@ -65,10 +76,10 @@ The gate reads plan header fields and IDs, never prose. A change to the plan sch
 
 Script conventions:
 
-- Start with `#!/bin/bash` and `set -euo pipefail`. A sourced library such as `dev-plan-lib.sh` has no shebang or `set` line; it runs under its caller's options. `gke-collect.sh` omits `-e` so one failed query never aborts the sweep. `gate-check.sh` also sets `LC_ALL=C`, because a multibyte locale once crashed `awk` and the hook read the crash as a pass.
+- Start with `#!/bin/bash` and `set -euo pipefail`. A sourced library such as `dev-plan-lib.sh` has no shebang or `set` line; it runs under its caller's options. `gke-collect.sh` omits `-e` so one failed query never aborts the sweep. `gate-check.sh` and `test-serial-check.sh` also set `LC_ALL=C`, because a multibyte locale once crashed `awk` and the hook read the crash as a pass.
 - Begin with a header comment that links the owning md section.
 - Callers invoke scripts by full path, `~/.dotfiles/.ai-shared/bin/<script>`.
-- Tests live in `bin/<name>-test.sh`. They build scratch Git repos under `/tmp`, whose `docs/plans` hold their plans, ignore those through each repo's `.git/info/exclude` with `GIT_CONFIG_GLOBAL=/dev/null`, and set `AI_WORKTREES_ROOT` so they never touch `~/work/wt`.
+- Tests live in `bin/<name>-test.sh`. Tests that need a repository build scratch Git repos under `/tmp`, whose `docs/plans` hold their plans, ignore those through each repo's `.git/info/exclude` with `GIT_CONFIG_GLOBAL=/dev/null`, and set `AI_WORKTREES_ROOT` so they never touch `~/work/wt`.
 
 ## Commands
 
