@@ -20,7 +20,7 @@ Rank plausible causes and test the strongest with focused runtime evidence. If c
 - **Regression test:** the reproduction as a test, with its level, its `scratch-diff` patch, and its failing output; below the reported surface it must still exercise the failure.
 - **Sibling defects:** other paths with the same faulty pattern. Fix them only when the request covers them.
 - **Remediation:** data, state, or user impact the fix will not repair, such as a backfill or cache purge. Live operations go in a separate [design-infra.md](design-infra.md) runbook.
-- **Route:** direct edit when [plan.md — Scope](plan.md#scope) sends the change to the direct-edit path or calls it contained; plan-backed otherwise.
+- **Route:** direct edit when [plan.md — Scope](plan.md#scope) sends the change to the direct-edit path or calls it contained; plan-backed otherwise. Name the first option's edit points, each a file and symbol or, for a file or symbol the option creates, its path confirmed absent, and the Scope condition that decides the route.
 
 With ongoing impact, containment comes first; remediation follows whatever stops new damage.
 

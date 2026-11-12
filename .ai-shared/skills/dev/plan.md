@@ -8,7 +8,7 @@ The workflow applies when the user invokes a phase — design-feature, review-fe
 
 Docs, declarative config, and this dev flow — its skills and its [scripts](../../bin) with their tests — take the direct-edit path under [CORE.md — Work](../../CORE.md#work). Inside plan work, such a change goes on the plan's Branch with its implementation, after its proof commit. The exception is a `Type: config` plan: a declarative config change that must merge as its own PR within a stack, such as a flag a plan above it reads. A mixed change follows the workflow for its code.
 
-A change is contained when it stays in one module (a package, service, or top-level source directory), changes no contract, data model, dependency, or rollout behavior, and is estimated at no more than 3 files and 200 lines, tests excluded. fix-bug recommends, and autopilot routes, a contained change to a direct edit and any other change the workflow covers to plan-backed delivery.
+A change is contained when it stays in one module (a package, service, or top-level source directory) and changes no contract, data model, dependency, or rollout behavior. fix-bug recommends a contained change for a direct edit and any other change the workflow covers for plan-backed delivery; [autopilot.md — Triage](autopilot.md#1-triage) owns autopilot's routing.
 
 ## Sequence
 
