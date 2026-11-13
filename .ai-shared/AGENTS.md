@@ -54,7 +54,7 @@ Write rules in English only, whatever language the request uses.
 
 Update every place below:
 
-1. The row in [skills/README.md](skills/README.md) (name, description, md file, effort, and model) or [agents/README.md](agents/README.md) (name, description, md file, and tools). Codex and Antigravity models come from [skills/README.md](skills/README.md).
+1. The row in [skills/README.md](skills/README.md) (name, description, md file, effort, and model) or [agents/README.md](agents/README.md) (name, description, md file, and tools). Codex and Antigravity models come from the model mappings in [codex.md](references/codex.md#model-mapping) and [antigravity.md](references/antigravity.md#model-mapping).
 2. Each harness's wrapper, built from the templates in its harness file. Wrappers live outside this repo, such as `~/.claude/skills/<name>/SKILL.md`, and must use an absolute md path, with no `~` or `$HOME`. Agents carry no model or effort, and only the [Claude agent template](references/claude.md#claude-agent-template) takes `tools`.
 3. For dev skills, the table in [skills/dev/README.md](skills/dev/README.md).
 4. For a dev phase the gate must recognize, `DEV_SKILL_SLUG_RE` in `bin/gate-check.sh` and its cases in `bin/gate-check-test.sh`.

@@ -6,7 +6,16 @@ Rules symlinks: `~/.gemini/config/GEMINI.md` and `~/.gemini/GEMINI.md` → `~/.d
 
 **agents** — create `~/.gemini/config/agents/<name>/agent.md` from the [Antigravity agent template](#antigravity-agent-template), or register its path in `~/.gemini/config/agents.json`, taking name, description, and md file from [agents](../agents/README.md).
 
-**hooks** — in `~/.gemini/config/hooks.json`, register `~/.dotfiles/.ai-shared/bin/gate-check.sh` for `PreToolUse` with matcher `.*` and `PostToolUse` with matcher `run_command`. On `read_file` of a dev skill it gates the phase; on `run_command`, `edit_file`, and `write_file` it applies the refusals of [plan.md — Changes](../skills/dev/plan.md#changes), with `run_command` as the shell call. Also register `~/.dotfiles/.ai-shared/bin/test-serial-check.sh` for `PreToolUse` with matcher `run_command`; it blocks a command that names `jest` without `--runInBand` under [CODING.md — Tests](../CODING.md#tests).
+## Model mapping
+
+| Claude Code model | Antigravity model |
+| ----------------- | ----------------- |
+| haiku | `gemini-4-hydrogen` |
+| sonnet | `gemini-4-hydrogen` |
+| opus | `gemini-4-argon` |
+| fable | `gemini-4-carbon` |
+
+**hooks** — in `~/.gemini/config/hooks.json`, register `~/.dotfiles/.ai-shared/bin/gate-check.sh` for `PreToolUse` with matcher `.*` and `PostToolUse` with matcher `run_command`. On `read_file` of a dev skill it gates the phase; on `run_command`, `edit_file`, and `write_file` it applies the refusals of [plan.md — Changes](../skills/dev/plan.md#changes), with `run_command` as the shell call. Also register `~/.dotfiles/.ai-shared/bin/test-serial-check.sh` for `PreToolUse` with matcher `run_command`; it blocks a command that names a test runner listed in its `SERIAL_FLAG` table without that runner's serial flag under [CODING.md — Tests](../CODING.md#tests).
 
 ## Antigravity template
 

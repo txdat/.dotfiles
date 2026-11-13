@@ -180,7 +180,7 @@ agy() {
             *)  args+=("$arg") ;;
         esac
     done
-    command agy "${args[@]}"
+    command dev-mcp agy "${args[@]}"
 }
 
 codex() {

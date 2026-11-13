@@ -1,6 +1,6 @@
 # Skills
 
-Where a row leaves effort or model blank, the wrapper installs without that field and the harness default applies. The model column names a Claude Code model. For a harness with its own models, such as Codex or Antigravity, the main agent takes a skill's model from that harness's existing wrapper of another skill with the same Claude Code model, and asks the user only when no such wrapper exists. The md file column gives paths from `.ai-shared`.
+Where a row leaves effort or model blank, the wrapper installs without that field and the harness default applies. The model column names a Claude Code model. For a harness with its own models, such as Codex or Antigravity, the main agent takes a skill's model from the [Codex](../references/codex.md#model-mapping) or [Antigravity](../references/antigravity.md#model-mapping) model mapping for the Claude Code model. The md file column gives paths from `.ai-shared`.
 
 ## SWE
 

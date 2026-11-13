@@ -2,7 +2,8 @@
  * test-serial-check.ts — Pi port of the Claude Code test-serial-check.sh hook.
  *
  * Claude Code runs `~/.dotfiles/.ai-shared/bin/test-serial-check.sh` before a
- * Bash call; it denies a command that names jest without --runInBand
+ * Bash call; it denies a command that names a test runner listed in its
+ * SERIAL_FLAG table without that runner's serial flag
  * (.ai-shared/CODING.md#tests). Here `tool_call` on bash feeds the script the
  * same Claude-shaped PreToolUse JSON and blocks the call when it denies.
  *

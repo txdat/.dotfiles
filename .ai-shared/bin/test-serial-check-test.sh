@@ -6,14 +6,16 @@ ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 CHECK="$ROOT/bin/test-serial-check.sh"
 
 fails=0
+# A deny reason names the runner and the flag it lacks.
+re='names (jest without --runInBand|vitest without --no-file-parallelism)\.'
 expect() {
   local want="$1" cmd="$2" out got=pass
   out=$(jq -cn --arg c "$cmd" '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:$c},cwd:"/tmp"}' | "$CHECK")
   # A deny must carry the fields Claude Code reads: event name, decision, and a
   # reason naming the flag, and no top-level decision, which Claude Code
   # accepts only as approve or block.
-  [[ -z "$out" ]] || got=$(jq -r 'if .decision != null or .reason != null then "malformed" else .hookSpecificOutput
-    | if .hookEventName == "PreToolUse" and (.permissionDecisionReason // "" | test("names jest without --runInBand"))
+  [[ -z "$out" ]] || got=$(jq -r --arg re "$re" 'if .decision != null or .reason != null then "malformed" else .hookSpecificOutput
+    | if .hookEventName == "PreToolUse" and (.permissionDecisionReason // "" | test($re))
       then .permissionDecision else "malformed" end end' <<<"$out")
   if [[ "$got" == "$want" ]]; then printf 'ok   %-5s %s\n' "$want" "$cmd"
   else printf 'FAIL want %s got %s: %s\n%s\n' "$want" "$got" "$cmd" "$out"; fails=$((fails + 1)); fi
@@ -24,7 +26,7 @@ expect_agy() {
   out=$(jq -cn --arg c "$cmd" '{hookEventName:"PreToolUse",toolCall:{name:"run_command",args:{CommandLine:$c}},cwd:"/tmp"}' | "$CHECK")
   # A deny must carry top-level decision and reason for Antigravity, and no unknown proto fields.
   if [[ -n "$out" ]]; then
-    got=$(jq -r 'if .decision == "deny" and (.reason // "" | test("names jest without --runInBand")) and (.hookSpecificOutput == null) and (.continue == null) and (.stopReason == null)
+    got=$(jq -r --arg re "$re" 'if .decision == "deny" and (.reason // "" | test($re)) and (.hookSpecificOutput == null) and (.continue == null) and (.stopReason == null)
       then .decision else "malformed" end' <<<"$out")
   fi
   if [[ "$got" == "$want" ]]; then printf 'ok   agy %-5s %s\n' "$want" "$cmd"
@@ -63,11 +65,42 @@ expect pass 'npm i -D ts-jest'
 expect pass 'cat jestconfig.json'
 expect pass 'echo majesty'
 
+# Names vitest without --no-file-parallelism.
+expect deny 'vitest'
+expect deny 'vitest run'
+expect deny 'npx vitest run src/a.test.ts'
+expect deny './node_modules/.bin/vitest run'
+expect deny 'pnpm exec vitest --run 2>&1 | tail'
+expect deny 'vitest run --fileParallelism'
+expect deny 'vitest run --no-file-parallelismX'
+expect deny 'vitest run --runInBand'
+expect deny 'npx vitest@3 run'
+expect deny 'cat vitest.config.ts'
+
+# Names vitest with --no-file-parallelism.
+expect pass 'vitest run --no-file-parallelism'
+expect pass 'npx vitest --no-file-parallelism src/a.test.ts'
+expect pass $'npx vitest run \\\n  --no-file-parallelism'
+expect pass 'npx vitest run --no-file-parallelism&&echo ok'
+expect pass "npx vitest run '--no-file-parallelism'"
+
+# Names both runners: each needs its own flag.
+expect deny 'jest --runInBand && vitest run'
+expect deny 'jest && vitest run --no-file-parallelism'
+expect pass 'jest --runInBand && vitest run --no-file-parallelism'
+
+# Does not name vitest as a word.
+expect pass 'npm i -D vite'
+expect pass 'npm i -D vitest-preview'
+expect pass 'cat vitestconfig.json'
+
 # Antigravity hook inputs (run_command).
 expect_agy deny 'jest'
 expect_agy deny 'npx jest src/a.test.ts'
 expect_agy pass 'npx jest --runInBand src/a.test.ts'
 expect_agy pass 'npm test'
+expect_agy deny 'npx vitest run'
+expect_agy pass 'npx vitest run --no-file-parallelism'
 
 # Antigravity arguments sent as a JSON string, or with JSON-encoded values.
 for args in '{"CommandLine":"\"npx jest src\""}' '"{\"CommandLine\":\"npx jest src\"}"'; do
