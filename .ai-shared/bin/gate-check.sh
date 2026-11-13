@@ -291,6 +291,17 @@ restore_file() {
   mkdir -p -- "${2%/*}" && rm -rf -- "$2" && cp -p -- "$1" "$2"
 }
 
+# bash_post_check's undo of plan $rel for reason $why: restores $new from
+# snapshot copy $old, or sets a plan new to the command to planning; a plan
+# undone joins undone, whose log lines the check then clears.
+undo_plan() {
+  if [[ -f "$old" ]]; then
+    if restore_file "$old" "$new"; then msgs+=("$new: $why. Restored from before the command."); undone+=("$rel")
+    else msgs+=("$new: $why. Could not restore it; tell the user."); fi
+  elif set_header "$new" Status planning 2>/dev/null; then msgs+=("$new: $why. Set to 'Status: planning'."); undone+=("$rel")
+  else msgs+=("$new: $why. Could not set it to planning; tell the user."); fi
+}
+
 # After a Bash call: compares the cwd repository's plans with the snapshot
 # and restores any change only dev-stack.sh or the user may make: a frozen
 # or published plan changed, moved, or deleted, an approved plan back below
@@ -298,13 +309,16 @@ restore_file() {
 # unapproved plan moved to approved or later except by
 # dev-stack.sh approve, an approved plan back to planning except by
 # dev-stack.sh auto-reopen, or a stack log that lost a stop, review, or
-# auto-reopen line, or gained a resume or reopen. It catches an agent's mistakes and shortcuts,
+# auto-reopen line, or gained a resume or reopen. A plan auto-approved during
+# the command over a parent it restores below approved is restored too. A plan
+# it restores loses the approve and auto-reopened lines the command added for
+# it, so its header and log agree. It catches an agent's mistakes and shortcuts,
 # not an agent set on evading it: a command still running after the call
 # returns (a background job) is never compared, a forged log line it cannot
 # tell from dev-stack.sh's, and a change the user makes during the call to
 # the same repository's plans is restored as the agent's.
 bash_post_check() {
-  local snap scope base depth=2 rel old new os ns or nr ob frozen why msgs=() logs=() f
+  local snap scope base depth=2 rel old new os ns or nr ob frozen why msgs=() logs=() undone=() f
   snap=$(snap_dir) || return 0
   [[ -f "$snap/.complete" ]] || return 0
   GUARD_TMP=$snap
@@ -368,22 +382,79 @@ bash_post_check() {
         why="it was moved or deleted while the stack log still holds its lines; dev-stack.sh renumber moves a plan and drop removes one"
     elif [[ -n "$nr" ]] && (( nr >= 1 )); then
       # Unapproved (or new) and now approved or later: only dev-stack.sh
-      # approve's step, from ready to auto-approved at the plan's hash, passes.
+      # approve's step passes: auto-approved at the plan's hash with its review
+      # still holding and logged by dev-stack.sh review, as approve requires. The snapshot may predate the
+      # review, as when one call runs dev-stack.sh review and then approve.
       if [[ "$ns" == approved ]]; then why="its Status was set to approved, which only the user sets"
       elif [[ "$ns" != auto-approved ]]; then why="its Status went from '${os:-none}' to '$ns', skipping approval"
-      elif [[ "$os" != ready ]] ||
+      elif [[ "$(review_state "$new" || true)" != ready ]] || ! review_logged "$new" ||
         (( $(log_count "$new" '^approve auto-approved at ') <= $(log_count "$old" '^approve auto-approved at ') )) ||
         [[ "$(log_lines "$new" | grep -E '^approve auto-approved at ' | tail -n 1)" != "approve auto-approved at $(plan_hash "$new" 2>/dev/null || true)" ]]; then
-        why="its Status was set to auto-approved, which only dev-stack.sh approve sets, from ready"
+        why="its Status was set to auto-approved, which only dev-stack.sh approve sets, on a ready plan whose review still holds"
       fi
     fi
     [[ -n "$why" ]] || continue
-    if [[ -f "$old" ]]; then
-      if restore_file "$old" "$new"; then msgs+=("$new: $why. Restored from before the command.")
-      else msgs+=("$new: $why. Could not restore it; tell the user."); fi
-    elif set_header "$new" Status planning 2>/dev/null; then msgs+=("$new: $why. Set to 'Status: planning'.")
-    else msgs+=("$new: $why. Could not set it to planning; tell the user."); fi
+    undo_plan
   done < <({ plan_files "$snap/files" "$depth"; plan_files "$base" "$depth"; } | grep -E '(^|/)pr[1-9][0-9]*\.spec\.md$' | sort -u)
+  # A plan auto-approved during the command over a parent undone above to
+  # below approved is undone too, as dev-stack.sh approve takes a child only
+  # after its parent; repeated for the plans stacked above it.
+  local again=1 parent
+  while (( again )); do
+    again=0
+    while IFS= read -r rel; do
+      [[ " ${undone[*]} " != *" $rel "* ]] || continue
+      old="$snap/files/$rel"; new="$base/$rel"
+      [[ -f "$new" ]] || continue
+      load_plans "$new"; field_get "$new" Status; [[ "$REPLY" == auto-approved ]] || continue
+      if [[ -f "$old" ]]; then
+        load_plans "$old"; field_get "$old" Status; or=$(status_rank "$REPLY")
+        [[ -z "$or" || "$or" == 0 ]] || continue
+      fi
+      parent=$(stacks_on "$new" 2>/dev/null) || continue
+      [[ -n "$parent" && " ${undone[*]} " == *" ${parent#"$base/"} "* ]] || continue
+      load_plans "$parent"; field_get "$parent" Status; nr=$(status_rank "$REPLY")
+      [[ -z "$nr" || "$nr" == 0 ]] || continue
+      why="it was auto-approved over its parent, which this command left below approved"
+      undo_plan
+      again=1
+    done < <(printf '%s\n' "${undone[@]}" | sed -n 's#/[^/]*$##p' | sort -u |
+      while IFS= read -r d; do plan_files "$base/$d" 1 | grep -E '^pr[1-9][0-9]*\.spec\.md$' | sed "s#^#$d/#"; done)
+  done
+  # A plan undone above keeps no approve or auto-reopened line the command
+  # added for it: left in, one would disagree with the restored header, and
+  # an approve line would freeze the plan below approved with no verb left
+  # but the user's reopen. Its review, code-review, and stop lines stay: a
+  # dropped one would grant a round or clear a stop.
+  local d prefixes size fail="could not remove the approve and auto-reopened lines the command added for a plan undone above; tell the user."
+  while IFS= read -r d; do
+    [[ -n "$d" ]] || continue
+    prefixes=$(printf '%s\n' "${undone[@]}" | awk -v d="$d" '{ n = split($0, a, "/"); dir = substr($0, 1, length($0) - length(a[n]) - 1); if (dir == d) { sub(/\.spec\.md$/, "", a[n]); print a[n] ": " } }')
+    old="$snap/files/$d/log"; new="$base/$d/log"
+    [[ -f "$new" ]] || continue
+    [[ ! -f "$old" ]] || ! cmp -s -- "$old" "$new" || continue
+    if [[ -f "$old" ]] && ! head -c "$(stat -c %s -- "$old")" -- "$new" | cmp -s -- - "$old"; then
+      # Rewritten, as by renumber or drop: added lines cannot be told apart,
+      # and restoring it would drop other plans' rounds and stops.
+      msgs+=("$new: the command rewrote it alongside a change undone above, so its lines were left as they are; tell the user.")
+      continue
+    fi
+    size=0; [[ ! -f "$old" ]] || size=$(stat -c %s -- "$old")
+    f=$(mktemp "$base/$d/log.gate.XXXXXX") || { msgs+=("$new: $fail"); continue; }
+    {
+      head -c "$size" -- "$new"
+      tail -c +"$((size + 1))" -- "$new" |
+        PREFIXES="$prefixes" awk 'BEGIN { n = split(ENVIRON["PREFIXES"], p, "\n") }
+          { for (i = 1; i <= n; i++) if (p[i] != "" && index($0, p[i]) == 1) { r = substr($0, length(p[i]) + 1); if (r ~ /^approve / || r == "auto-reopened") next }; print }'
+    } > "$f" 2>/dev/null || { rm -f -- "$f"; msgs+=("$new: $fail"); continue; }
+    if cmp -s -- "$f" "$new"; then rm -f -- "$f"; continue; fi
+    if [[ ! -f "$old" && ! -s "$f" ]]; then rm -f -- "$f" "$new" || { msgs+=("$new: $fail"); continue; }
+    # One rename replaces the log, or a symlink standing at its path, so no
+    # moment leaves it missing; the log keeps its mode.
+    elif ! { chmod --reference="$new" -- "$f" 2>/dev/null; mv -f -T -- "$f" "$new"; }; then rm -f -- "$f"; msgs+=("$new: $fail"); continue
+    fi
+    msgs+=("$new: removed the approve and auto-reopened lines the command added for the plans undone above.")
+  done < <(printf '%s\n' "${undone[@]}" | sed -n 's#/[^/]*$##p' | sort -u)
   # A symlink or hard link to a plan file or stack directory lets an edit
   # tool change a plan through a path outside docs/plans: each gets its
   # own copy again.

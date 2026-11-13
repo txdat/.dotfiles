@@ -200,6 +200,10 @@ run review "$S" ready >/dev/null
 sed -i '/^## Goal/a Edited after review.' "$S"
 expect_fail 'approve refuses a ready verdict the spec no longer matches' 'approve needs a ready plan whose review still holds' approve "$S"
 write_plan "$S" planning feat/sib pr1
+spec=$(cd "$REPO" && REPO_ROOT=$REPO; . "$SCRIPT_DIR/dev-plan-lib.sh"; plan_hash "$S")
+sed -i "s/^Status: .*/Status: ready/; s/^Spec: .*/Spec: $spec/" "$S"
+expect_fail 'approve refuses a ready Spec that dev-stack.sh review did not record' 'no ready verdict from dev-stack.sh review' approve "$S"
+write_plan "$S" planning feat/sib pr1
 run review "$S" ready >/dev/null
 run stop "$S" 'Failed fixes: 3/3 — test' >/dev/null
 expect_fail 'approve refuses a stopped plan' 'is stopped' approve "$S"

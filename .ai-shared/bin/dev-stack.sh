@@ -38,7 +38,7 @@ usage() {
     'and Spec to its hash of the current spec, and logs the round <k>/<limit>;' \
     'code-review logs a review-code verdict the same way. A needs-changes verdict' \
     'at or past the limit stops the plan. The limit starts at 3; resume at or past the limit sets it to the current round plus 3.' \
-    'approve sets a ready plan, whose review holds and whose parent is approved or later,' \
+    'approve sets a ready plan, whose review recorded by review holds and whose parent is approved or later,' \
     'to auto-approved, the agent'"'"'s approval; only the user sets approved. An' \
     'approved plan is frozen: its Status never returns to planning and its spec' \
     'never changes, until the user runs reopen, which returns it and every plan' \
@@ -352,6 +352,8 @@ cmd_approve() {
   local parent prank hash
   [[ "$(status_of "$1")" == ready && "$(review_state "$1" || true)" == ready ]] ||
     fail "$1 is '$(status_of "$1")'; approve needs a ready plan whose review still holds."
+  review_logged "$1" ||
+    fail "$1 has no ready verdict from dev-stack.sh review at its current spec since its last reopen; approve needs one."
   parent=$(stacks_on "$1") || fail "$1 has an unreadable 'Stacks On:' line."
   if [[ -n "$parent" ]]; then
     prank=$(status_rank "$(status_of "$parent")")

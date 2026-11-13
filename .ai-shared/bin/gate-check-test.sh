@@ -983,6 +983,70 @@ assert_block "$(shell_run "sed -i 's/^Status: ready/Status: auto-approved/' $P &
 rm -f "$D/log"
 assert_pass "$(shell_run "'$ROOT/bin/dev-stack.sh' review $P ready && '$ROOT/bin/dev-stack.sh' approve $P")" 'dev-stack.sh review and approve pass the check'
 grep -qx 'Status: auto-approved' "$P" || { printf 'FAIL: dev-stack.sh approve undone\n' >&2; exit 1; }
+# One call may run review and approve from planning: the snapshot never sees ready.
+rm -f "$D/log"; write_plan "$P" planning
+assert_pass "$(shell_run "'$ROOT/bin/dev-stack.sh' review $P ready && '$ROOT/bin/dev-stack.sh' approve $P")" 'review and approve in one call pass from planning'
+grep -qx 'Status: auto-approved' "$P" || { printf 'FAIL: chained approve from planning undone\n' >&2; exit 1; }
+# An approve line at the real hash without a review that holds is still refused,
+# and the line goes with the restored header.
+rm -f "$D/log"; write_plan "$P" planning
+h=$(REPO_ROOT=$repo; . "$ROOT/bin/dev-plan-lib.sh"; plan_hash "$P")
+assert_block "$(shell_run "sed -i 's/^Status: planning/Status: auto-approved/' $P && echo '$n: approve auto-approved at $h' >> $D/lo''g")" 'only dev-stack.sh approve sets' 'an approve line at the real hash without a holding review does not pass'
+grep -qx 'Status: planning' "$P" || { printf 'FAIL: unreviewed auto-approval not undone\n' >&2; exit 1; }
+[[ ! -e "$D/log" ]] || { printf 'FAIL: forged approve line kept\n' >&2; exit 1; }
+assert_block "$(shell_run "sed -i 's/^Status: planning/Status: auto-approved/; s/^Spec: -/Spec: $h/' $P && echo '$n: approve auto-approved at $h' >> $D/lo''g")" 'only dev-stack.sh approve sets' 'a hand-written Spec at the real hash without a logged review does not pass'
+grep -qx 'Status: planning' "$P" && [[ ! -e "$D/log" ]] || { printf 'FAIL: approval without a logged review not undone\n' >&2; exit 1; }
+# A refused call leaves the plan workable: its approve line goes, its review line
+# stays, and the next review and approve succeed.
+write_plan "$P" planning
+assert_block "$(shell_run "'$ROOT/bin/dev-stack.sh' review $P ready && '$ROOT/bin/dev-stack.sh' approve $P && sed -i 's/Gate the phases\./Gate all./' $P")" 'only dev-stack.sh approve sets' 'a spec change after approve in one call is refused'
+grep -qx 'Status: planning' "$P" || { printf 'FAIL: refused approval not restored\n' >&2; exit 1; }
+! grep -q "^$n: approve " "$D/log" || { printf 'FAIL: approve line of a restored plan kept\n' >&2; exit 1; }
+grep -q "^$n: review ready " "$D/log" || { printf 'FAIL: review line of a restored plan dropped\n' >&2; exit 1; }
+assert_pass "$(shell_run "'$ROOT/bin/dev-stack.sh' review $P ready")" 'a restored plan takes a review again'
+assert_pass "$(shell_run "'$ROOT/bin/dev-stack.sh' approve $P")" 'a restored plan takes an approval again'
+grep -qx 'Status: auto-approved' "$P" || { printf 'FAIL: approval after a restore failed\n' >&2; exit 1; }
+# Only the restored plan's lines go: another plan's approval in the same call stays.
+SD="$PD/14_pair"; mkdir -p "$SD"
+write_plan "$SD/pr1.spec.md" planning; write_plan "$SD/pr2.spec.md" planning "$(valid_graph)" feature '#14' 'Stacks On: pr1' feat/p2
+assert_block "$(shell_run "'$ROOT/bin/dev-stack.sh' review $SD/pr1.spec.md ready && '$ROOT/bin/dev-stack.sh' approve $SD/pr1.spec.md && '$ROOT/bin/dev-stack.sh' review $SD/pr2.spec.md ready && '$ROOT/bin/dev-stack.sh' approve $SD/pr2.spec.md && sed -i 's/Gate the phases\./Gate all./' $SD/pr2.spec.md")" 'only dev-stack.sh approve sets' 'one refused plan in a call'
+grep -qx 'Status: auto-approved' "$SD/pr1.spec.md" && grep -q '^pr1: approve auto-approved at ' "$SD/log" || { printf "FAIL: another plan's approval undone\n" >&2; exit 1; }
+grep -qx 'Status: planning' "$SD/pr2.spec.md" && ! grep -q '^pr2: approve ' "$SD/log" || { printf 'FAIL: refused plan or its approve line kept\n' >&2; exit 1; }
+rm -rf "$SD"
+DS="$ROOT/bin/dev-stack.sh"
+# A child approved in the same call over a parent undone below approved is undone too.
+SD="$PD/14_pair"; mkdir -p "$SD"
+write_plan "$SD/pr1.spec.md" planning; write_plan "$SD/pr2.spec.md" planning "$(valid_graph)" feature '#14' 'Stacks On: pr1' feat/p2
+assert_block "$(shell_run "'$DS' review $SD/pr1.spec.md ready && '$DS' approve $SD/pr1.spec.md && '$DS' review $SD/pr2.spec.md ready && '$DS' approve $SD/pr2.spec.md && sed -i 's/^Status: auto-approved/Status: implemented/' $SD/pr1.spec.md")" 'auto-approved over its parent' 'a child approved over an undone parent is undone'
+grep -qx 'Status: planning' "$SD/pr1.spec.md" && grep -qx 'Status: planning' "$SD/pr2.spec.md" || { printf 'FAIL: parent or child left past planning\n' >&2; exit 1; }
+! grep -q ': approve ' "$SD/log" || { printf 'FAIL: approve lines of undone plans kept\n' >&2; exit 1; }
+rm -rf "$SD"
+# A plan the check cannot restore keeps its approve line, so header and log still agree.
+SD="$PD/14_pair"; mkdir -p "$SD"
+write_plan "$SD/pr1.spec.md" planning
+# A directory left at the plan's path, holding a file it cannot delete.
+out=$(shell_run "'$DS' review $SD/pr1.spec.md ready && '$DS' approve $SD/pr1.spec.md && rm $SD/pr1.spec.md && mkdir $SD/pr1.spec.md && touch $SD/pr1.spec.md/x && chmod 500 $SD/pr1.spec.md")
+chmod 700 "$SD/pr1.spec.md"
+assert_block "$out" 'Could not restore it' 'a plan that cannot be restored is reported'
+grep -q '^pr1: approve auto-approved at ' "$SD/log" || { printf 'FAIL: approve line of an unrestored plan removed\n' >&2; exit 1; }
+rm -rf "$SD"
+# A refused auto-reopen loses its auto-reopened line with the restored header,
+# so the plan keeps its one auto-reopen.
+rm -f "$D/log"; write_plan "$P" planning
+assert_pass "$(shell_run "'$DS' review $P ready && '$DS' approve $P")" 'approval before an auto-reopen'
+chmod 640 "$D/log"
+assert_block "$(shell_run "'$DS' auto-reopen $P && sed -i 's/Gate the phases\./Gate all./' $P")" 'its spec changed' 'an auto-reopen with a spec change to the approved plan in one call is refused'
+[[ "$(stat -c %a "$D/log")" == 640 ]] || { printf 'FAIL: rewritten log lost its mode\n' >&2; exit 1; }
+grep -qx 'Status: auto-approved' "$P" && ! grep -qx "$n: auto-reopened" "$D/log" || { printf 'FAIL: refused auto-reopen left its line or status\n' >&2; exit 1; }
+assert_pass "$(shell_run "'$DS' auto-reopen $P")" 'the plan keeps its one auto-reopen'
+grep -qx 'Status: planning' "$P" || { printf 'FAIL: auto-reopen after a restore failed\n' >&2; exit 1; }
+# A log the command rewrote, as renumber does, is left as it is and reported.
+SD="$PD/14_pair"; mkdir -p "$SD"
+write_plan "$SD/pr1.spec.md" planning; write_plan "$SD/pr2.spec.md" planning "$(valid_graph)" feature '#14' 'Stacks On: pr1' feat/p2
+assert_pass "$(shell_run "'$DS' review $SD/pr2.spec.md needs-changes")" 'a verdict before a renumber'
+assert_block "$(shell_run "'$DS' renumber $SD/pr1.spec.md 2=3 && '$DS' review $SD/pr1.spec.md ready && '$DS' approve $SD/pr1.spec.md && sed -i 's/^Status: auto-approved/Status: implemented/' $SD/pr1.spec.md")" 'rewrote it alongside a change undone above' 'a rewritten log is left and reported'
+grep -qx 'Status: planning' "$SD/pr1.spec.md" && grep -q '^pr1: approve ' "$SD/log" && grep -q '^pr3: review ' "$SD/log" || { printf 'FAIL: rewritten log changed or plan not restored\n' >&2; exit 1; }
+rm -rf "$SD"
 rm -f "$D/log"; write_plan "$P" approved
 assert_pass "$(guard Edit "$(jq -cn --arg f "$P" '{file_path:$f,old_string:"Status: approved",new_string:"Status: reviewed"}')")" 'reviewed before its Tip ranks as reviewed'
 assert_pass "$(shell_run "ln $P $TMP_ROOT/hard; sed 's/^Status: approved/Status: planning/' $P > $TMP_ROOT/soft; ln -sf $TMP_ROOT/soft $D/pr2.spec.md")" 'links pass'

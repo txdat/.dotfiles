@@ -465,6 +465,18 @@ approved_hash() {
     END { if (h != "") print h }'
 }
 
+# Succeeds when plan $1's last review-feature verdict since its last reopen
+# is a ready one at its current spec hash: dev-stack.sh review recorded it,
+# rather than a hand-written Spec value.
+review_logged() {
+  local last hash
+  last=$(log_lines "$1" | awk '$0 == "reopened" || $0 == "auto-reopened" { l = ""; next }
+    $1 == "review" { l = $0 } END { print l }')
+  [[ "$last" =~ ^review\ ready\ \([0-9]+/[0-9]+\)\ at\ ([0-9a-f]+)$ ]] || return 1
+  hash=$(plan_hash "$1") || return 1
+  [[ "${BASH_REMATCH[1]}" == "$hash" ]]
+}
+
 # Why plan $1 breaks the approval ratchet (../skills/dev/plan.md#changes);
 # empty when it does not: once approved, a plan's Status never returns to
 # planning and its spec, with the specs below it, never changes, until the
