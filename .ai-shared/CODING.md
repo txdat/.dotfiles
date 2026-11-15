@@ -42,6 +42,6 @@ Shared shell helpers live in `~/.dotfiles/.ai-shared/bin/`; invoke them by full 
 
 ## Ownership
 
-Preserve unrelated work. The main agent owns Git mutations unless a task explicitly delegates them. Confirm destructive actions only when they exceed existing authorization. Never bypass required checks or discard unfamiliar files to get past an obstacle; fix the failure or report the blocker.
+Preserve unrelated work. The main agent owns Git mutations unless a task explicitly delegates them. Confirm a destructive action, such as discarding uncommitted changes, deleting a branch or files the user created, or dropping database data, only when it exceeds existing authorization. Never bypass required checks or discard unfamiliar files to get past an obstacle; fix the failure or report the blocker.
 
 Work directly by default. Delegate only a substantial, independent chunk, when a subagent is available and concurrent work justifies it. Use the most specific agent type whose description and tools fit the chunk, else general-purpose. Tell the subagent to read this file and the owning skill; give it exclusive files, inputs, verification, and off-limits actions, and remind it that others share the codebase. The main agent integrates and verifies the result. Review isolation follows [plan.md — Review](skills/dev/plan.md#review).

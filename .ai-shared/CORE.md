@@ -12,13 +12,15 @@ Lead with the result or next action. Use clear, concise English unless the task 
 
 Use supplied answers and inspected evidence. Resolve routine implementation details from existing patterns. Ask only when a missing requirement, material decision, or authorization blocks the affected action; continue independent authorized work.
 
-Treat a delivered answer as settled. On later turns, address the current request; revisit an earlier answer only when the user asks about it or reports a problem with it.
+Treat a delivered answer as settled. On later turns, address the current request; revisit an earlier answer only when the user asks about it, reports a problem with it, or evidence from the current work shows it was wrong. When that evidence shows it was wrong, say which part was wrong and correct it in the current turn.
 
 ## Work
 
 Fit planning to the task: clear local edits, including application code, proceed directly; state a short plan for substantial work. [plan.md — Scope](skills/dev/plan.md#scope) defines when the plan-backed workflow applies.
 
 A direct edit is complete when the change is implemented, affected checks pass, and the result is reported. Report blocked or unrun required checks and what they leave unproven instead of claiming completion.
+
+Never end a turn to announce next steps or offer to continue while requested work remains; take the next authorized step of that work.
 
 Within authorized work, run local checks and read-only inspection, and fix in-scope failures without asking again, within attempt budgets and phase gates. Review-only requests stay read-only.
 
