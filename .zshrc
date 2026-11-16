@@ -11,8 +11,9 @@ export KUBECONFIG=$HOME/.kube/config
 export USE_GKE_GCLOUD_AUTH_PLUGIN=True
 export CHROME_EXECUTABLE=/usr/bin/google-chrome
 
-# gpg-agent needs the terminal name; zsh does not set $TTY
-[[ -t 0 ]] && export GPG_TTY=$(tty)
+# gpg-agent needs the terminal name; $TTY is already set when stdin is a tty,
+# so only fork tty(1) when it is not
+[[ -t 0 ]] && export GPG_TTY=${TTY:-$(tty)}
 
 CONDA_HOME=$HOME/miniconda3
 
@@ -21,12 +22,12 @@ path=(
     $HOME/fvm/bin                                                # flutter
     $HOME/.local/share/fnm                                       # nodejs
     $HOME/.local/share/fnm/aliases/default/bin
+    $HOME/.bun/bin
     $HOME/go/bin                                                 # go
     $HOME/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin # rust
     $CONDA_HOME/bin                                              # python
     $HOME/.local/bin
     $HOME/.opencode/bin
-    $HOME/.dotfiles/.ai-shared/bin
     $path
 )
 
@@ -64,15 +65,21 @@ setopt share_history
 # ─── completion ───────────────────────────────────────────────────────────────
 
 autoload -Uz compinit
-# full compinit (with compaudit) at most once a day; otherwise trust the dump
+# Full compinit (with compaudit) at most once a day; otherwise trust the dump.
+# The dump stays zcompiled so startup loads bytecode instead of re-parsing the
+# ~52K text dump (~20ms -> ~8ms); zsh falls back to the text dump on its own if
+# the bytecode is stale, and the dump is only rewritten once a day, so the
+# recompile is rare.
 () {
     local dump="${ZDOTDIR:-$HOME}/.zcompdump"
     local -a stale=( $dump(N.mh+24) )
     if (( $#stale )) || [[ ! -f $dump ]]; then
-        compinit && touch $dump
+        compinit
+        touch $dump
     else
         compinit -C
     fi
+    [[ -f $dump && ( ! -f $dump.zwc || $dump.zwc -ot $dump ) ]] && zcompile $dump
 }
 
 zstyle ':completion:*' matcher-list "m:{a-z}={A-Z}"
@@ -160,54 +167,21 @@ claude() {
     local -a args=(
         --dangerously-skip-permissions
         --dangerously-load-development-channels server:dev-mcp
+        "$@"
     )
-    local arg
-    for arg in "$@"; do
-        case $arg in
-            *)  args+=("$arg") ;;
-        esac
-    done
     env "${env_vars[@]}" command claude "${args[@]}"
 }
 
 agy() {
-    local -a args=(
-        --dangerously-skip-permissions
-    )
-    local arg
-    for arg in "$@"; do
-        case $arg in
-            *)  args+=("$arg") ;;
-        esac
-    done
-    command dev-mcp agy "${args[@]}"
+    command dev-mcp agy --dangerously-skip-permissions "$@"
 }
 
 codex() {
-    local -a args=(
-        --yolo
-    )
-    local arg
-    for arg in "$@"; do
-        case $arg in
-            -r|--resume) args+=(resume) ;;
-            *)           args+=("$arg") ;;
-        esac
-    done
-    command codex "${args[@]}"
+    command codex --yolo "$@"
 }
 
 oc() {
-    local -a args=(
-        --auto
-    )
-    local arg
-    for arg in "$@"; do
-        case $arg in
-            *)  args+=("$arg") ;;
-        esac
-    done
-    command opencode "${args[@]}"
+    command opencode --auto "$@"
 }
 
 # clipboard: xc -f FILE | xc -o [FILE] | cmd | xc

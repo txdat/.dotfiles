@@ -4,3 +4,4 @@
 # (.ai-shared/skills/dev/plan.md#artifact, .ai-shared/skills/handoff.md).
 /docs/plans/
 /docs/handoff/
+/docs/**/log
