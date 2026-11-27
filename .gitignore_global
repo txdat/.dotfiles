@@ -1,7 +1,7 @@
 # Global Git excludes (core.excludesFile in .gitconfig).
 **/.claude/settings.local.json
 # Dev-flow plans and handoff notes live in each repository, never committed
-# (.ai-shared/skills/dev/plan.md#artifact, .ai-shared/skills/handoff.md).
+# (dev plugin plan and handoff artifacts).
 /docs/plans/
 /docs/handoff/
 /docs/**/log
